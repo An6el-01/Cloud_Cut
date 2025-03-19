@@ -71,7 +71,7 @@ export default function Home() {
               <Link href={"/manufacturing"}>
               <button
                 type="submit"
-                className="w-40 bg-linear-to-r from-gray-950 to-red-600 border-amber-400 text-white  p-2 rounded-xl hover:bg-[#b71c1c] transition flex items-center justify-center"
+                className="w-40 bg-linear-to-r from-gray-950 to-red-600 border border-black text-white  p-2 rounded-xl hover:bg-[#b71c1c] transition flex items-center justify-center"
               >
                 Log In
               </button>

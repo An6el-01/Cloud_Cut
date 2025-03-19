@@ -53,7 +53,7 @@ export default function Profile() {
                     <div className="flex justify-center mt-6">
                         <Link href="/">
                             <button 
-                                className="w-40 bg-linear-to-r from-gray-950 to-red-600 border-amber-400 text-white  p-2 rounded-xl hover:bg-[#b71c1c] transition flex items-center justify-center"
+                                className="w-40 bg-linear-to-r from-gray-950 to-red-600 border-amber-400 text-white  p-2 rounded-xl hover:bg-[#b71c1c] transition flex items-center justify-center border border-black"
                                 onClick={() => {
                                     // Add logout functionality here
                                     console.log("Logging out...");
