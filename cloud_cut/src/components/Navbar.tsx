@@ -7,13 +7,9 @@ import { usePathname } from 'next/navigation';
 const Navbar = () => {
   const pathname = usePathname();
   
-  /**
-   * Gets the Page title the user is currently in.
-   * 
-  */
   const getPageTitle = () => {
+    if (!pathname) return 'Home';
     if (pathname === '/') return 'Home';
-    // Remove leading slash and capitalize first letter
     return pathname.slice(1).charAt(0).toUpperCase() + pathname.slice(2);
   };
 
@@ -53,19 +49,17 @@ const Navbar = () => {
             </Link>
             
             {/* Profile Section */}
-            <div className="relative group">
-              <Link href="/profile" className="flex flex-col items-center cursor-pointer">
-                <div className="w-16 h-16 relative overflow-hidden rounded-full bg-white p-1 transition-all duration-500 group-hover:bg-gradient-to-br from-black via-red-600 to-black flex items-center justify-center">
-                  <div className="absolute inset-0 bg-white transition-opacity duration-500 group-hover:opacity-0" />
+            <div className="relative">
+              <Link href="/profile" className="flex flex-col items-center">
+                <div className="w-16 h-16 relative overflow-hidden rounded-full bg-white p-1 flex items-center justify-center">
                   <Image
                     src="/profile.png"
                     alt="Profile"
                     width={80}
                     height={80}
-                    className="object-contain transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 group-hover:brightness-0 group-hover:invert relative z-10"
+                    className="object-contain"
                   />
                 </div>
-               
               </Link>
             </div>
           </div>

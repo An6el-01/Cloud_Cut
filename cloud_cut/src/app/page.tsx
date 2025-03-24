@@ -3,25 +3,8 @@
 import Image from "next/image";
 import { useState } from 'react';
 import { useRouter } from "next/navigation";
-import { createClient } from '@supabase/supabase-js';
+import { signIn, getCurrentUser } from '@/utils/supabase';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-const handleSignIn = async (email: string, password: string)=> {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if(error) {
-    throw new Error(error.message || "Sign-in failed");
-  }
-
-  return data;
-}
 export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,20 +15,19 @@ export default function Home() {
     e.preventDefault();
     setError(null);
 
-    try{
-      await handleSignIn(email, password);
+    try {
+      await signIn(email, password);
 
-      //Check is user needs to reset password
-      const { data: { user } } = await supabase.auth.getUser();
-      if(user?.user_metadata.needsPasswordReset) {
+      const user = await getCurrentUser();
+      if (user?.user_metadata.needsPasswordReset) {
         router.push("/resetPassword");
       } else {
-        router.push("manufacturing");
+        router.push("/manufacturing");
       }
-    }catch(error: unknown){
+    } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred during sign-in");
     }
-  }
+  };
 
   return (
     <div className="min-h-screen">
