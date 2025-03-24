@@ -1,131 +1,205 @@
 "use client";
 
 import Navbar from "@/components/Navbar";
-import { useState } from "react";
-
-interface OrderDetails {
-    orderDate: string;
-    status: string;
-    priorityLevel: number;
-    customerName: string;
-    items: Array<{
-        id: number;
-        name: string;
-        foamSheet: string;
-        quantity: number;
-        status: string;
-    }>;
-}
+import { useState, useEffect } from "react";
+import { fetchOrders, fetchOrderDetails, OrdersResponse } from "@/utils/despatchCloud";
+import { DespatchCloudOrder, OrderDetails } from "@/types/despatchCloud";
 
 export default function Manufacturing() {
-    const [selectedOrder, setSelectedOrder] = useState<OrderDetails | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderDetails | null>(null);
+  const [orders, setOrders] = useState<DespatchCloudOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
 
-    return (
-        <div className="min-h-screen">
-            <Navbar />
-            <div className="container mx-auto pt-32 p-6 flex justify-center gap-8">
-                {/* Orders Queue Section */}
-                <div className="flex-1 max-w-3xl">
-                    <div className="bg-[#1d1d1d] rounded-t-lg">
-                        <h1 className="text-2xl font-bold text-white p-4">Orders Queue</h1>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full bg-white border border-gray-200">
-                            <thead className="bg-gray-100">
-                                <tr>
-                                    <th className="px-4 py-4 text-center text-black text-md">Order Id</th>
-                                    <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Customer Name</th>
-                                    <th className="px-4 py-2 text-center text-black text-md">Priority</th>
-                                    <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Order Date</th>
-                                    <th className="px-4 py-2 text-center text-black text-md">Progress</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr 
-                                    className="border-b hover:bg-gray-50 cursor-pointer text-center"
-                                    onClick={() => setSelectedOrder({
-                                        orderDate: "17/03/2025",
-                                        status: "Ready for packing",
-                                        priorityLevel: 9,
-                                        customerName: "Thomas Brighton",
-                                        items: [
-                                            { id: 1, name: "Medium Sheet", foamSheet: "Grey 30mm", quantity: 1, status: "Done" },
-                                            { id: 2, name: "Large Traveling Case", foamSheet: "Blue 30mm", quantity: 1, status: "Done" },
-                                        ]
-                                    })}
-                                >
-                                    <td className="px-4 py-2 text-black">ORD123</td>
-                                    <td className="px-4 py-2 text-black">Thomas Brighton</td>
-                                    <td className="px-4 py-2 text-black">9</td>
-                                    <td className="px-4 py-2 text-black">17/03/2025</td>
-                                    <td className="px-4 py-2 text-black">2/2</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+  useEffect(() => {
+    const loadOrders = async () => {
+      try {
+        setLoading(true);
+        const response: OrdersResponse = await fetchOrders(currentPage);
+        console.log('Orders Response:', JSON.stringify(response, null, 2));
+        
+        // The response already has the correct structure
+        setOrders(response.data);
+        setTotalPages(response.last_page);
+        setTotalOrders(response.total);
+        
+        console.log('Updated state:', {
+          orders: response.data,
+          totalPages: response.last_page,
+          totalOrders: response.total
+        });
+      } catch (err) {
+        console.error('Error loading orders:', err);
+        setError(err instanceof Error ? err.message : "Failed to load orders");
+        setOrders([]);
+        setTotalPages(1);
+        setTotalOrders(0);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadOrders();
+  }, [currentPage]);
+
+  const handleOrderClick = async (orderId: string) => {
+    try {
+      setLoading(true);
+      const details = await fetchOrderDetails(orderId);
+      setSelectedOrder(details);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load order details");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+    }
+  };
+
+  return (
+    <div className="min-h-screen">
+      <Navbar />
+      <div className="container mx-auto pt-32 p-6 flex justify-center gap-8">
+        {/* Orders Queue Section */}
+        <div className="flex-1 max-w-3xl">
+          <div className="bg-[#1d1d1d] rounded-t-lg">
+            <h1 className="text-2xl font-bold text-white p-4">Orders Queue</h1>
+          </div>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <p className="text-center text-white py-4">Loading orders...</p>
+            ) : error ? (
+              <p className="text-center text-red-500 py-4">{error}</p>
+            ) : orders.length === 0 ? (
+              <p className="text-center text-white py-4">No orders found</p>
+            ) : (
+              <>
+                <table className="w-full bg-white border border-gray-200">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-4 py-4 text-center text-black text-md">Order Id</th>
+                      <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Customer Name</th>
+                      <th className="px-4 py-2 text-center text-black text-md">Priority</th>
+                      <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Order Date</th>
+                      <th className="px-4 py-2 text-center text-black text-md">Progress</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((order) => (
+                      <tr
+                        key={order.id}
+                        className="border-b hover:bg-gray-50 cursor-pointer text-center"
+                        onClick={() => handleOrderClick(order.channel_order_id)}
+                      >
+                        <td className="px-4 py-2 text-black">{order.channel_order_id}</td>
+                        <td className="px-4 py-2 text-black">{order.shipping_name}</td>
+                        <td className="px-4 py-2 text-black">0</td> {/* Placeholder */}
+                        <td className="px-4 py-2 text-black">
+                          {new Date(parseInt(order.data_received) * 1000).toLocaleDateString("en-GB")}
+                        </td>
+                        <td className="px-4 py-2 text-black">N/A</td> {/* Placeholder */}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                {/* Pagination Controls */}
+                <div className="flex justify-between items-center bg-white p-4 border border-gray-200">
+                  <div className="text-sm text-gray-600">
+                    Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, totalOrders)} of {totalOrders} orders
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-3 py-1">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
-
-                {/* Order Details Section */}
-                <div className="flex-1 max-w-2xl">
-                    <div className="bg-black/70 rounded-t-lg">
-                        <h1 className="text-2xl font-bold text-white p-4 flex justify-center ">Order Details</h1>
-                    </div>
-                    <div className="bg-black/70 border border-gray-200 p-6">
-                        {selectedOrder ? (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <p className="text-sm text-gray-400 underline">Order Date:</p>
-                                        <p className="font-medium">{selectedOrder.orderDate}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-400 underline">Status:</p>
-                                        <p className="font-medium">{selectedOrder.status}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-400 underline">Priority Level:</p>
-                                        <p className="font-medium">{selectedOrder.priorityLevel}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-400 underline">Customer Name:</p>
-                                        <p className="font-medium">{selectedOrder.customerName}</p>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h2 className="font-semibold mb-2">Items:</h2>
-                                    <table className="w-full">
-                                        <thead>
-                                            <tr>
-                                                <th className="px-4 py-2 text-center text-sm underline"></th>
-                                                <th className="px-4 py-2 text-center text-sm underline ">Name</th>
-                                                <th className="px-4 py-2 text-center text-sm whitespace-nowrap underline">Foam Sheet</th>
-                                                <th className="px-4 py-2 text-center text-sm underline">Quantity</th>
-                                                <th className="px-4 py-2 text-center text-sm underline">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {selectedOrder.items.map((item) => (
-                                                <tr key={item.id} className="border-b">
-                                                    <td className="px-4 py-2">{item.id}</td>
-                                                    <td className="px-4 py-2 whitespace-nowrap text-center">{item.name}</td>
-                                                    <td className="px-4 py-2 text-center whitespace-nowrap">{item.foamSheet}</td>
-                                                    <td className="px-4 py-2 text-center">{item.quantity}</td>
-                                                    <td className="px-4 py-2 text-center">{item.status}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex items-center justify-center h-64">
-                                <p className="text-white text-lg">No order selected. Please choose an order.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
+              </>
+            )}
+          </div>
         </div>
-    );
+
+        {/* Order Details Section */}
+        <div className="flex-1 max-w-2xl">
+          <div className="bg-black/70 rounded-t-lg">
+            <h1 className="text-2xl font-bold text-white p-4 flex justify-center">Order Details</h1>
+          </div>
+          <div className="bg-black/70 border border-gray-200 p-6">
+            {selectedOrder ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-400 underline">Order Date:</p>
+                    <p className="font-medium">{selectedOrder.orderDate}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400 underline">Status:</p>
+                    <p className="font-medium">{selectedOrder.status}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400 underline">Priority Level:</p>
+                    <p className="font-medium">{selectedOrder.priorityLevel}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400 underline">Customer Name:</p>
+                    <p className="font-medium">{selectedOrder.customerName}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h2 className="font-semibold mb-2">Items:</h2>
+                  <table className="w-full">
+                    <thead>
+                      <tr>
+                        <th className="px-4 py-2 text-center text-sm underline">ID</th>
+                        <th className="px-4 py-2 text-center text-sm underline">Name</th>
+                        <th className="px-4 py-2 text-center text-sm underline">Foam Sheet</th>
+                        <th className="px-4 py-2 text-center text-sm underline">Quantity</th>
+                        <th className="px-4 py-2 text-center text-sm underline">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOrder.items.map((item) => (
+                        <tr key={item.id} className="border-b">
+                          <td className="px-4 py-2">{item.id}</td>
+                          <td className="px-4 py-2 text-center">{item.name}</td>
+                          <td className="px-4 py-2 text-center">{item.foamSheet}</td>
+                          <td className="px-4 py-2 text-center">{item.quantity}</td>
+                          <td className="px-4 py-2 text-center">{item.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-white text-lg">No order selected. Please choose an order.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
