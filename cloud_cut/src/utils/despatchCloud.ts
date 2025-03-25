@@ -1,6 +1,4 @@
 import { DespatchCloudOrder, OrderDetails, InventoryItem } from '@/types/despatchCloud';
-import { identifyFoamSheet } from './foamSheetUtils';
-import { translateToEnglish } from './translationUtils';
 
 const DESPATCH_CLOUD_EMAIL = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_EMAIL || "";
 const DESPATCH_CLOUD_PASSWORD = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_PASSWORD || "";
@@ -59,10 +57,10 @@ export async function getAuthToken(): Promise<string> {
 }
 
 export async function fetchOrders(page: number = 1, perPage: number = 10): Promise<OrdersResponse> {
-  const twoWeeksAgo = new Date();
-  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+  const fiveDaysAgo = new Date();
+  fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
   const now = new Date();
-  const dateRange = `${Math.floor(twoWeeksAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
+  const dateRange = `${Math.floor(fiveDaysAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
 
   // Ensure perPage is within reasonable limits
   const normalizedPerPage = Math.min(Math.max(perPage, 5), 20); // Min 5, Max 20 orders per page
@@ -93,21 +91,12 @@ export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> 
     }
 
     // Extract items from the inventory array
-    const items = await Promise.all((order.inventory || []).map(async (item, index) => {
-      const foamSheet = identifyFoamSheet(item.name, item.options);
-      console.log(`Extracted foam sheet for item "${item.name}": "${foamSheet}"`);
-
-      // Translate the item name to English
-      const translatedName = await translateToEnglish(item.name);
-      console.log(`Translated item name from "${item.name}" to "${translatedName}"`);
-
-      return {
-        id: index + 1,
-        name: translatedName.replace(/\s*\(Pack of \d+\)$/, ''), // Remove "Pack of X" from display name
-        foamSheet,
-        quantity: item.quantity,
-        status: "Pending",
-      };
+    const items = (order.inventory || []).map((item, index) => ({
+      id: index + 1,
+      name: item.name.replace(/\s*\(Pack of \d+\)$/, ''), // Remove "Pack of X" from display name
+      foamSheet: 'N/A',
+      quantity: item.quantity,
+      status: "Pending",
     }));
 
     const orderDate = new Date(order.date_received);

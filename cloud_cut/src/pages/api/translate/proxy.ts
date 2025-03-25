@@ -1,45 +1,44 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from "next";
+
+const DEEPL_API_KEY = process.env.DEEPL_API_KEY || '';
+const DEEPL_BASE_URL = 'https://api-free.deepl.com/v2';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    if (req.method !== 'GET') {
-        return res.status(405).json({ error: 'Method not allowed' });
+    const { text, source_lang, target_lang, type } = req.query;
+
+    if(!DEEPL_API_KEY) {
+        return res.status(500).json({error: "DeepL API key is not configured"});
     }
 
-    const { text, sourceLang } = req.query;
+    try{
+        const endpoint = type === 'detect' ? '/usage' : '/translate';
+        const url = new URL(`${DEEPL_BASE_URL}${endpoint}`);
+            url.searchParams.append('auth_key', DEEPL_API_KEY);
 
-    if (!text || typeof text !== 'string') {
-        return res.status(400).json({ error: 'Text parameter is required' });
-    }
+        if (type === 'detect') {
+            url.searchParams.append('text', text as string);
+            url.searchParams.append('target_lang', 'EN');
+        } else{
+            url.searchParams.append('text', text as string);
+            if (source_lang) url.searchParams.append('source_lang', source_lang as string);
+            url.searchParams.append('target_lang', target_lang as string || 'EN');
+        }
 
-    if (!sourceLang || typeof sourceLang !== 'string') {
-        return res.status(400).json({ error: 'Source language parameter is required' });
-    }
-
-    try {
-        const params = new URLSearchParams({
-            q: text,
-            langpair: `${sourceLang}|en`,
-            de: 'a.salinas@shadowfoam.com',
-        });
-
-        const response = await fetch(`https://api.mymemory.translated.net/get?${params.toString()}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Translation API error: ${response.statusText}`);
+        const response = await fetch(url.toString(), { method: 'POST' });
+        if(!response.ok) {
+            throw new Error(`DeepL API error: ${response.statusText}`);
         }
 
         const data = await response.json();
-        res.status(200).json(data);
+        if (type === 'detect') {
+            const detectedLang = data.translations?.[0]?.detected_source_language || 'EN';
+            res.status(200).json({ langauge: detectedLang });
+        }else{
+            const translatedText = data.translations?.[0]?.text || text;
+            res.status(200).json({ translatedText });
+        }
     } catch (error) {
-        console.error('Translation proxy error:', error);
-        res.status(500).json({ 
-            error: 'Translation failed',
-            details: error instanceof Error ? error.message : 'Unknown error'
-        });
+        console.error('Translation proxy error: ', error);
+        res.status(500).json({ error: "Translation failed", details: error instanceof Error ? error.message : 'Unknown error' });
     }
-} 
+}

@@ -2,7 +2,8 @@
 
 import Navbar from "@/components/Navbar";
 import { useState, useEffect } from "react";
-import { fetchOrders, fetchOrderDetails } from "@/utils/despatchCloud"; // No need to import OrdersResponse separately
+import { fetchOrders, fetchOrderDetails } from "@/utils/despatchCloud";
+import { translateOrderDetails } from "@/utils/translate"; // Import the new utility
 import { DespatchCloudOrder, OrderDetails } from "@/types/despatchCloud";
 
 export default function Manufacturing() {
@@ -13,13 +14,13 @@ export default function Manufacturing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
-  const ordersPerPage = 10; // Consistent with fetchOrders default
+  const ordersPerPage = 10;
 
   useEffect(() => {
     const loadOrders = async () => {
       try {
         setLoading(true);
-        const response = await fetchOrders(currentPage, ordersPerPage); // Pass ordersPerPage
+        const response = await fetchOrders(currentPage, ordersPerPage);
         console.log("Orders Response:", JSON.stringify(response, null, 2));
 
         setOrders(response.data);
@@ -48,7 +49,8 @@ export default function Manufacturing() {
     try {
       setLoading(true);
       const details = await fetchOrderDetails(internalId.toString());
-      setSelectedOrder(details);
+      const translatedDetails = await translateOrderDetails(details); // Translate item names
+      setSelectedOrder(translatedDetails);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load order details");
     } finally {
@@ -95,7 +97,9 @@ export default function Manufacturing() {
                       {orders.map((order) => (
                         <tr
                           key={order.id}
-                          className="border-b hover:bg-gray-50 cursor-pointer text-center"
+                          className={`border-b hover:bg-gray-50 cursor-pointer text-center ${
+                            selectedOrder?.orderId === order.channel_order_id ? "bg-blue-100" : ""
+                          }`}
                           onClick={() => handleOrderClick(order.channel_order_id, order.id)}
                         >
                           <td className="px-4 py-2 text-black">{order.channel_order_id}</td>
@@ -176,7 +180,7 @@ export default function Manufacturing() {
                       <tr>
                         <th className="px-4 py-2 text-center text-sm underline">ID</th>
                         <th className="px-4 py-2 text-center text-sm underline">Name</th>
-                        <th className="px-4 py-2 text-center text-sm underline">Foam Sheet</th>
+                        <th className="px-6 py-2 text-center text-sm underline whitespace-nowrap">Foam Sheet</th>
                         <th className="px-4 py-2 text-center text-sm underline">Quantity</th>
                         <th className="px-4 py-2 text-center text-sm underline">Status</th>
                       </tr>

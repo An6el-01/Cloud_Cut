@@ -46,8 +46,8 @@ export interface OrderDetails {
     items: Array<{
         id: number;
         name: string;
-        foamSheet: string;
         quantity: number;
+        foamSheet: string;
         status: string;
     }>;
 }
