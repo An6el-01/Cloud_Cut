@@ -1,127 +1,150 @@
 import { DespatchCloudOrder, OrderDetails, InventoryItem } from '@/types/despatchCloud';
+import { identifyFoamSheet } from './foamSheetUtils';
+import { translateToEnglish } from './translationUtils';
 
 const DESPATCH_CLOUD_EMAIL = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_EMAIL || "";
 const DESPATCH_CLOUD_PASSWORD = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_PASSWORD || "";
 
 interface ApiResponse<T> {
-    data: T;
-    message?: string;
-    status?: string;
-}
-
-async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
-    const token = await getAuthToken();
-    const response = await fetch(url, {
-        ...options,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            ...options.headers,
-        },
-    });
-    if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
-    return response.json();
-}
-
-export async function getAuthToken(): Promise<string> {
-    console.log('Attempting to authenticate with:', `/api/public-api/auth/login`);
-    const response = await fetch(`/api/public-api/auth/login`, {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-            email: DESPATCH_CLOUD_EMAIL,
-            password: DESPATCH_CLOUD_PASSWORD,
-        }),
-    });
-    if(!response.ok) {
-        console.error('Authentication failed:', response.status, response.statusText);
-        throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    if (!data.token) {
-        throw new Error('No token received in response');
-    }
-    return data.token;
+  data: T;
+  message?: string;
+  status?: string;
 }
 
 export interface OrdersResponse {
-    data: DespatchCloudOrder[];
-    total: number;
-    current_page: number;
-    last_page: number;
-    per_page: number;
+  data: DespatchCloudOrder[];
+  current_page: number;
+  last_page: number;
+  total: number;
+  per_page: number;
 }
 
-export async function fetchOrders(page: number = 1): Promise<OrdersResponse> {
-    const twoWeeksAgo = new Date();
-    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-    const now = new Date();
-    const dateRange =  `${Math.floor(twoWeeksAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
+async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const token = await getAuthToken();
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+  if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
+  return response.json();
+}
 
-    console.log('Fetching orders with date range:', dateRange);
-    const response = await fetchWithAuth<OrdersResponse>(
-        `/api/public-api/orders?page=${page}&filters[date_range]=${dateRange}`
-    );
-    console.log('Raw API Response:', JSON.stringify(response, null, 2));
+export async function getAuthToken(): Promise<string> {
+  const url = `/api/despatchCloud/proxy?path=auth/login`;
+  console.log('Attempting to authenticate with:', url);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      email: DESPATCH_CLOUD_EMAIL,
+      password: DESPATCH_CLOUD_PASSWORD,
+    }),
+  });
+  if (!response.ok) {
+    console.error('Authentication failed:', response.status, response.statusText);
+    throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+  }
+  const data = await response.json();
+  if (!data.token) {
+    throw new Error('No token received in response');
+  }
+  return data.token;
+}
 
-    // The API already returns the correct structure, so we can return it directly
-    return response;
+export async function fetchOrders(page: number = 1, perPage: number = 10): Promise<OrdersResponse> {
+  const twoWeeksAgo = new Date();
+  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+  const now = new Date();
+  const dateRange = `${Math.floor(twoWeeksAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
+
+  // Ensure perPage is within reasonable limits
+  const normalizedPerPage = Math.min(Math.max(perPage, 5), 20); // Min 5, Max 20 orders per page
+
+  const url = `/api/despatchCloud/proxy?path=orders&page=${page}&per_page=${normalizedPerPage}&filters[date_range]=${dateRange}`;
+  console.log("Fetching orders from:", url);
+  const response = await fetchWithAuth<OrdersResponse>(url);
+
+  return {
+    data: response.data || [],
+    current_page: response.current_page || page,
+    last_page: response.last_page || 1,
+    total: response.total || 0,
+    per_page: response.per_page || normalizedPerPage,
+  };
 }
 
 export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> {
-    const order = await fetchWithAuth<ApiResponse<DespatchCloudOrder>>(
-        `/api/public-api/order/${orderId}`
-    );
+  const url = `/api/despatchCloud/proxy?path=order/${orderId}`;
+  console.log('Fetching order details from:', url);
+  
+  try {
+    const order = await fetchWithAuth<DespatchCloudOrder>(url);
+    console.log('Order details response:', order);
 
-    const items = order.data.items.map((item, index) => {
-        //Extract foam sheet from name
-        const foamSheetMatch = item.name.match(/\[(.*?)\]/);
-        const foamSheet = foamSheetMatch ? foamSheetMatch[1] : 'N/A';
+    if (!order || !order.channel_order_id) {
+      throw new Error('Invalid order details response');
+    }
 
-        return {
-            id: index + 1, // Using array index + 1 as a fallback ID
-            name: item.name,
-            foamSheet,
-            quantity: item.quantity,
-            status: "Pending",
-        };
-    });
+    // Extract items from the inventory array
+    const items = await Promise.all((order.inventory || []).map(async (item, index) => {
+      const foamSheet = identifyFoamSheet(item.name, item.options);
+      console.log(`Extracted foam sheet for item "${item.name}": "${foamSheet}"`);
 
-    // Fix date handling
-    const orderDate = new Date(parseInt(order.data.data_received) * 1000);
+      // Translate the item name to English
+      const translatedName = await translateToEnglish(item.name);
+      console.log(`Translated item name from "${item.name}" to "${translatedName}"`);
+
+      return {
+        id: index + 1,
+        name: translatedName.replace(/\s*\(Pack of \d+\)$/, ''), // Remove "Pack of X" from display name
+        foamSheet,
+        quantity: item.quantity,
+        status: "Pending",
+      };
+    }));
+
+    const orderDate = new Date(order.date_received);
 
     return {
-        orderId: order.data.channel_order_id,
-        orderDate: orderDate.toLocaleDateString("en-GB"),
-        status: order.data.status,
-        priorityLevel: 0,
-        customerName: order.data.shipping_name,
-        items,
+      orderId: order.channel_order_id,
+      orderDate: orderDate.toLocaleDateString("en-GB"),
+      status: order.status || "Unknown",
+      priorityLevel: 0,
+      customerName: order.shipping_name,
+      items,
     };
+  } catch (error) {
+    console.error('Error fetching order details:', error);
+    throw error;
+  }
 }
 
 interface InventoryApiItem {
-    sku: string;
-    type: string;
-    name: string;
-    stock_available: string;
-    stock_open: string;
-    weight_kg: string;
+  sku: string;
+  type: string;
+  name: string;
+  stock_available: string;
+  stock_open: string;
+  weight_kg: string;
 }
 
 export async function fetchInventory(): Promise<InventoryItem[]> {
-    const data = await fetchWithAuth<ApiResponse<InventoryApiItem[]>>(
-        `/api/public-api/inventory?page=1&sort=name_az`
-    );
-    return data.data.map((item) => ({
-        sku: item.sku,
-        type: item.type,
-        name: item.name,
-        stock_available: parseInt(item.stock_available, 10),
-        stock_open: parseInt(item.stock_open, 10),
-        weight_kg: parseFloat(item.weight_kg),
-    })) || [];
+  const url = `/api/despatchCloud/proxy?path=inventory&page=1&sort=name_az`;
+  const data = await fetchWithAuth<ApiResponse<InventoryApiItem[]>>(url);
+
+  return data.data.map((item) => ({
+    sku: item.sku,
+    type: item.type,
+    name: item.name,
+    stock_available: parseInt(item.stock_available, 10),
+    stock_open: parseInt(item.stock_open, 10),
+    weight_kg: parseFloat(item.weight_kg),
+  })) || [];
 }

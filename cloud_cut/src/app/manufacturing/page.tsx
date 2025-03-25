@@ -2,7 +2,7 @@
 
 import Navbar from "@/components/Navbar";
 import { useState, useEffect } from "react";
-import { fetchOrders, fetchOrderDetails, OrdersResponse } from "@/utils/despatchCloud";
+import { fetchOrders, fetchOrderDetails } from "@/utils/despatchCloud"; // No need to import OrdersResponse separately
 import { DespatchCloudOrder, OrderDetails } from "@/types/despatchCloud";
 
 export default function Manufacturing() {
@@ -13,26 +13,26 @@ export default function Manufacturing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
+  const ordersPerPage = 10; // Consistent with fetchOrders default
 
   useEffect(() => {
     const loadOrders = async () => {
       try {
         setLoading(true);
-        const response: OrdersResponse = await fetchOrders(currentPage);
-        console.log('Orders Response:', JSON.stringify(response, null, 2));
-        
-        // The response already has the correct structure
+        const response = await fetchOrders(currentPage, ordersPerPage); // Pass ordersPerPage
+        console.log("Orders Response:", JSON.stringify(response, null, 2));
+
         setOrders(response.data);
         setTotalPages(response.last_page);
         setTotalOrders(response.total);
-        
-        console.log('Updated state:', {
+
+        console.log("Updated state:", {
           orders: response.data,
           totalPages: response.last_page,
-          totalOrders: response.total
+          totalOrders: response.total,
         });
       } catch (err) {
-        console.error('Error loading orders:', err);
+        console.error("Error loading orders:", err);
         setError(err instanceof Error ? err.message : "Failed to load orders");
         setOrders([]);
         setTotalPages(1);
@@ -44,10 +44,10 @@ export default function Manufacturing() {
     loadOrders();
   }, [currentPage]);
 
-  const handleOrderClick = async (orderId: string) => {
+  const handleOrderClick = async (orderId: string, internalId: number) => {
     try {
       setLoading(true);
-      const details = await fetchOrderDetails(orderId);
+      const details = await fetchOrderDetails(internalId.toString());
       setSelectedOrder(details);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load order details");
@@ -80,39 +80,42 @@ export default function Manufacturing() {
               <p className="text-center text-white py-4">No orders found</p>
             ) : (
               <>
-                <table className="w-full bg-white border border-gray-200">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="px-4 py-4 text-center text-black text-md">Order Id</th>
-                      <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Customer Name</th>
-                      <th className="px-4 py-2 text-center text-black text-md">Priority</th>
-                      <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Order Date</th>
-                      <th className="px-4 py-2 text-center text-black text-md">Progress</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map((order) => (
-                      <tr
-                        key={order.id}
-                        className="border-b hover:bg-gray-50 cursor-pointer text-center"
-                        onClick={() => handleOrderClick(order.channel_order_id)}
-                      >
-                        <td className="px-4 py-2 text-black">{order.channel_order_id}</td>
-                        <td className="px-4 py-2 text-black">{order.shipping_name}</td>
-                        <td className="px-4 py-2 text-black">0</td> {/* Placeholder */}
-                        <td className="px-4 py-2 text-black">
-                          {new Date(parseInt(order.data_received) * 1000).toLocaleDateString("en-GB")}
-                        </td>
-                        <td className="px-4 py-2 text-black">N/A</td> {/* Placeholder */}
+                <div className="max-h-[600px] overflow-y-auto">
+                  <table className="w-full bg-white border border-gray-200">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-4 text-center text-black text-md">Order Id</th>
+                        <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Customer Name</th>
+                        <th className="px-4 py-2 text-center text-black text-md">Priority</th>
+                        <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Order Date</th>
+                        <th className="px-4 py-2 text-center text-black text-md">Progress</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                
+                    </thead>
+                    <tbody>
+                      {orders.map((order) => (
+                        <tr
+                          key={order.id}
+                          className="border-b hover:bg-gray-50 cursor-pointer text-center"
+                          onClick={() => handleOrderClick(order.channel_order_id, order.id)}
+                        >
+                          <td className="px-4 py-2 text-black">{order.channel_order_id}</td>
+                          <td className="px-4 py-2 text-black">{order.shipping_name}</td>
+                          <td className="px-4 py-2 text-black">0</td>
+                          <td className="px-4 py-2 text-black">
+                            {new Date(order.date_received).toLocaleDateString("en-GB")}
+                          </td>
+                          <td className="px-4 py-2 text-black">N/A</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
                 {/* Pagination Controls */}
                 <div className="flex justify-between items-center bg-white p-4 border border-gray-200">
                   <div className="text-sm text-gray-600">
-                    Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, totalOrders)} of {totalOrders} orders
+                    Showing {(currentPage - 1) * ordersPerPage + 1} to{" "}
+                    {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders} orders
                   </div>
                   <div className="flex gap-2">
                     <button

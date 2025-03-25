@@ -1,15 +1,31 @@
-
 export interface DespatchCloudOrder {
     id: number;
     channel_order_id: string;
     print_process_ref: string;
     status: string;
-    data_received: string;
+    date_received: string;
     shipping_name: string;
     total_paid: string;
     shipping_method: string;
     sales_channel: string;
     shipping_address_country: string;
+    inventory: Array<{
+        id: number;
+        inventory_id: number;
+        order_summary_id: number;
+        sales_channel_item_id: string;
+        sku: string;
+        name: string;
+        quantity: number;
+        unit_price: string;
+        unit_tax: string;
+        line_total_discount: string;
+        price: string;
+        options: string;
+        notes: string;
+        created_at: string;
+        updated_at: string;
+    }>;
     items: Array<{
         sku: string;
         name: string;
@@ -44,3 +60,4 @@ export interface InventoryItem {
     stock_open: number;
     weight_kg: number;
 }
+
