@@ -39,10 +39,14 @@ export function getFoamSheetFromSKU(sku: string): string {
         const firstTwoCar = sku.slice(0,2);
         const depthPart = sku.slice(-3,-1);
         const color = colorCodes[lastChar] || 'N/A';
-        const depth = /^\d{2}$/.test(depthPart) ? `${depthPart}mm` : 'N/A';
+        let depth = /^\d{2}$/.test(depthPart) ? `${depthPart}mm` : 'N/A';
 
         if (firstTwoCar != 'SF' || `${color}`== 'N/A' ||`${depth}` == 'N/A' ){
             return 'N/A'
+        } else if (depth == '20mm'){
+            depth = '30mm';
+        } else if (depth == '40mm'){
+            depth ='50mm' 
         }
         return `${color} ${depth}`;
     }
