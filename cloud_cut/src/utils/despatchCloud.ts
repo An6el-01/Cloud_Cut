@@ -1,4 +1,5 @@
 import { DespatchCloudOrder, OrderDetails, InventoryItem } from '@/types/despatchCloud';
+import { getFoamSheetFromSKU } from './skuParser';
 
 // Use environment variable or default to localhost for development
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
@@ -82,9 +83,19 @@ export async function fetchOrders(page: number = 1, perPage: number = 10): Promi
 }
 
 export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> {
-  const url = `${BASE_URL}/api/despatchCloud/proxy?path=order/${orderId}`; // Absolute URL
+  const url = `${BASE_URL}/api/despatchCloud/proxy?path=order/${orderId}`;
   console.log('Fetching order details from:', url);
-  
+
+  // Fetch inventory data from the new API route
+  const inventoryResponse = await fetch(`${BASE_URL}/api/get-inventory`);
+  if (!inventoryResponse.ok) {
+    throw new Error('Failed to fetch inventory data');
+  }
+  const inventoryData: Record<string, string>[] = await inventoryResponse.json();
+  const inventoryMap = new Map<string, string>(
+    inventoryData.map(item => [item.sku, item.name])
+  );
+
   try {
     const order = await fetchWithAuth<DespatchCloudOrder>(url);
     console.log('Order details response:', order);
@@ -93,14 +104,18 @@ export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> 
       throw new Error('Invalid order details response');
     }
 
-    const items = (order.inventory || []).map((item, index) => ({
-      id: index + 1,
-      name: item.name.replace(/\s*\(Pack of \d+\)$/, ''),
-      foamSheet: 'N/A',
-      quantity: item.quantity,
-      status: "Pending",
-      options: item.options,
-    }));
+    const items = (order.inventory || []).map((item, index) => {
+      const inventoryName = inventoryMap.get(item.sku) || item.name.replace(/\s*\(Pack of \d+\)$/, '');
+      const foamSheet = getFoamSheetFromSKU(item.sku);
+      return {
+        id: index + 1,
+        name: inventoryName,
+        foamSheet,
+        quantity: item.quantity,
+        status: "Pending",
+        options: item.options,
+      };
+    });
 
     const orderDate = new Date(order.date_received);
 

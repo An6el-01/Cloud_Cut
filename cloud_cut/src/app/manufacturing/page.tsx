@@ -3,7 +3,7 @@
 import Navbar from "@/components/Navbar";
 import { useState, useEffect } from "react";
 import { fetchOrders, fetchOrderDetails } from "@/utils/despatchCloud";
-import { translateOrderDetails } from "@/utils/translate"; // Import the new utility
+//import { translateOrderDetails } from "@/utils/translate"; // Import the new utility
 import { DespatchCloudOrder, OrderDetails } from "@/types/despatchCloud";
 
 export default function Manufacturing() {
@@ -60,8 +60,8 @@ export default function Manufacturing() {
     try {
       setLoading(true);
       const details = await fetchOrderDetails(internalId.toString());
-      const translatedDetails = await translateOrderDetails(details); // Translate item names
-      setSelectedOrder(translatedDetails);
+      //const translatedDetails = await translateOrderDetails(details); // Translate item names
+      setSelectedOrder(details);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load order details");
     } finally {
@@ -203,7 +203,7 @@ export default function Manufacturing() {
                           <td className="px-4 py-2 text-center">{item.name}</td>
                           <td className="px-4 py-2 text-center">{item.foamSheet}</td>
                           <td className="px-4 py-2 text-center">{item.quantity}</td>
-                          <td className="px-4 py-2 text-center">{item.options}</td>
+                          <td className="px-4 py-2 text-center">{item.status}</td>
                         </tr>
                       ))}
                     </tbody>
