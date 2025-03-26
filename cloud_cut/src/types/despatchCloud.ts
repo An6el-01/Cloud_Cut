@@ -49,15 +49,22 @@ export interface OrderDetails {
         quantity: number;
         foamSheet: string;
         status: string;
+        options: string;
     }>;
 }
 
 export interface InventoryItem {
-    sku: string;
-    type: string;
-    name: string;
-    stock_available: number;
-    stock_open: number;
-    weight_kg: number;
+    sku: string,
+    type: string,
+    name: string,
+    stock_available: number,
+    stock_open: number,
+    weight_kg: number,
+    stock_level_available?: number,
+    stock_level_open?: number,
+    stockwarn?: number,
+    syncstock?: string, //'Y' OR 'N'
+    productweight?: number,
+    updated_at?: number,
 }
 

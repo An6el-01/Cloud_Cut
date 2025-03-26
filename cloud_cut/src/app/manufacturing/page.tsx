@@ -20,6 +20,8 @@ export default function Manufacturing() {
     const loadOrders = async () => {
       try {
         setLoading(true);
+
+
         const response = await fetchOrders(currentPage, ordersPerPage);
         console.log("Orders Response:", JSON.stringify(response, null, 2));
 
@@ -32,9 +34,18 @@ export default function Manufacturing() {
           totalPages: response.last_page,
           totalOrders: response.total,
         });
+
+        // //Load and store inventory 
+        // if (currentPage === 1) {
+        //   const inventoryResponse = await fetch('/api/fetch-inventory');
+        //   if(!inventoryResponse.ok) {
+        //     throw new Error('Failed to fetch inventory');
+        //   }
+        //   console.log('Inventory fetched and stored: ', await inventoryResponse.json());
+        // }
       } catch (err) {
-        console.error("Error loading orders:", err);
-        setError(err instanceof Error ? err.message : "Failed to load orders");
+        console.error("Error loading data:", err);
+        setError(err instanceof Error ? err.message : "Failed to load data");
         setOrders([]);
         setTotalPages(1);
         setTotalOrders(0);
@@ -192,7 +203,7 @@ export default function Manufacturing() {
                           <td className="px-4 py-2 text-center">{item.name}</td>
                           <td className="px-4 py-2 text-center">{item.foamSheet}</td>
                           <td className="px-4 py-2 text-center">{item.quantity}</td>
-                          <td className="px-4 py-2 text-center">{item.status}</td>
+                          <td className="px-4 py-2 text-center">{item.options}</td>
                         </tr>
                       ))}
                     </tbody>
