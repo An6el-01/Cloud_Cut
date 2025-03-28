@@ -6,6 +6,15 @@ import { fetchOrders, fetchOrderDetails } from "@/utils/despatchCloud";
 //import { translateOrderDetails } from "@/utils/translate"; // Import the new utility
 import { DespatchCloudOrder, OrderDetails } from "@/types/despatchCloud";
 
+// Add priority level color mapping
+const getPriorityColor = (priority: number) => {
+  if (priority >= 9) return 'bg-red-100 text-red-800';
+  if (priority >= 7) return 'bg-orange-100 text-orange-800';
+  if (priority >= 5) return 'bg-yellow-100 text-yellow-800';
+  if (priority >= 3) return 'bg-blue-100 text-blue-800';
+  return 'bg-gray-100 text-gray-800';
+};
+
 export default function Manufacturing() {
   const [selectedOrder, setSelectedOrder] = useState<OrderDetails | null>(null);
   const [orders, setOrders] = useState<DespatchCloudOrder[]>([]);
@@ -115,7 +124,11 @@ export default function Manufacturing() {
                         >
                           <td className="px-4 py-2 text-black">{order.channel_order_id}</td>
                           <td className="px-4 py-2 text-black">{order.shipping_name}</td>
-                          <td className="px-4 py-2 text-black">0</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded-full text-sm font-medium ${getPriorityColor(order.priorityLevel)}`}>
+                              {order.priorityLevel}
+                            </span>
+                          </td>
                           <td className="px-4 py-2 text-black">
                             {new Date(order.date_received).toLocaleDateString("en-GB")}
                           </td>
