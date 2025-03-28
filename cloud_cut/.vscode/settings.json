@@ -1,11 +1,14 @@
 {
     "cSpell.words": [
+        "COLOURS",
         "DEEPL",
+        "foamsheet",
         "nosniff",
         "productweight",
         "shadowfoam",
         "stockwarn",
         "supabase",
-        "syncstock"
+        "syncstock",
+        "upserting"
     ]
 }

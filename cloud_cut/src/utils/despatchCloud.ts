@@ -1,5 +1,6 @@
 import { DespatchCloudOrder, OrderDetails, InventoryItem } from '@/types/despatchCloud';
 import { getFoamSheetFromSKU } from './skuParser';
+import { getPriorityLevel, isAmazonOrder, calculateDayNumber } from './priority';
 
 // Use environment variable or default to localhost for development
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
@@ -73,8 +74,49 @@ export async function fetchOrders(page: number = 1, perPage: number = 10): Promi
   console.log("Fetching orders from:", url);
   const response = await fetchWithAuth<OrdersResponse>(url);
 
+  // Process each order to calculate its highest priority
+  const processedOrders = response.data.map(order => {
+    // Calculate day number and check if it's an Amazon order
+    const dayNumber = calculateDayNumber(order.date_received);
+    const isAmazon = isAmazonOrder(order);
+    const isOnHold = order.status.toLowerCase().includes('hold');
+
+    console.log(`\nProcessing order ${order.channel_order_id}:`);
+    console.log(`Day number: ${dayNumber}`);
+    console.log(`Is Amazon: ${isAmazon}`);
+    console.log(`Is on hold: ${isOnHold}`);
+    console.log(`Number of items: ${order.inventory.length}`);
+
+    // Calculate priorities for all items in the order
+    const itemPriorities = order.inventory.map(item => {
+      const foamSheet = getFoamSheetFromSKU(item.sku);
+      const priority = getPriorityLevel(
+        item.name.toLowerCase(),
+        foamSheet,
+        dayNumber,
+        isAmazon,
+        isOnHold
+      );
+
+      console.log(`Item: ${item.name}`);
+      console.log(`Foam Sheet: ${foamSheet}`);
+      console.log(`Priority: ${priority}`);
+
+      return priority;
+    });
+
+    // Get the highest priority (default to 0 if no items)
+    const highestPriority = itemPriorities.length > 0 ? Math.max(...itemPriorities) : 0;
+    console.log(`Highest priority for order: ${highestPriority}`);
+
+    return {
+      ...order,
+      highestPriority
+    };
+  });
+
   return {
-    data: response.data || [],
+    data: processedOrders,
     current_page: response.current_page || page,
     last_page: response.last_page || 1,
     total: response.total || 0,
@@ -104,9 +146,23 @@ export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> 
       throw new Error('Invalid order details response');
     }
 
+    // Calculate day number and check if it's an Amazon order
+    const dayNumber = calculateDayNumber(order.date_received);
+    const isAmazon = isAmazonOrder(order);
+
     const items = (order.inventory || []).map((item, index) => {
       const inventoryName = inventoryMap.get(item.sku) || item.name.replace(/\s*\(Pack of \d+\)$/, '');
       const foamSheet = getFoamSheetFromSKU(item.sku);
+      
+      // Calculate priority level for this item
+      const priority = getPriorityLevel(
+        inventoryName,
+        foamSheet,
+        dayNumber,
+        isAmazon,
+        order.status.toLowerCase().includes('hold')
+      );
+
       return {
         id: index + 1,
         name: inventoryName,
@@ -114,8 +170,12 @@ export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> 
         quantity: item.quantity,
         status: "Pending",
         options: item.options,
+        priority,
       };
     });
+
+    // Calculate overall order priority (highest priority among items)
+    const orderPriority = Math.max(...items.map(item => item.priority || 0));
 
     const orderDate = new Date(order.date_received);
 
@@ -123,7 +183,7 @@ export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> 
       orderId: order.channel_order_id,
       orderDate: orderDate.toLocaleDateString("en-GB"),
       status: order.status || "Unknown",
-      priorityLevel: 0,
+      priorityLevel: orderPriority,
       customerName: order.shipping_name,
       items,
     };

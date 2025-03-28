@@ -9,6 +9,9 @@ export interface DespatchCloudOrder {
     shipping_method: string;
     sales_channel: string;
     shipping_address_country: string;
+    access_url?: string;
+    email?: string;
+    highestPriority: number;
     inventory: Array<{
         id: number;
         inventory_id: number;
@@ -50,6 +53,7 @@ export interface OrderDetails {
         foamSheet: string;
         status: string;
         options: string;
+        priority?: number;
     }>;
 }
 
@@ -63,7 +67,7 @@ export interface InventoryItem {
     stock_level_available?: number,
     stock_level_open?: number,
     stockwarn?: number,
-    syncstock?: string, //'Y' OR 'N'
+    syncstock?: string; //'Y' OR 'N'
     productweight?: number,
     updated_at?: number,
 }

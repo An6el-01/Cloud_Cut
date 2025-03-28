@@ -15,16 +15,18 @@ const Navbar = () => {
 
   return (
     <nav className="shadow-md fixed w-full top-10 z-50">
-      <div className="max-w-78l mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+      <div className="max-w-78l mx-auto px-4 sm:px-6 lg:px-8 ">
+        <div className="flex justify-between h-16 mb-20">
           {/* Logo and Brand */}
           <div className="flex items-center">
             <Link href="/manufacturing" className="flex items-center">
               <Image
                 src="/sfLogo.png"
-                alt="Shadow Foam Shield"
-                width={200}
-                height={60}
+                alt="Shadow Foam Logo"
+                width={800}
+                height={20}
+                className="h-10 w-auto"
+                priority
               />
               <span className="ml-5 text-xxl font-semibold text-white">
                 {getPageTitle()}
