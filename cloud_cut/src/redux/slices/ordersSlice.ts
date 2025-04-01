@@ -358,6 +358,6 @@ export const selectOrderItemsById = (orderId: string) =>
 
 export const selectOrderProgress = (orderId: string) =>
   createSelector([selectOrdersState], orders => {
-    const order = orders.allOrders.find(o => o.order_id === orderId);
+    const order = orders.allOrders.find((o) => o.order_id === orderId);
     return order ? `${order.items_completed}/${order.total_items}` : 'N/A';
   });
