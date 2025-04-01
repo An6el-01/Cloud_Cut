@@ -18,7 +18,8 @@ import { OrderItem } from "@/types/redux";
 
 export default function Manufacturing() {
   const dispatch = useDispatch<AppDispatch>();
-  const orders = useSelector(selectPaginatedOrders);
+  const orders = useSelector(selectPaginatedOrders); // These are already "Completed" orders
+  const totalOrders = useSelector((state: RootState) => state.orders.totalOrders); // Total "Completed" orders
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ""));
   const { currentPage, loading, error, syncStatus } = useSelector(
@@ -33,17 +34,15 @@ export default function Manufacturing() {
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
 
-  // Filter orders to only include those with status "Pending"
-  const pendingOrders = orders.filter((order) => order.status === "Pending");
-  const totalPendingOrders = pendingOrders.length;
-  const totalPages = Math.ceil(totalPendingOrders / ordersPerPage);
+  // No need to filter orders since fetchOrdersFromSupabase already filters by "Completed"
+  const totalPages = Math.ceil(totalOrders / ordersPerPage);
 
-  const selectedOrder = pendingOrders.find((o) => o.order_id === selectedOrderId);
+  const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Use useSelector to get order items for each order in the table
   const orderItemsById = useSelector((state: RootState) =>
-    pendingOrders.reduce((acc, order) => {
+    orders.reduce((acc, order) => {
       acc[order.order_id] = selectOrderItemsById(order.order_id)(state);
       return acc;
     }, {} as Record<string, OrderItem[]>)
@@ -53,10 +52,14 @@ export default function Manufacturing() {
     dispatch(fetchOrdersFromSupabase({ page: currentPage, perPage: ordersPerPage }));
 
     const ordersSubscription = subscribeToOrders((payload) => {
-      if (payload.eventType === "INSERT") {
+      if (payload.eventType === "INSERT" && payload.new.status === "Completed") {
         dispatch({ type: "orders/addOrder", payload: payload.new });
       } else if (payload.eventType === "UPDATE") {
-        dispatch({ type: "orders/updateOrder", payload: payload.new });
+        if (payload.new.status === "Completed") {
+          dispatch({ type: "orders/updateOrder", payload: payload.new });
+        } else {
+          dispatch({ type: "orders/removeOrder", payload: payload.new });
+        }
       } else if (payload.eventType === "DELETE") {
         dispatch({ type: "orders/removeOrder", payload: payload.old });
       }
@@ -109,6 +112,8 @@ export default function Manufacturing() {
     dispatch(syncOrders())
       .then(() => {
         console.log('syncOrders thunk completed successfully');
+        // Fetch the first page of "Completed" orders after syncing
+        dispatch(fetchOrdersFromSupabase({ page: 1, perPage: ordersPerPage }));
       })
       .catch((error) => {
         console.error('Error in syncOrders:', error);
@@ -163,9 +168,9 @@ export default function Manufacturing() {
                   Retry
                 </button>
               </div>
-            ) : pendingOrders.length === 0 ? (
+            ) : orders.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-black">No pending orders found</p>
+                <p className="text-black">No completed orders found</p>
                 <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
               </div>
             ) : (
@@ -186,7 +191,7 @@ export default function Manufacturing() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {pendingOrders.map((order) => {
+                      {orders.map((order) => {
                         // Get the items for this specific order
                         const orderItems = orderItemsById[order.order_id] || [];
                         // Calculate the highest priority for this order's items
@@ -219,8 +224,8 @@ export default function Manufacturing() {
                 <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
                   <div className="text-sm text-gray-600">
                     Showing {(currentPage - 1) * ordersPerPage + 1} to{" "}
-                    {Math.min(currentPage * ordersPerPage, totalPendingOrders)} of {totalPendingOrders}{" "}
-                    orders
+                    {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders}{" "}
+                    completed orders
                   </div>
                   <div className="flex gap-2">
                     <button

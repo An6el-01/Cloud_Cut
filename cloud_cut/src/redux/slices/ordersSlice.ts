@@ -169,18 +169,21 @@ export const syncOrders = createAsyncThunk(
   }
 );
 
+// redux/slices/ordersSlice.ts
 export const fetchOrdersFromSupabase = createAsyncThunk(
   'orders/fetchOrdersFromSupabase',
   async ({ page, perPage }: { page: number; perPage: number }) => {
     console.log(`Fetching orders from Supabase, page: ${page}, perPage: ${perPage}`);
+    // Fetch only orders with status = 'Completed'
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select('*')
+      .eq('status', 'Pending') // Filter by status
       .range((page - 1) * perPage, page * perPage - 1)
       .order('order_date', { ascending: false });
 
     if (ordersError) throw new Error(`Fetch orders failed: ${ordersError.message}`);
-    console.log(`Fetched ${orders.length} orders from Supabase`);
+    console.log(`Fetched ${orders.length} completed orders from Supabase`);
 
     const orderIds = orders.map(o => o.order_id);
     const { data: orderItems, error: itemsError } = await supabase
@@ -197,8 +200,12 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       return acc;
     }, {} as Record<string, OrderItem[]>);
 
-    const { count } = await supabase.from('orders').select('*', { count: 'exact', head: true });
-    console.log(`Total orders in Supabase: ${count}`);
+    // Fetch the total count of "Completed" orders
+    const { count } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'Pending'); // Filter by status
+    console.log(`Total pending orders in Supabase: ${count}`);
 
     return { orders, orderItems: orderItemsMap, total: count || 0, page };
   }
