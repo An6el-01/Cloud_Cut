@@ -1,4 +1,3 @@
-// app/manufacturing/page.tsx
 "use client";
 
 import Navbar from "@/components/Navbar";
