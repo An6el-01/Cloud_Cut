@@ -9,6 +9,7 @@ export interface DespatchCloudOrder {
     shipping_method: string;
     sales_channel: string;
     shipping_address_country: string;
+    status_description?: string; 
     access_url?: string;
     email?: string;
     highestPriority: number;
@@ -28,15 +29,6 @@ export interface DespatchCloudOrder {
         notes: string;
         created_at: string;
         updated_at: string;
-    }>;
-    items: Array<{
-        sku: string;
-        name: string;
-        quantity: number,
-        unit_price: string;
-        total_discount: string;
-        subtotal: string;
-        options?: string;
     }>;
 }
 

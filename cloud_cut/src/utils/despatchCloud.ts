@@ -1,3 +1,4 @@
+// utils/despatchCloud.ts
 import { DespatchCloudOrder, OrderDetails, InventoryItem } from '@/types/despatchCloud';
 import { getFoamSheetFromSKU } from './skuParser';
 import { getPriorityLevel, isAmazonOrder, calculateDayNumber } from './priority';
@@ -38,7 +39,7 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
 }
 
 export async function getAuthToken(): Promise<string> {
-  const url = `${BASE_URL}/api/despatchCloud/proxy?path=auth/login`; // Absolute URL
+  const url = `${BASE_URL}/api/despatchCloud/proxy?path=auth/login`;
   console.log('Attempting to authenticate with:', url);
   const response = await fetch(url, {
     method: 'POST',
@@ -63,32 +64,32 @@ export async function getAuthToken(): Promise<string> {
   return data.token;
 }
 
-export async function fetchOrders(page: number = 1, perPage: number = 10): Promise<OrdersResponse> {
+export async function fetchOrders(page: number = 1, perPage: number = 15): Promise<OrdersResponse> {
   const fiveDaysAgo = new Date();
   fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
   const now = new Date();
   const dateRange = `${Math.floor(fiveDaysAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
 
   const normalizedPerPage = Math.min(Math.max(perPage, 5), 20);
-  const url = `${BASE_URL}/api/despatchCloud/proxy?path=orders&page=${page}&per_page=${normalizedPerPage}&filters[date_range]=${dateRange}`; // Absolute URL
+  const url = `${BASE_URL}/api/despatchCloud/proxy?path=orders&page=${page}&per_page=${normalizedPerPage}&filters[date_range]=${dateRange}`;
   console.log("Fetching orders from:", url);
   const response = await fetchWithAuth<OrdersResponse>(url);
 
-  // Process each order to calculate its highest priority
   const processedOrders = response.data.map(order => {
-    // Calculate day number and check if it's an Amazon order
     const dayNumber = calculateDayNumber(order.date_received);
     const isAmazon = isAmazonOrder(order);
     const isOnHold = order.status.toLowerCase().includes('hold');
 
+    const inventory = order.inventory || [];
+
     console.log(`\nProcessing order ${order.channel_order_id}:`);
+    console.log(`Order ${order.channel_order_id} - Inventory: ${inventory.length}`);
     console.log(`Day number: ${dayNumber}`);
     console.log(`Is Amazon: ${isAmazon}`);
     console.log(`Is on hold: ${isOnHold}`);
-    console.log(`Number of items: ${order.inventory.length}`);
+    console.log(`Number of items (inventory array): ${inventory.length}`);
 
-    // Calculate priorities for all items in the order
-    const itemPriorities = order.inventory.map(item => {
+    const itemPriorities = inventory.map(item => {
       const foamSheet = getFoamSheetFromSKU(item.sku);
       const priority = getPriorityLevel(
         item.name.toLowerCase(),
@@ -105,7 +106,6 @@ export async function fetchOrders(page: number = 1, perPage: number = 10): Promi
       return priority;
     });
 
-    // Get the highest priority (default to 0 if no items)
     const highestPriority = itemPriorities.length > 0 ? Math.max(...itemPriorities) : 0;
     console.log(`Highest priority for order: ${highestPriority}`);
 
@@ -205,7 +205,7 @@ export async function fetchInventory(
     locations?: number[];
   } = {},
   sort: string = 'name_az',
-  fetchAll: boolean = false // New parameter to fetch all pages
+  fetchAll: boolean = false
 ): Promise<InventoryResponse> {
   const queryParams = new URLSearchParams({
     page: page.toString(),
@@ -253,7 +253,7 @@ export async function fetchInventory(
 
       return {
         data: allItems,
-        current_page: 1, // For consistency, since we fetched all
+        current_page: 1,
         last_page: lastPage,
         total: allItems.length,
         per_page: perPage,

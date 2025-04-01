@@ -70,34 +70,45 @@ export function getPriorityLevel(
     const isMediumSheet = itemName.includes('medium sheet');
     const isRetailOrValuePack = itemName.includes('retail pack') || itemName.includes('value pack');
 
+    // Handle primary color items
     if (isPrimary) {
-        if (isPrimary) {
-            if (dayNumber >= 2) return 9;
-            if (dayNumber === 1) return 8;
-        }
-        if (isSecondary) {
-            if (dayNumber >= 3) return 9;
-            if (dayNumber === 2) return 7;
-            if (dayNumber === 1) return 4;
-        }
-        if (isTertiary) {
-            if (dayNumber >= 5) return 9;
-            if (dayNumber === 4) return 7;
-            if (dayNumber === 3) return 5;
-            if (dayNumber === 2) return 3;
-            if (dayNumber === 1) return 1;
-        }
+        if (dayNumber >= 2) return 9;
+        if (dayNumber === 1) return 8;
     }
 
+    // Handle secondary color items
+    if (isSecondary) {
+        if (dayNumber >= 3) return 9;
+        if (dayNumber === 2) return 7;
+        if (dayNumber === 1) return 4;
+    }
+
+    // Handle tertiary color items
+    if (isTertiary) {
+        if (dayNumber >= 5) return 9;
+        if (dayNumber === 4) return 7;
+        if (dayNumber === 3) return 5;
+        if (dayNumber === 2) return 3;
+        if (dayNumber === 1) return 1;
+    }
+
+    // Handle medium sheets
     if (isMediumSheet) {
         if (dayNumber >= 2) return 9;
         if (dayNumber === 1) return isAmazon ? 8 : 7;
     }
 
+    // Handle retail or value packs
     if (isRetailOrValuePack) {
         if (dayNumber >= 2) return 9;
         if (dayNumber === 1) return isAmazon ? 8 : 7;
     }
 
+    // Default priority for items that don't match any specific criteria
+    if (dayNumber >= 5) return 9;
+    if (dayNumber === 4) return 7;
+    if (dayNumber === 3) return 5;
+    if (dayNumber === 2) return 3;
+    if (dayNumber === 1) return 1;
     return 0;
 }

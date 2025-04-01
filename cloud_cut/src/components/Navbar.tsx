@@ -16,7 +16,7 @@ const Navbar = () => {
   return (
     <nav className="shadow-md fixed w-full top-10 z-50">
       <div className="max-w-78l mx-auto px-4 sm:px-6 lg:px-8 ">
-        <div className="flex justify-between h-16 mb-20">
+        <div className="flex justify-between h-16 ">
           {/* Logo and Brand */}
           <div className="flex items-center">
             <Link href="/manufacturing" className="flex items-center">

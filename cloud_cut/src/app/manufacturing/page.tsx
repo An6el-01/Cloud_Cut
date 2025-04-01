@@ -1,90 +1,123 @@
+// app/manufacturing/page.tsx
 "use client";
 
 import Navbar from "@/components/Navbar";
-import { useState, useEffect, useRef } from "react";
-import { fetchOrders, fetchOrderDetails } from "@/utils/despatchCloud";
-//import { translateOrderDetails } from "@/utils/translate"; // Import the new utility
-import { DespatchCloudOrder, OrderDetails } from "@/types/despatchCloud";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/redux/store";
+import {
+  fetchOrdersFromSupabase,
+  syncOrders,
+  setSelectedOrderId,
+  updateItemCompleted,
+  selectPaginatedOrders,
+  selectOrderItemsById,
+  selectOrderProgress,
+} from "@/redux/slices/ordersSlice";
+import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
+import { OrderItem } from "@/types/redux";
 
 export default function Manufacturing() {
-  const [selectedOrder, setSelectedOrder] = useState<OrderDetails | null>(null);
-  const [orders, setOrders] = useState<DespatchCloudOrder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalOrders, setTotalOrders] = useState(0);
+  const dispatch = useDispatch<AppDispatch>();
+  const orders = useSelector(selectPaginatedOrders);
+  const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
+  const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ""));
+  const { currentPage, loading, error, syncStatus } = useSelector(
+    (state: RootState) => state.orders
+  );
+  const orderProgress = useSelector((state: RootState) =>
+    orders.reduce((acc, order) => {
+      acc[order.order_id] = selectOrderProgress(order.order_id)(state);
+      return acc;
+    }, {} as Record<string, string>)
+  );
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
-  const ordersPerPage = 10;
+  const ordersPerPage = 15;
+
+  // Filter orders to only include those with status "Pending"
+  const pendingOrders = orders.filter((order) => order.status === "Pending");
+  const totalPendingOrders = pendingOrders.length;
+  const totalPages = Math.ceil(totalPendingOrders / ordersPerPage);
+
+  const selectedOrder = pendingOrders.find((o) => o.order_id === selectedOrderId);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Use useSelector to get order items for each order in the table
+  const orderItemsById = useSelector((state: RootState) =>
+    pendingOrders.reduce((acc, order) => {
+      acc[order.order_id] = selectOrderItemsById(order.order_id)(state);
+      return acc;
+    }, {} as Record<string, OrderItem[]>)
+  );
 
   useEffect(() => {
-    const loadOrders = async () => {
-      try {
-        setLoading(true);
-        setError(null); // Clear any previous errors
+    dispatch(fetchOrdersFromSupabase({ page: currentPage, perPage: ordersPerPage }));
 
-        const response = await fetchOrders(currentPage, ordersPerPage);
-        console.log("Orders Response:", JSON.stringify(response, null, 2));
-
-        if (!response.data || response.data.length === 0) {
-          setError("No orders found for the current page");
-          setOrders([]);
-        } else {
-          setOrders(response.data);
-          setError(null);
-        }
-        
-        setTotalPages(response.last_page);
-        setTotalOrders(response.total);
-
-        console.log("Updated state:", {
-          orders: response.data,
-          totalPages: response.last_page,
-          totalOrders: response.total,
-        });
-
-        // //Load and store inventory 
-        // if (currentPage === 1) {
-        //   const inventoryResponse = await fetch('/api/fetch-inventory');
-        //   if(!inventoryResponse.ok) {
-        //     throw new Error('Failed to fetch inventory');
-        //   }
-        //   console.log('Inventory fetched and stored: ', await inventoryResponse.json());
-        // }
-      } catch (err) {
-        console.error("Error loading data:", err);
-        setError(err instanceof Error ? err.message : "Failed to load data");
-        setOrders([]);
-        setTotalPages(1);
-        setTotalOrders(0);
-      } finally {
-        setLoading(false);
+    const ordersSubscription = subscribeToOrders((payload) => {
+      if (payload.eventType === "INSERT") {
+        dispatch({ type: "orders/addOrder", payload: payload.new });
+      } else if (payload.eventType === "UPDATE") {
+        dispatch({ type: "orders/updateOrder", payload: payload.new });
+      } else if (payload.eventType === "DELETE") {
+        dispatch({ type: "orders/removeOrder", payload: payload.old });
       }
-    };
-    loadOrders();
-  }, [currentPage]);
+    });
 
-  const handleOrderClick = async (orderId: string, internalId: number) => {
-    try {
-      setLoading(true);
-      const details = await fetchOrderDetails(internalId.toString());
-      //const translatedDetails = await translateOrderDetails(details); // Translate item names
-      setSelectedOrder(details);
-      // Scroll to the selected row after a short delay to ensure the DOM has updated
-      setTimeout(() => {
-        selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load order details");
-    } finally {
-      setLoading(false);
-    }
+    const itemsSubscription = subscribeToOrderItems((payload) => {
+      if (payload.eventType === "INSERT") {
+        dispatch({ type: "orders/addOrderItem", payload: payload.new });
+      } else if (payload.eventType === "UPDATE") {
+        dispatch(
+          updateItemCompleted({
+            orderId: payload.new.order_id,
+            itemId: payload.new.id,
+            completed: payload.new.completed,
+          })
+        );
+      } else if (payload.eventType === "DELETE") {
+        dispatch({ type: "orders/removeOrderItem", payload: payload.old });
+      }
+    });
+
+    return () => {
+      ordersSubscription.unsubscribe();
+      itemsSubscription.unsubscribe();
+    };
+  }, [dispatch, currentPage]);
+
+  const handleOrderClick = (orderId: string) => {
+    dispatch(setSelectedOrderId(orderId));
+    setTimeout(() => {
+      selectedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
   };
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
+      dispatch(fetchOrdersFromSupabase({ page: newPage, perPage: ordersPerPage }));
     }
+  };
+
+  const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
+    dispatch(updateItemCompleted({ orderId, itemId, completed }));
+  };
+
+  const handleRefresh = () => {
+    console.log('Refresh button clicked');
+    console.log('Current syncStatus:', syncStatus);
+    setIsRefreshing(true);
+    console.log('Dispatching syncOrders thunk...');
+    dispatch(syncOrders())
+      .then(() => {
+        console.log('syncOrders thunk completed successfully');
+      })
+      .catch((error) => {
+        console.error('Error in syncOrders:', error);
+      })
+      .finally(() => {
+        setIsRefreshing(false);
+        console.log('Refresh action completed');
+      });
   };
 
   return (
@@ -93,10 +126,29 @@ export default function Manufacturing() {
       <div className="container mx-auto pt-32 mb-8 p-6 flex justify-center gap-8">
         {/* Orders Queue Section */}
         <div className="flex-1 max-w-3xl">
-          <div className="bg-[#1d1d1d] rounded-t-lg">
-            <h1 className="text-2xl font-bold text-white p-4">Orders Queue</h1>
+          <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
+            <h1 className="text-2xl font-bold text-white">Orders Queue</h1>
+            <button
+              onClick={handleRefresh}
+              className={`px-4 py-2 text-white font-semibold rounded-lg transition-all duration-300 z-10 border-2 border-red-500 ${
+                isRefreshing
+                  ? "bg-blue-600 animate-pulse flex items-center gap-2 cursor-not-allowed"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+              disabled={isRefreshing}
+              style={{ position: 'relative' }}
+            >
+              {isRefreshing ? (
+                <>
+                  <span className="animate-spin">↻</span>
+                  <span>Syncing...</span>
+                </>
+              ) : (
+                "Refresh Orders"
+              )}
+            </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
             {loading ? (
               <div className="text-center text-white py-4">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
@@ -105,59 +157,71 @@ export default function Manufacturing() {
             ) : error ? (
               <div className="text-center py-4">
                 <p className="text-red-500">{error}</p>
-                <button 
-                  onClick={() => setCurrentPage(1)} 
+                <button
+                  onClick={handleRefresh}
                   className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                 >
                   Retry
                 </button>
               </div>
-            ) : orders.length === 0 ? (
+            ) : pendingOrders.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-white">No orders found</p>
-                <p className="text-sm text-gray-400 mt-1">Try adjusting your filters or refreshing the page</p>
+                <p className="text-black">No pending orders found</p>
+                <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
               </div>
             ) : (
               <>
-                <div className="h-[calc(100vh-300px)] overflow-y-auto">
-                  <table className="w-full bg-white border border-gray-200">
-                    <thead className="bg-gray-100 sticky top-0">
+                <div className="flex-1 overflow-y-auto">
+                  <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
+                    <thead className="bg-gray-100/90 sticky top-0">
                       <tr>
-                        <th className="px-4 py-4 text-center text-black text-md">Order Id</th>
-                        <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Customer Name</th>
+                        <th className="px-4 py-4 text-center text-black text-md">Order ID</th>
+                        <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">
+                          Customer Name
+                        </th>
                         <th className="px-4 py-2 text-center text-black text-md">Priority</th>
-                        <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Order Date</th>
+                        <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">
+                          Order Date
+                        </th>
                         <th className="px-4 py-2 text-center text-black text-md">Progress</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {orders.map((order) => (
-                        <tr
-                          key={order.id}
-                          ref={selectedOrder?.orderId === order.channel_order_id ? selectedRowRef : null}
-                          className={`border-b hover:bg-gray-50 cursor-pointer text-center ${
-                            selectedOrder?.orderId === order.channel_order_id ? "bg-blue-100" : ""
-                          }`}
-                          onClick={() => handleOrderClick(order.channel_order_id, order.id)}
-                        >
-                          <td className="px-4 py-2 text-black">{order.channel_order_id}</td>
-                          <td className="px-4 py-2 text-black">{order.shipping_name}</td>
-                          <td className="px-4 py-2 text-black">{order.highestPriority}</td>
-                          <td className="px-4 py-2 text-black">
-                            {new Date(order.date_received).toLocaleDateString("en-GB")}
-                          </td>
-                          <td className="px-4 py-2 text-black">N/A</td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-gray-200">
+                      {pendingOrders.map((order) => {
+                        // Get the items for this specific order
+                        const orderItems = orderItemsById[order.order_id] || [];
+                        // Calculate the highest priority for this order's items
+                        const orderPriority = orderItems.length > 0
+                          ? Math.max(...orderItems.map((item) => item.priority || 0))
+                          : 0;
+
+                        return (
+                          <tr
+                            key={order.order_id}
+                            ref={order.order_id === selectedOrderId ? selectedRowRef : null}
+                            className={`hover:bg-gray-50/90 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${
+                              order.order_id === selectedOrderId ? "bg-blue-100/90" : ""
+                            }`}
+                            onClick={() => handleOrderClick(order.order_id)}
+                          >
+                            <td className="px-4 py-2 text-black">{order.order_id}</td>
+                            <td className="px-4 py-2 text-black">{order.customer_name}</td>
+                            <td className="px-4 py-2 text-black">{orderPriority}</td>
+                            <td className="px-4 py-2 text-black">
+                              {new Date(order.order_date).toLocaleDateString("en-GB")}
+                            </td>
+                            <td className="px-4 py-2 text-black">{orderProgress[order.order_id]}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
-
-                {/* Pagination Controls */}
-                <div className="flex justify-between items-center bg-white p-4 border border-gray-200">
+                <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
                   <div className="text-sm text-gray-600">
                     Showing {(currentPage - 1) * ordersPerPage + 1} to{" "}
-                    {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders} orders
+                    {Math.min(currentPage * ordersPerPage, totalPendingOrders)} of {totalPendingOrders}{" "}
+                    orders
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -183,19 +247,22 @@ export default function Manufacturing() {
             )}
           </div>
         </div>
-
         {/* Order Details Section */}
         <div className="flex-1 max-w-2xl">
           <div className="bg-black/70 rounded-t-lg">
-            <h1 className="text-2xl font-bold text-white p-4 flex justify-center">Order Details</h1>
+            <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
+              Order Details
+            </h1>
           </div>
           <div className="bg-black/70 border border-gray-200 p-6 h-[calc(100vh-300px)] overflow-y-auto">
             {selectedOrder ? (
-              <div className="space-y-6">
+              <div className="space-y-6 text-white">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-400 underline">Order Date:</p>
-                    <p className="font-medium">{selectedOrder.orderDate}</p>
+                    <p className="font-medium">
+                      {new Date(selectedOrder.order_date).toLocaleDateString("en-GB")}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-400 underline">Status:</p>
@@ -203,35 +270,50 @@ export default function Manufacturing() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-400 underline">Priority Level:</p>
-                    <p className="font-medium">{selectedOrder.priorityLevel}</p>
+                    <p className="font-medium">
+                      {Math.max(...selectedOrderItems.map((item) => item.priority || 0))}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-400 underline">Customer Name:</p>
-                    <p className="font-medium">{selectedOrder.customerName}</p>
+                    <p className="font-medium">{selectedOrder.customer_name}</p>
                   </div>
                 </div>
-
                 <div>
                   <h2 className="font-semibold mb-2">Items:</h2>
                   <div className="overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full text-white">
                       <thead>
                         <tr>
                           <th className="px-4 py-2 text-center text-sm underline">Name</th>
-                          <th className="px-6 py-2 text-center text-sm underline whitespace-nowrap">Foam Sheet</th>
+                          <th className="px-6 py-2 text-center text-sm underline whitespace-nowrap">
+                            Foam Sheet
+                          </th>
                           <th className="px-4 py-2 text-center text-sm underline">Quantity</th>
                           <th className="px-4 py-2 text-center text-sm underline">Priority</th>
-                          <th className="px-4 py-2 text-center text-sm underline">Status</th>
+                          <th className="px-4 py-2 text-center text-sm underline">Completed</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedOrder.items.map((item) => (
+                        {selectedOrderItems.map((item) => (
                           <tr key={item.id} className="border-b">
-                            <td className="px-4 py-2 text-center">{item.name}</td>
-                            <td className="px-4 py-2 text-center">{item.foamSheet}</td>
+                            <td className="px-4 py-2 text-center">{item.item_name}</td>
+                            <td className="px-4 py-2 text-center">{item.foamsheet}</td>
                             <td className="px-4 py-2 text-center">{item.quantity}</td>
                             <td className="px-4 py-2 text-center">{item.priority}</td>
-                            <td className="px-4 py-2 text-center">{item.status}</td>
+                            <td className="px-4 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={item.completed}
+                                onChange={(e) =>
+                                  handleToggleCompleted(
+                                    selectedOrder.order_id,
+                                    item.id,
+                                    e.target.checked
+                                  )
+                                }
+                              />
+                            </td>
                           </tr>
                         ))}
                       </tbody>

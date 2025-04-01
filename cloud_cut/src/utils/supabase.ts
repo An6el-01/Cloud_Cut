@@ -1,4 +1,6 @@
+import { Order, OrderItem } from "@/types/redux";
 import { createClient, UserMetadata } from "@supabase/supabase-js";
+import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -151,3 +153,17 @@ export const deleteUser = async (id: string): Promise<void> => {
   const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
   if (authError) throw new Error("Failed to delete user: " + authError.message);
 };
+
+export const subscribeToOrders = (callback: (payload: RealtimePostgresChangesPayload<Order>) =>  void) => {
+  return supabase 
+    .channel('orders')
+    .on('postgres_changes', { event: '*', schema: 'public', table:"orders" }, callback)
+    .subscribe();
+}
+
+export const subscribeToOrderItems = (callback: (payload: RealtimePostgresChangesPayload<OrderItem>) => void) => {
+  return supabase
+    .channel('order_items')
+    .on('postgres_changes' , { event: '*', schema: 'public', table: 'order_items' }, callback)
+    .subscribe();
+}
