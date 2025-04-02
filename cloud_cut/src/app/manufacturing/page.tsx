@@ -170,7 +170,7 @@ export default function Manufacturing() {
               </div>
             ) : orders.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-black">No completed orders found</p>
+                <p className="text-black">No orders found</p>
                 <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
               </div>
             ) : (

@@ -7,6 +7,7 @@ import { supabase } from '@/utils/supabase';
 import { getFoamSheetFromSKU } from '@/utils/skuParser';
 import { DespatchCloudOrder } from '@/types/despatchCloud';
 import { getPriorityLevel, isAmazonOrder, calculateDayNumber } from '@/utils/priority'; // Import priority utils
+import { optimizeItemName } from '@/utils/optimizeItemName';
 
 // Initial State
 const initialState: OrdersState = {
@@ -74,12 +75,20 @@ export const syncOrders = createAsyncThunk(
         const dayNumber = calculateDayNumber(order.date_received);
         const isAmazon = isAmazonOrder(order);
         const isOnHold = order.status.toLowerCase().includes('hold');
+        const orderStatus = order.status;
 
         acc[order.channel_order_id] = inventory.map((item, index) => {
           const foamSheet = getFoamSheetFromSKU(item.sku) || 'N/A';
+
+          //Optimize the item name
+          const optimizedName = optimizeItemName(
+            {sku: item.sku, name: item.name, options: item.options },
+            orderStatus
+          )
+
           // Calculate individual priority for this item
           const priority = getPriorityLevel(
-            item.name.toLowerCase(),
+            optimizedName.toLowerCase(),
             foamSheet,
             dayNumber,
             isAmazon,
@@ -90,7 +99,7 @@ export const syncOrders = createAsyncThunk(
             id: `${order.channel_order_id}-${index + index}`,
             order_id: order.channel_order_id,
             sku_id: item.sku || 'N/A',
-            item_name: item.name || 'Unknown',
+            item_name: optimizedName || 'Unknown',
             quantity: item.quantity || 0,
             completed: order.status_description === 'Despatched',
             foamsheet: foamSheet,
