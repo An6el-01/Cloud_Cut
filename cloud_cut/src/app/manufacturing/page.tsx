@@ -22,7 +22,7 @@ export default function Manufacturing() {
   const totalOrders = useSelector((state: RootState) => state.orders.totalOrders); // Total "Completed" orders
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ""));
-  const { currentPage, loading, error, syncStatus } = useSelector(
+  const { currentPage, loading, error,} = useSelector(
     (state: RootState) => state.orders
   );
   const orderProgress = useSelector((state: RootState) =>
@@ -105,13 +105,9 @@ export default function Manufacturing() {
   };
 
   const handleRefresh = () => {
-    console.log('Refresh button clicked');
-    console.log('Current syncStatus:', syncStatus);
     setIsRefreshing(true);
-    console.log('Dispatching syncOrders thunk...');
     dispatch(syncOrders())
       .then(() => {
-        console.log('syncOrders thunk completed successfully');
         // Fetch the first page of "Completed" orders after syncing
         dispatch(fetchOrdersFromSupabase({ page: 1, perPage: ordersPerPage }));
       })
@@ -120,7 +116,6 @@ export default function Manufacturing() {
       })
       .finally(() => {
         setIsRefreshing(false);
-        console.log('Refresh action completed');
       });
   };
 
@@ -225,7 +220,7 @@ export default function Manufacturing() {
                   <div className="text-sm text-gray-600">
                     Showing {(currentPage - 1) * ordersPerPage + 1} to{" "}
                     {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders}{" "}
-                    completed orders
+                    pending orders
                   </div>
                   <div className="flex gap-2">
                     <button
