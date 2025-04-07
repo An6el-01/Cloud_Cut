@@ -49,13 +49,17 @@ export const syncOrders = createAsyncThunk(
 
       const orders: Order[] = allOrders.map(order => {
         const inventory = order.inventory || [];
+        let status = order.status_description || null;
+        if(status !== "Cancelled" && status !== "Despatched" && status !== null && status!== "On Hold"){
+          status = "Pending";
+        }
 
         return {
           id: order.id,
           order_id: order.channel_order_id,
           order_date: order.date_received,
           customer_name: order.shipping_name,
-          status: order.status_description === 'Despatched' ? 'Completed' : 'Pending',
+          status: status,
           total_items: inventory.length,
           items_completed: order.status_description === 'Despatched' ? inventory.length : 0,
           access_url: order.access_url || null,
@@ -96,7 +100,7 @@ export const syncOrders = createAsyncThunk(
           );
 
           return {
-            id: `${order.channel_order_id}-${index + index}`,
+            id: `${order.channel_order_id}-${index + 1}`,
             order_id: order.channel_order_id,
             sku_id: item.sku || 'N/A',
             item_name: optimizedName || 'Unknown',
@@ -113,69 +117,187 @@ export const syncOrders = createAsyncThunk(
       }, {} as Record<string, OrderItem[]>);
 
       const totalOrderItems = Object.values(orderItems).reduce((sum, items) => sum + items.length, 0);
-      console.log(`Total order items to upsert: ${totalOrderItems}`);
+      
+      console.log(`Total order items to process: ${totalOrderItems}`);
 
-      console.log('Upserting orders to Supabase...');
+      //STEP 1: Upsert orders into 'orders' table
+      console.log('Upserting orders to supabase "orders" table...');
+      console.log('Orders about to be upserted:', orders.map(o => ({ order_id: o.order_id, status: o.status})));
+      
       const { error: ordersError } = await supabase
         .from('orders')
-        .upsert(orders, { onConflict: 'order_id' });
+        .upsert(orders, {
+          onConflict: 'order_id'
+        });
+      
       if (ordersError) {
         console.error('Orders upsert error:', ordersError);
         throw new Error(`Orders upsert failed: ${ordersError.message}`);
       }
 
-      console.log('Upserting order items to Supabase...');
+      //STEP 2: Handle order items with separate insert and update
+      console.log('Processing order items for Supabase...');
       for (const orderId in orderItems) {
         const items = orderItems[orderId];
-        console.log(`Upserting ${items.length} items for order ${orderId} with order_id: ${items[0]?.order_id}`);
-        const { error: itemsError } = await supabase
+        console.log(`Processing ${items.length} items for order ${orderId}`);
+
+        // First verify the order exists
+        const { data: orderExists, error: checkError } = await supabase
+          .from('orders')
+          .select('order_id')
+          .eq('order_id', orderId)
+          .single();
+
+        if (checkError || !orderExists) {
+          console.error(`Order ${orderId} not found in database, skipping items`);
+          continue;
+        }
+
+        //Fetch existing items for this order
+        const { data: existingItems, error: fetchItemsError } = await supabase
           .from('order_items')
-          .upsert(items, { onConflict: 'id' });
-        if (itemsError) {
-          console.error(`Items upsert error for order ${orderId}:`, itemsError);
-          throw new Error(`Items upsert failed: ${itemsError.message}`);
+          .select('id')
+          .eq('order_id', orderId);
+        
+        if (fetchItemsError) {
+          console.error(`Fetch existing items error for order ${orderId}:`, fetchItemsError);
+          continue;
+        }
+
+        const existingItemIds = new Set(existingItems.map(item => item.id));
+        const itemsToInsert = items.filter(item => !existingItemIds.has(item.id));
+        const itemsToUpdate = items.filter(item => existingItemIds.has(item.id));
+
+        //Insert new items
+        if (itemsToInsert.length > 0) {
+          console.log(`Inserting ${itemsToInsert.length} new items for order ${orderId}`);
+          const { error: insertError } = await supabase
+            .from('order_items')
+            .insert(itemsToInsert);
+          
+          if (insertError) {
+            console.error(`Insert error for order ${orderId}:`, insertError);
+            continue;
+          }
+        }
+
+        //Update Existing Items
+        if (itemsToUpdate.length > 0) {
+          console.log(`Updating ${itemsToUpdate.length} existing items for order ${orderId}`);
+          for(const item of itemsToUpdate){
+            const { error: updateError } = await supabase
+              .from('order_items')
+              .update({
+                quantity: item.quantity,
+                completed: item.completed,
+                priority: item.priority,
+                updated_at: item.updated_at,
+              })
+              .eq('id', item.id);
+            
+            if (updateError) {
+              console.error(`Update error for item ${item.id} in order ${orderId}:`, updateError);
+              continue;
+            }
+          }
         }
       }
 
-      console.log('Fetching updated data from Supabase...');
-      const { data: updatedOrders, error: fetchOrdersError } = await supabase
-        .from('orders')
-        .select('*');
-      if (fetchOrdersError) {
-        console.error('Fetch orders error:', fetchOrdersError);
-        throw new Error(`Fetch orders failed: ${fetchOrdersError.message}`);
+      // Step 3: Archive Completed Orders
+      const completedOrders = orders.filter(order => order.status === 'Despatched');
+      if(completedOrders.length > 0) {
+        console.log(`Processing ${completedOrders.length} completed orders for archiving...`);
+        
+        const orderIds = completedOrders.map(order => order.order_id);
+        
+        // First check which orders are already archived
+        const { data: existingArchivedOrders, error: checkError } = await supabase
+          .from('archived_orders')
+          .select('order_id')
+          .in('order_id', orderIds);
+        
+        if (checkError) {
+          console.error('Error checking archived orders:', checkError);
+          console.warn('Archiving failed but continuing with sync');
+        } else {
+          // Filter out orders that are already archived
+          const existingArchivedOrderIds = new Set(existingArchivedOrders?.map(o => o.order_id) || []);
+          const ordersToArchive = completedOrders.filter(order => !existingArchivedOrderIds.has(order.order_id));
+          
+          if (ordersToArchive.length > 0) {
+            console.log(`Found ${ordersToArchive.length} orders to archive`);
+            
+            // Update the status of orders to trigger the archive process
+            const { error: updateError } = await supabase
+              .from('orders')
+              .update({ status: 'Archived' })
+              .in('order_id', ordersToArchive.map(o => o.order_id));
+            
+            if (updateError) {
+              console.error('Error updating order status for archiving:', updateError);
+              console.warn('Archiving failed but continuing with sync');
+            } else {
+              console.log('Successfully triggered archiving for completed orders');
+              
+              // Delete the orders from the main orders table after they've been archived
+              console.log('Removing archived orders from main orders table...');
+              const { error: deleteOrdersError } = await supabase
+                .from('orders')
+                .delete()
+                .in('order_id', ordersToArchive.map(o => o.order_id));
+              
+              if (deleteOrdersError) {
+                console.error('Error deleting orders:', deleteOrdersError);
+              }
+            }
+          } else {
+            console.log('No new orders to archive');
+          }
+        }
       }
+        
+        //Fetch updated data
+        console.log('Fetching updated data from Supabase...');
+        
+        const { data: updatedOrders, error: fetchOrdersError } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('status', 'Pending'); // Only fetch pending orders
 
-      const { data: updatedItems, error: fetchItemsError } = await supabase
-        .from('order_items')
-        .select('*');
-      if (fetchItemsError) {
-        console.error('Fetch items error:', fetchItemsError);
-        throw new Error(`Fetch items failed: ${fetchItemsError.message}`);
-      }
+        if(fetchOrdersError) {
+          console.error('Fetch orders error:', fetchOrdersError);
+          throw new Error(`Fetch orders failed: ${fetchOrdersError.message}`);
+        }
 
-      console.log(`Fetched ${updatedItems.length} order items from Supabase`);
+        const { data: updatedItems, error: fetchItemsError } = await supabase
+          .from('order_items')
+          .select('*');
+        if(fetchItemsError) {
+          console.error('Fetch items error: ', fetchItemsError);
+          throw new Error(`Fetch items failed: ${fetchItemsError.message}`);
+        }
 
-      console.log('Processing updated data...');
-      const updatedOrderItems = updatedItems.reduce((acc, item) => {
-        acc[item.order_id] = acc[item.order_id] || [];
-        acc[item.order_id].push(item);
-        return acc;
-      }, {} as Record<string, OrderItem[]>);
+        console.log(`Fetched ${updatedItems.length} order items from Supabase`);
 
-      console.log('Sync completed successfully');
-      return {
-        orders: updatedOrders || orders,
-        orderItems: updatedOrderItems || orderItems,
-        total,
-        last_page: lastPage,
-      };
-    } catch (error) {
-      console.error('Sync error:', error);
-      dispatch(setSyncStatus('error'));
-      throw new Error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+        const updatedOrderItems = updatedItems.reduce((acc, item) => {
+          acc[item.order_id] = acc[item.order_id] || [];
+          acc[item.order_id].push(item);
+          return acc;
+        }, {} as Record<string, OrderItem[]>);
+
+    console.log('Sync completed successfully');
+    return {
+      orders: updatedOrders || orders,
+      orderItems: updatedOrderItems || orderItems,
+      total,
+      last_page: lastPage,
+    };
+  } catch (error) {
+    console.error('Sync error:', error);
+    dispatch(setSyncStatus('error'));
+    throw new Error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
 );
 
 // redux/slices/ordersSlice.ts
@@ -377,3 +499,39 @@ export const selectOrderProgress = (orderId: string) =>
     const order = orders.allOrders.find((o) => o.order_id === orderId);
     return order ? `${order.items_completed}/${order.total_items}` : 'N/A';
   });
+
+export const selectArchivedOrders = createSelector(
+  [selectOrdersState],
+  async () => {
+    const { data: archivedOrders, error } = await supabase
+      .from('archived_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching archived orders:', error);
+      return { orders: [], orderItems: {} };
+    }
+
+    // Fetch items for each archived order
+    const orderItems: Record<string, OrderItem[]> = {};
+    for (const order of archivedOrders || []) {
+      const { data: items, error: itemsError } = await supabase
+        .from('archived_order_items')
+        .select('*')
+        .eq('order_id', order.order_id);
+
+      if (itemsError) {
+        console.error(`Error fetching items for order ${order.order_id}:`, itemsError);
+        continue;
+      }
+
+      orderItems[order.order_id] = items || [];
+    }
+
+    return {
+      orders: archivedOrders || [],
+      orderItems
+    };
+  }
+);

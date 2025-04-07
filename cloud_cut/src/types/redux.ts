@@ -5,7 +5,7 @@ export interface Order {
     order_id: string;
     order_date: string;
     customer_name: string;
-    status: 'Pending' | 'Completed';
+    status: string | null;
     total_items: number;
     items_completed: number;
     access_url: string | null;

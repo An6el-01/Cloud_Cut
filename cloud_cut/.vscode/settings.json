@@ -13,6 +13,7 @@
         "stockwarn",
         "supabase",
         "syncstock",
+        "upserted",
         "upserting"
     ]
 }
