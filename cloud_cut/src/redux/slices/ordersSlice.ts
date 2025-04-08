@@ -101,7 +101,7 @@ export const syncOrders = createAsyncThunk(
           );
 
           return {
-            id: `${order.channel_order_id}-${index + 1}`,
+            id: `${order.id}-${index + 1}`,
             order_id: order.channel_order_id,
             sku_id: item.sku || 'N/A',
             item_name: optimizedName || 'Unknown',

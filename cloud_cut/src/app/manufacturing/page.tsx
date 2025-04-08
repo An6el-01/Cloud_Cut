@@ -178,7 +178,7 @@ export default function Manufacturing() {
           <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
             {loading ? (
               <div className="text-center text-white py-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto">↻</div>
                 <p className="mt-2">Loading orders...</p>
               </div>
             ) : error ? (

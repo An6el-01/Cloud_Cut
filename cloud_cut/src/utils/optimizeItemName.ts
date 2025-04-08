@@ -16,15 +16,27 @@ export function optimizeItemName(item: OrderItem, orderStatus: string): string {
         optimizedName = inventoryName;
     }
 
-    // If the order is "Custom", append dimensions with "Length" and "Width" labels
-    if(orderStatus === "Custom" && options){
+    // Check if this is a custom item by:
+    // 1. Order status contains "Custom" OR
+    // 2. The name/optimizedName contains "Custom" OR
+    // 3. Options contains dimensions
+    // Use case-insensitive checks for better reliability
+    const isCustomItem = 
+        (orderStatus && orderStatus.toLowerCase().includes("custom")) || 
+        optimizedName.toLowerCase().includes("custom") ||
+        (options && (options.includes("Length (mm):") || options.includes("Width (mm):")));
+
+    if(isCustomItem && options){
         const lengthMatch = options.match(/Length \(mm\):(\d+)/);
         const widthMatch = options.match(/Width \(mm\):(\d+)/);
         const length = lengthMatch ? lengthMatch[1] : null;
         const width = widthMatch ? widthMatch[1] : null;
 
         if(length && width) {
-            optimizedName = `${optimizedName} (Length: ${length}mm, Width: ${width}mm)`;
+            // Don't add dimensions if they're already in the name
+            if(!optimizedName.includes(`Length: ${length}mm`) && !optimizedName.includes(`Width: ${width}mm`)) {
+                optimizedName = `${optimizedName} (Length: ${length}mm, Width: ${width}mm)`;
+            }
         }
     }
     return optimizedName;

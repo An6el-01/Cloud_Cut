@@ -44,6 +44,13 @@ const Navbar = () => {
             </Link>
 
             <Link
+              href="/packing"
+              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+            >
+              Packing
+            </Link>
+
+            <Link
               href="/team"
               className="text-white relative px-3 py-2 rounded-md text-md font-medium group"  
             >
