@@ -8,6 +8,7 @@ import { getFoamSheetFromSKU } from '@/utils/skuParser';
 import { DespatchCloudOrder } from '@/types/despatchCloud';
 import { getPriorityLevel, isAmazonOrder, calculateDayNumber } from '@/utils/priority'; // Import priority utils
 import { optimizeItemName } from '@/utils/optimizeItemName';
+import { downloadCSV, generateCSV } from '@/utils/exportCSV';
 
 // Initial State
 const initialState: OrdersState = {
@@ -300,7 +301,7 @@ export const syncOrders = createAsyncThunk(
 }
 );
 
-// redux/slices/ordersSlice.ts
+
 export const fetchOrdersFromSupabase = createAsyncThunk(
   'orders/fetchOrdersFromSupabase',
   async ({ page, perPage }: { page: number; perPage: number }) => {
@@ -339,6 +340,43 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
     console.log(`Total pending orders in Supabase: ${count}`);
 
     return { orders, orderItems: orderItemsMap, total: count || 0, page };
+  }
+);
+
+export const exportPendingOrdersCSV = createAsyncThunk(
+  "orders/exportPendingOrdersCSV",
+  async () => {
+    console.log("Fetching all pending orders for CSV export...");
+
+    //Fetch all "Pending" orders (no pagination for export)
+    const { data: orders, error: ordersError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("status", "Pending")
+      .order("order_date", { ascending: false });
+
+    if (ordersError) throw new Error(`Fetch orders failed: ${ordersError.message}`);
+    console.log(`Fetched ${orders.length} pending orders`);
+
+    const orderIds = orders.map((o) => o.order_id);
+    const { data: orderItems, error: itemsError } = await supabase
+      .from("order_items")
+      .select("*")
+      .in("order_id", orderIds);
+
+    if (itemsError) throw new Error(`Fetch items failed: ${itemsError.message}`);
+    console.log(`Fetched ${orderItems.length} order items`);
+
+    const orderItemsMap = orderItems.reduce((acc, item) => {
+      acc[item.order_id] = acc[item.order_id] || [];
+      acc[item.order_id].push(item);
+      return acc;
+    }, {} as Record<string, OrderItem[]>);
+
+    const csvContent = generateCSV(orders, orderItemsMap);
+    downloadCSV(csvContent, `pending_orders_${new Date().toISOString().split("T")[0]}.csv`);
+
+    return { orders, orderItems: orderItemsMap }; //Return data to update state if needed
   }
 );
 
@@ -445,6 +483,21 @@ const ordersSlice = createSlice({
       .addCase(fetchOrdersFromSupabase.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch orders';
+      })    
+      //CASES FOR CSV DOWNLOAD     
+      .addCase(exportPendingOrdersCSV.pending, state => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(exportPendingOrdersCSV.fulfilled, (state, action) => {
+        state.loading = false;
+        //Optionally update state with fetched data
+        state.allOrders = action.payload.orders;
+        state.orderItems = action.payload.orderItems;
+      })
+      .addCase(exportPendingOrdersCSV.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to export CSV';
       });
   },
 });
@@ -461,6 +514,8 @@ export const {
   removeOrderItem, 
 } = ordersSlice.actions;
 export default ordersSlice.reducer;
+
+
 
 // Selectors
 const selectOrdersState = (state: RootState) => state.orders;

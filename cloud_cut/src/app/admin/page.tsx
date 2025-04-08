@@ -142,7 +142,7 @@ export default function Admin() {
                                             <tr>
                                                 <th className="px-4 py-4 text-center text-black text-md">Order Id</th>
                                                 <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">Date Received</th>
-                                                <th className="px-4 py-4 text-center text-black text-md whitespace-nowrap">Customer Name</th>
+                                                <th className="px-4 py-2 text-center text-black text-md">Customer Name</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Items</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Delete</th>
@@ -163,7 +163,7 @@ export default function Admin() {
                                                         {new Date(order.order_date).toLocaleDateString("en-GB")}
                                                     </td>
                                                     <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                                                    <td className="px-4 py-2 text-blue-500">View Items</td>
+                                                    <td className="px-4 py-2 text-blue-500 whitespace-nowrap">View Items</td>
                                                     <td className="px-4 py-2 text-black">
                                                         <div className='flex justify-center items-center h-full'>
                                                             <Image

@@ -12,6 +12,7 @@ export interface DespatchCloudOrder {
     status_description?: string; 
     access_url?: string;
     email?: string;
+    channel_alt_id?: string,
     highestPriority: number;
     inventory: Array<{
         id: number;

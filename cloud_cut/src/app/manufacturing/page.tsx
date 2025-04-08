@@ -12,6 +12,7 @@ import {
   selectPaginatedOrders,
   selectOrderItemsById,
   selectOrderProgress,
+  exportPendingOrdersCSV,
 } from "@/redux/slices/ordersSlice";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import { OrderItem } from "@/types/redux";
@@ -39,6 +40,7 @@ export default function Manufacturing() {
 
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Use useSelector to get order items for each order in the table
   const orderItemsById = useSelector((state: RootState) =>
@@ -119,6 +121,17 @@ export default function Manufacturing() {
       });
   };
 
+  const handleExportCSV = () => {
+    setIsExporting(true);
+    dispatch(exportPendingOrdersCSV())
+      .catch((error) => {
+        console.error("Error exporting CSV:", error);
+      })
+      .finally(() => {
+        setIsExporting(false);
+      })
+  }
+
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -144,6 +157,21 @@ export default function Manufacturing() {
                 </>
               ) : (
                 "Refresh Orders"
+              )}
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className={`px-4 py-2 text-white font-semibold rounded-lg transition-all duration-300 z-10 border-2 border-green-500 ${isExporting ? "bg-green-600 animate-pulse flex items-center gap-2 cursor-not-allowed"
+                : "bg-gray-700 hover:bg-gray-600"}`}
+                disabled= {isExporting}
+            >
+              {isExporting ? (
+                <>
+                  <span className= "animate-spin">↓</span>
+                  <span>Exporting...</span>
+                </>
+              ) : (
+                "Export CSV"
               )}
             </button>
           </div>
