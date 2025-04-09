@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { OrderItem } from '@/types/redux';
 import { supabase } from '@/utils/supabase';
 
@@ -13,6 +13,39 @@ interface OrderItemsOverlayProps {
 export default function OrderItemsOverlay({ orderId, onClose, items: initialItems }: OrderItemsOverlayProps) {
     const [items, setItems] = useState<OrderItem[]>(initialItems || []);
     const [loading, setLoading] = useState(!initialItems);
+    
+    // Refs for accessibility
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+
+    // Handle escape key press to close overlay
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        if (true) { // Always active when component is mounted
+            window.addEventListener('keydown', handleKeyDown);
+            // Prevent scroll on body
+            document.body.style.overflow = 'hidden';
+            // Focus the close button when dialog opens
+            closeButtonRef.current?.focus();
+        }
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            document.body.style.overflow = '';
+        };
+    }, [onClose]);
+
+    // Click outside to close
+    const handleBackdropClick = (e: React.MouseEvent) => {
+        if (dialogRef.current && e.target === dialogRef.current) {
+            onClose();
+        }
+    };
 
     useEffect(() => {
         if (!initialItems) {
@@ -59,43 +92,73 @@ export default function OrderItemsOverlay({ orderId, onClose, items: initialItem
     }, [orderId, initialItems]);
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-gray-800">Order Items</h2>
-                    <button
-                        onClick={onClose}
-                        className="text-gray-500 hover:text-gray-700"
-                    >
-                        ✕
-                    </button>
-                </div>
+        <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300"
+            onClick={handleBackdropClick}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="overlay-title"
+        >
+            <div 
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-gray-200 dark:border-gray-700 transform transition-all duration-300 scale-100 relative p-6"
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Close button (X) in the top right */}
+                <button
+                    type="button"
+                    ref={closeButtonRef}
+                    onClick={onClose}
+                    className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400"
+                    aria-label="Close dialog"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                </button>
+
+                <h2 
+                    id="overlay-title" 
+                    className="text-xl font-bold text-gray-900 dark:text-white mb-4"
+                >
+                    Order Items - {orderId}
+                </h2>
+                
                 {loading ? (
-                    <div className="text-center py-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto" />
-                        <p className="mt-2 text-gray-600">Loading items...</p>
+                    <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900 dark:border-gray-300 mx-auto" />
+                        <p className="mt-4 text-gray-600 dark:text-gray-300">Loading items...</p>
                     </div>
                 ) : items.length === 0 ? (
-                    <p className="text-gray-600 text-center py-4">No items found for this order</p>
+                    <div className="flex items-center justify-center py-8 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                        <div className="text-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p className="text-gray-600 dark:text-gray-300 text-lg">No items found for this order</p>
+                        </div>
+                    </div>
                 ) : (
-                    <table className="w-full">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="text-center text-black px-4 py-2">Item Name</th>
-                                <th className="text-center whitespace-nowrap text-black px-4 py-2">Foam Sheet</th>
-                                <th className="text-center text-black px-4 py-2">Quantity</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {items.map((item) => (
-                                <tr key={item.id} className="border-b">
-                                    <td className=" text-center px-4 text-black py-2">{item.item_name}</td>
-                                    <td className=" text-center whitespace-nowrap px-4 text-black py-2">{item.foamsheet}</td>
-                                    <td className=" text-center whitespace-nowrap px-4 text-black py-2">{item.quantity}</td>
+                    <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                        <table className="w-full">
+                            <thead className="bg-gray-50 dark:bg-gray-700">
+                                <tr>
+                                    <th className="text-left text-gray-700 dark:text-gray-300 font-semibold px-4 py-3">Item Name</th>
+                                    <th className="text-left whitespace-nowrap text-gray-700 dark:text-gray-300 font-semibold px-4 py-3">Foam Sheet</th>
+                                    <th className="text-center text-gray-700 dark:text-gray-300 font-semibold px-4 py-3">Quantity</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                {items.map((item) => (
+                                    <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors duration-150">
+                                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{item.item_name}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-gray-900 dark:text-gray-100">{item.foamsheet}</td>
+                                        <td className="px-4 py-3 text-center text-gray-900 dark:text-gray-100">{item.quantity}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
         </div>

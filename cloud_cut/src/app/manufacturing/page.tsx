@@ -1,6 +1,7 @@
 "use client";
 
 import Navbar from "@/components/Navbar";
+import ManuConfirm from "@/components/manuConfirm";
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -9,9 +10,9 @@ import {
   syncOrders,
   setSelectedOrderId,
   updateItemCompleted,
+  updateOrderManufacturedStatus,
   selectManufacturingOrders,
   selectOrderItemsById,
-  selectOrderProgress,
   exportPendingOrdersCSV,
   setCurrentView,
   selectCurrentViewTotal,
@@ -31,12 +32,6 @@ export default function Manufacturing() {
   const { currentPage, loading, error,} = useSelector(
     (state: RootState) => state.orders
   );
-  const orderProgress = useSelector((state: RootState) =>
-    orders.reduce((acc, order) => {
-      acc[order.order_id] = selectOrderProgress(order.order_id)(state);
-      return acc;
-    }, {} as Record<string, string>)
-  );
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
 
@@ -46,6 +41,20 @@ export default function Manufacturing() {
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pendingItemToComplete, setPendingItemToComplete] = useState<{
+    orderId: string;
+    itemId: string;
+    completed: boolean;
+  } | null>(null);
+
+  // Helper function to filter items by SKU
+  const filterItemsBySku = (items: OrderItem[]) => {
+    return items.filter(item => {
+      const sku = item.sku_id.toUpperCase();
+      return sku.startsWith('SFI') || sku.startsWith('SFC');
+    });
+  };
 
   // Use useSelector to get order items for each order in the table
   const orderItemsById = useSelector((state: RootState) =>
@@ -54,6 +63,21 @@ export default function Manufacturing() {
       return acc;
     }, {} as Record<string, OrderItem[]>)
   );
+
+  // Custom order progress selector that only considers filtered items
+  const filteredOrderProgress = orders.reduce((acc, order) => {
+    const items = orderItemsById[order.order_id] || [];
+    const filteredItems = filterItemsBySku(items);
+    
+    if (filteredItems.length === 0) {
+      acc[order.order_id] = "N/A";
+    } else {
+      const completedCount = filteredItems.filter(item => item.completed).length;
+      acc[order.order_id] = `${completedCount}/${filteredItems.length}`;
+    }
+    
+    return acc;
+  }, {} as Record<string, string>);
 
   useEffect(() => {
     // Set the current view first
@@ -135,7 +159,85 @@ export default function Manufacturing() {
   };
 
   const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
-    dispatch(updateItemCompleted({ orderId, itemId, completed }));
+    // If marking as incomplete, just do it directly
+    if (!completed) {
+      dispatch(updateItemCompleted({ orderId, itemId, completed }));
+      return;
+    }
+
+    // Get the relevant items (those with SKUs starting with SFI or SFC)
+    const relevantItems = filterItemsBySku(selectedOrderItems);
+    
+    // Count how many items are already completed
+    const completedItems = relevantItems.filter(item => 
+      item.completed || item.id === itemId // Count the current item if it's being marked as completed
+    );
+    
+    // Check if this is the last item to complete
+    if (completedItems.length === relevantItems.length && completed) {
+      // Store the pending item completion details
+      setPendingItemToComplete({
+        orderId,
+        itemId,
+        completed
+      });
+      // Show confirmation dialog
+      setShowConfirmDialog(true);
+    } else {
+      // Not the last item, just mark it as completed
+      dispatch(updateItemCompleted({ orderId, itemId, completed }));
+    }
+  };
+
+  const handleMarkManufactured = (orderId: string) => {
+    // Close the confirmation dialog
+    setShowConfirmDialog(false);
+    
+    // If there's a pending item to complete
+    if (pendingItemToComplete) {
+      // Mark the item as completed
+      dispatch(updateItemCompleted(pendingItemToComplete));
+      
+      console.log(`Marking order ${orderId} as manufactured`);
+      // Show loading state
+      setIsRefreshing(true);
+      
+      // Update the manufactured status in Redux and Supabase
+      try {
+        dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
+        
+        // Refresh the orders list to remove the manufactured order after a delay
+        // to ensure the Supabase update completes
+        setTimeout(() => {
+          console.log(`Refreshing orders after marking ${orderId} as manufactured`);
+          dispatch(fetchOrdersFromSupabase({ 
+            page: currentPage, 
+            perPage: ordersPerPage,
+            manufactured: false,
+            packed: false,
+            status: "Pending",
+            view: 'manufacturing'
+          }))
+          .finally(() => {
+            setIsRefreshing(false);
+            // Clear the pending item
+            setPendingItemToComplete(null);
+          });
+        }, 2000); // Increased delay to ensure Supabase update completes
+      } catch (error) {
+        console.error("Error marking order as manufactured:", error);
+        setIsRefreshing(false);
+        setPendingItemToComplete(null);
+      }
+    }
+  };
+
+  // Function to handle cancellation of the confirmation dialog
+  const handleCancelConfirm = () => {
+    // Close the dialog
+    setShowConfirmDialog(false);
+    // Clear the pending item
+    setPendingItemToComplete(null);
   };
 
   const handleRefresh = () => {
@@ -254,15 +356,6 @@ export default function Manufacturing() {
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {orders.map((order) => {
-                        // Get the items for this specific order
-                        const orderItems = orderItemsById[order.order_id] || [];
-                        // Use the calculated priority property if it exists
-                        const displayPriority = 'calculatedPriority' in order 
-                          ? (order as OrderWithPriority).calculatedPriority 
-                          : (orderItems.length > 0
-                            ? Math.max(...orderItems.map((item) => item.priority || 0))
-                            : 0);
-
                         return (
                           <tr
                             key={order.order_id}
@@ -274,11 +367,22 @@ export default function Manufacturing() {
                           >
                             <td className="px-4 py-2 text-black">{order.order_id}</td>
                             <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                            <td className="px-4 py-2 text-black">{displayPriority}</td>
+                            <td className="px-4 py-2 text-black">
+                              {(() => {
+                                const items = orderItemsById[order.order_id] || [];
+                                const filteredItems = filterItemsBySku(items);
+                                
+                                if (filteredItems.length === 0) return 'N/A';
+                                
+                                return 'calculatedPriority' in order
+                                  ? (order as OrderWithPriority).calculatedPriority
+                                  : Math.max(...filteredItems.map(item => item.priority || 0));
+                              })()}
+                            </td>
                             <td className="px-4 py-2 text-black">
                               {new Date(order.order_date).toLocaleDateString("en-GB")}
                             </td>
-                            <td className="px-4 py-2 text-black">{orderProgress[order.order_id]}</td>
+                            <td className="px-4 py-2 text-black">{filteredOrderProgress[order.order_id]}</td>
                           </tr>
                         );
                       })}
@@ -339,7 +443,11 @@ export default function Manufacturing() {
                   <div>
                     <p className="text-sm text-gray-400 underline">Priority Level:</p>
                     <p className="font-medium">
-                      {Math.max(...selectedOrderItems.map((item) => item.priority || 0))}
+                      {(() => {
+                        const filteredItems = filterItemsBySku(selectedOrderItems);
+                        if (filteredItems.length === 0) return 'N/A';
+                        return Math.max(...filteredItems.map(item => item.priority || 0));
+                      })()}
                     </p>
                   </div>
                   <div>
@@ -347,6 +455,7 @@ export default function Manufacturing() {
                     <p className="font-medium">{selectedOrder.customer_name}</p>
                   </div>
                 </div>
+                
                 <div>
                   <h2 className="font-semibold mb-2">Items:</h2>
                   <div className="overflow-x-auto">
@@ -363,27 +472,36 @@ export default function Manufacturing() {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedOrderItems.map((item) => (
-                          <tr key={item.id} className="border-b">
-                            <td className="px-4 py-2 text-center">{item.item_name}</td>
-                            <td className="px-4 py-2 text-center">{item.foamsheet}</td>
-                            <td className="px-4 py-2 text-center">{item.quantity}</td>
-                            <td className="px-4 py-2 text-center">{item.priority}</td>
-                            <td className="px-4 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={item.completed}
-                                onChange={(e) =>
-                                  handleToggleCompleted(
-                                    selectedOrder.order_id,
-                                    item.id,
-                                    e.target.checked
-                                  )
-                                }
-                              />
+                        {filterItemsBySku(selectedOrderItems)
+                          .map((item) => (
+                            <tr key={item.id} className="border-b">
+                              <td className="px-4 py-2 text-center">{item.item_name}</td>
+                              <td className="px-4 py-2 text-center">{item.foamsheet}</td>
+                              <td className="px-4 py-2 text-center">{item.quantity}</td>
+                              <td className="px-4 py-2 text-center">{item.priority}</td>
+                              <td className="px-4 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={item.completed}
+                                  onChange={(e) =>
+                                    handleToggleCompleted(
+                                      selectedOrder.order_id,
+                                      item.id,
+                                      e.target.checked
+                                    )
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        {selectedOrderItems.length > 0 && 
+                         filterItemsBySku(selectedOrderItems).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-4 text-center text-yellow-300">
+                              No items with SKUs starting with SFI or SFC found in this order.
                             </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -397,6 +515,15 @@ export default function Manufacturing() {
           </div>
         </div>
       </div>
+      {/* Confirmation Dialog */}
+      {showConfirmDialog && selectedOrder && (
+        <ManuConfirm
+          isOpen={showConfirmDialog}
+          onClose={handleCancelConfirm}
+          onConfirm={handleMarkManufactured}
+          orderId={selectedOrder.order_id}
+        />
+      )}
     </div>
   );
 }

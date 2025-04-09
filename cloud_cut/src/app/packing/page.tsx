@@ -1,6 +1,7 @@
 "use client";
 
 import NavBar from "@/components/Navbar";
+import OrderFinished from "@/components/orderFinished";
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -9,6 +10,7 @@ import {
     syncOrders,
     setSelectedOrderId,
     updateItemCompleted,
+    updateOrderStatus,
     selectPackingOrders,
     selectOrderItemsById,
     selectOrderProgress,
@@ -17,6 +19,7 @@ import {
 } from "@/redux/slices/ordersSlice";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
+import { supabase } from "@/utils/supabase";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -33,6 +36,12 @@ export default function Packing() {
     const totalPages = Math.ceil(totalOrders / ordersPerPage);
     const selectedOrder = orders.find((o) => o.order_id === selectedOrderId)
     const [isRefreshing, setIsRefreshing] = useState(false); 
+    const [showOrderFinishedDialog, setShowOrderFinishedDialog] = useState(false);
+    const [pendingItemToComplete, setPendingItemToComplete] = useState<{
+        orderId: string;
+        itemId: string;
+        completed: boolean;
+    } | null>(null);
 
     const orderProgress = useSelector((state: RootState) => 
         orders.reduce((acc, order) => {
@@ -123,8 +132,101 @@ export default function Packing() {
         }
     };
 
-    const handleToggleCompleted = ( orderId: string, itemId: string, completed: boolean) => {
-        dispatch(updateItemCompleted({ orderId, itemId, completed }));
+    const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
+        // If marking as incomplete, just do it directly
+        if (!completed) {
+            dispatch(updateItemCompleted({ orderId, itemId, completed }));
+            return;
+        }
+        
+        // Count how many items are already completed
+        const completedItems = selectedOrderItems.filter(item => 
+            item.completed || item.id === itemId // Count the current item if it's being marked as completed
+        );
+        
+        // Check if this is the last item to complete
+        if (completedItems.length === selectedOrderItems.length && completed) {
+            // Store the pending item completion details
+            setPendingItemToComplete({
+                orderId,
+                itemId,
+                completed
+            });
+            // Show confirmation dialog
+            setShowOrderFinishedDialog(true);
+        } else {
+            // Not the last item, just mark it as completed
+            dispatch(updateItemCompleted({ orderId, itemId, completed }));
+        }
+    };
+    
+    const handleMarkCompleted = (orderId: string) => {
+        // Close the confirmation dialog
+        setShowOrderFinishedDialog(false);
+        
+        // If there's a pending item to complete
+        if (pendingItemToComplete) {
+            // Mark the item as completed
+            dispatch(updateItemCompleted(pendingItemToComplete));
+            
+            console.log(`Marking order ${orderId} as completed`);
+            // Show loading state
+            setIsRefreshing(true);
+            
+            // Update the order status in Redux
+            dispatch(updateOrderStatus({ 
+                orderId, 
+                status: "Completed"
+            }));
+            
+            // Directly update both status and packed in Supabase in a single operation
+            (async () => {
+                try {
+                    const { error } = await supabase
+                        .from('orders')
+                        .update({ 
+                            status: "Completed",
+                            packed: true,
+                            updated_at: new Date().toISOString() 
+                        })
+                        .eq('order_id', orderId);
+                    
+                    if (error) {
+                        console.error('Error updating order status in Supabase:', error);
+                    } else {
+                        console.log(`Successfully updated order ${orderId} as Completed and packed`);
+                    }
+                } catch (err) {
+                    console.error('Failed to update order status:', err);
+                }
+            })();
+            
+            // Refresh the orders list to remove the completed order after a delay
+            setTimeout(() => {
+                console.log(`Refreshing orders after marking ${orderId} as completed`);
+                dispatch(fetchOrdersFromSupabase({ 
+                    page: currentPage, 
+                    perPage: ordersPerPage,
+                    manufactured: true,
+                    packed: false,
+                    status: "Pending",
+                    view: 'packing'
+                }))
+                .finally(() => {
+                    setIsRefreshing(false);
+                    // Clear the pending item
+                    setPendingItemToComplete(null);
+                });
+            }, 2000); // Increased delay to ensure Supabase update completes
+        }
+    };
+    
+    // Function to handle cancellation of the confirmation dialog
+    const handleCancelOrderFinished = () => {
+        // Close the dialog
+        setShowOrderFinishedDialog(false);
+        // Clear the pending item
+        setPendingItemToComplete(null);
     };
 
     const handleRefresh = () => {
@@ -351,6 +453,16 @@ export default function Packing() {
                     </div>
                 </div>
             </div>
+            
+            {/* Order Finished Confirmation Dialog */}
+            {showOrderFinishedDialog && selectedOrder && (
+                <OrderFinished
+                    isOpen={showOrderFinishedDialog}
+                    onClose={handleCancelOrderFinished}
+                    onConfirm={handleMarkCompleted}
+                    orderId={selectedOrder.order_id}
+                />
+            )}
         </div>
     )
 }

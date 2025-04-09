@@ -94,7 +94,7 @@ export const syncOrders = createAsyncThunk(
         const isAmazon = isAmazonOrder(order);
         const isOnHold = order.status.toLowerCase().includes('hold');
         const orderStatus = order.status;
-        
+
         // Use trimmed order ID
         const trimmedOrderId = order.channel_order_id.trim();
 
@@ -289,9 +289,9 @@ export const syncOrders = createAsyncThunk(
           const { error: insertError } = await supabase
             .from('archived_orders')
             .upsert(cleanedBatch, {
-              onConflict: 'order_id'
-            });
-          
+          onConflict: 'order_id'
+        });
+      
           if (insertError) {
             console.error('Error upserting to archived orders:', insertError);
           } else {
@@ -381,7 +381,7 @@ export const syncOrders = createAsyncThunk(
           if (retryCount < maxRetries) {
             console.log('Retrying verification after delay...');
             await new Promise(resolve => setTimeout(resolve, 5000));
-            continue;
+          continue;
           }
           throw new Error(`Failed to verify orders after ${maxRetries} attempts: ${(activeError || archivedError)?.message}`);
         }
@@ -420,7 +420,7 @@ export const syncOrders = createAsyncThunk(
       
       // First, get all existing order items from both tables
       const { data: existingOrderItems, error: fetchExistingItemsError } = await supabase
-        .from('order_items')
+          .from('order_items')
         .select('id');
       
       const { data: existingArchivedItems, error: fetchExistingArchivedItemsError } = await supabase
@@ -673,17 +673,17 @@ export const syncOrders = createAsyncThunk(
           if (insertError) {
             console.error('Error moving items to archived:', insertError);
             console.warn('Continuing despite error moving items');
-          } else {
+            } else {
             // Delete from order_items
             const itemIds = itemsToMoveToArchived.slice(i, i + batchSize).map(item => item.id);
             const { error: deleteError } = await supabase
               .from('order_items')
-              .delete()
+                .delete()
               .in('id', itemIds);
             
             if (deleteError) {
               console.error('Error deleting moved items from active table:', deleteError);
-            } else {
+          } else {
               console.log(`Successfully moved batch ${i/batchSize + 1} of items to archived`);
             }
           }
@@ -896,6 +896,50 @@ const ordersSlice = createSlice({
       const order = state.allOrders.find(o => o.order_id === action.payload.orderId);
       if (order) order.status = action.payload.status;
     },
+    updateOrderManufacturedStatus: (
+      state,
+      action: PayloadAction<{ orderId: string; manufactured: boolean }>
+    ) => {
+      // Look for the order in both allOrders and manufacturingOrders
+      let order = state.allOrders.find(o => o.order_id === action.payload.orderId);
+      
+      // If not found in allOrders, check manufacturingOrders
+      if (!order) {
+        order = state.manufacturingOrders.find(o => o.order_id === action.payload.orderId);
+      }
+      
+      if (order) {
+        // Update the order in state
+        order.manufactured = action.payload.manufactured;
+        
+        // Also update the order in Supabase
+        console.log(`Updating manufactured status for order ${action.payload.orderId} to ${action.payload.manufactured}`);
+        
+        // Use a more robust approach to ensure Supabase update succeeds
+        (async () => {
+          try {
+            const { data, error } = await supabase
+              .from('orders')
+              .update({ 
+                manufactured: action.payload.manufactured,
+                updated_at: new Date().toISOString() 
+              })
+              .eq('order_id', action.payload.orderId);
+            
+            if (error) {
+              console.error('Error updating manufactured status in Supabase:', error);
+              throw error;
+            } else {
+              console.log(`Successfully updated manufactured status for order ${action.payload.orderId}`, data);
+            }
+          } catch (err) {
+            console.error('Failed to update manufactured status:', err);
+          }
+        })();
+      } else {
+        console.error(`Order with ID ${action.payload.orderId} not found in state`);
+      }
+    },
     updateItemCompleted: (
       state,
       action: PayloadAction<{ orderId: string; itemId: string; completed: boolean }>
@@ -1074,6 +1118,7 @@ const ordersSlice = createSlice({
 export const { 
   setSelectedOrderId, 
   updateOrderStatus, 
+  updateOrderManufacturedStatus,
   updateItemCompleted, 
   setSyncStatus,
   addOrder,
