@@ -13,15 +13,23 @@ import { downloadCSV, generateCSV } from '@/utils/exportCSV';
 // Initial State
 const initialState: OrdersState = {
   allOrders: [],
+  manufacturingOrders: [],
+  packingOrders: [],
   orderItems: {},
   currentPage: 1,
   ordersPerPage: 15,
   totalOrders: 0,
+  totalManufacturingOrders: 0,
+  totalPackingOrders: 0, 
   selectedOrderId: null,
   loading: false,
   error: null,
   syncStatus: 'idle',
+  currentView: 'manufacturing',
 };
+
+// Add type extension for Order with calculatedPriority
+type OrderWithPriority = Order & { calculatedPriority: number };
 
 // Thunks
 export const syncOrders = createAsyncThunk(
@@ -55,9 +63,12 @@ export const syncOrders = createAsyncThunk(
           status = "Pending";
         }
 
+        // Trim whitespace from order_id to prevent database issues
+        const trimmedOrderId = order.channel_order_id.trim();
+
         return {
           id: order.id,
-          order_id: order.channel_order_id,
+          order_id: trimmedOrderId,
           order_date: order.date_received,
           customer_name: order.shipping_name,
           status: status,
@@ -83,8 +94,11 @@ export const syncOrders = createAsyncThunk(
         const isAmazon = isAmazonOrder(order);
         const isOnHold = order.status.toLowerCase().includes('hold');
         const orderStatus = order.status;
+        
+        // Use trimmed order ID
+        const trimmedOrderId = order.channel_order_id.trim();
 
-        acc[order.channel_order_id] = inventory.map((item, index) => {
+        acc[trimmedOrderId] = inventory.map((item, index) => {
           const foamSheet = getFoamSheetFromSKU(item.sku) || 'N/A';
 
           //Optimize the item name
@@ -104,7 +118,7 @@ export const syncOrders = createAsyncThunk(
 
           return {
             id: `${order.id}-${index + 1}`,
-            order_id: order.channel_order_id,
+            order_id: trimmedOrderId,
             sku_id: item.sku || 'N/A',
             item_name: optimizedName || 'Unknown',
             quantity: item.quantity || 0,
@@ -176,32 +190,134 @@ export const syncOrders = createAsyncThunk(
       
       // Upsert active orders
       if (ordersToUpsertActive.length > 0) {
-        for (let i = 0; i < ordersToUpsertActive.length; i += batchSize) {
-          const batch = ordersToUpsertActive.slice(i, i + batchSize);
-          const { error: ordersError } = await supabase
-            .from('orders')
-            .upsert(batch, {
-              onConflict: 'order_id'
-            });
+        console.log('Processing active orders...');
+        
+        // First, get all existing orders to check IDs
+        const { data: existingOrders, error: fetchError } = await supabase
+          .from('orders')
+          .select('id, order_id')
+          .in('order_id', ordersToUpsertActive.map(o => o.order_id));
           
-          if (ordersError) {
-            console.error('Active orders upsert error:', ordersError);
-            throw new Error(`Active orders upsert failed: ${ordersError.message}`);
+        if (fetchError) {
+          console.error('Error fetching existing orders:', fetchError);
+          throw new Error(`Failed to fetch existing orders: ${fetchError.message}`);
+        }
+        
+        // Create a map of order_id to database id for quick lookup
+        const existingOrderMap = new Map(existingOrders?.map(o => [o.order_id, o.id]) || []);
+        
+        // Separate orders that need insert vs just status update
+        const newOrders = [];
+        const ordersToUpdateStatus = [];
+        
+        for (const order of ordersToUpsertActive) {
+          if (existingOrderMap.has(order.order_id)) {
+            // For existing orders, only update the status and other key fields
+            ordersToUpdateStatus.push({
+              id: existingOrderMap.get(order.order_id),
+              order_id: order.order_id,
+              status: order.status,
+              items_completed: order.items_completed,
+              updated_at: new Date().toISOString()
+            });
+          } else {
+            // New orders to insert
+            newOrders.push(order);
           }
-          console.log(`Successfully upserted batch ${i/batchSize + 1} of active orders`);
+        }
+        
+        // Process new orders in batches
+        if (newOrders.length > 0) {
+          console.log(`Inserting ${newOrders.length} new orders...`);
+          for (let i = 0; i < newOrders.length; i += batchSize) {
+            const batch = newOrders.slice(i, i + batchSize);
+            
+            // Remove the 'id' field from each order to let Supabase auto-generate the primary key
+            const batchWithoutIds = batch.map(order => {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { id, ...orderWithoutId } = order;
+              return orderWithoutId;
+            });
+            
+            const { error: insertError } = await supabase
+              .from('orders')
+              .insert(batchWithoutIds);
+            
+            if (insertError) {
+              console.error('New orders insert error:', insertError);
+              throw new Error(`New orders insert failed: ${insertError.message}`);
+            }
+            console.log(`Successfully inserted batch ${Math.floor(i/batchSize) + 1} of new orders`);
+          }
+        }
+        
+        // Process status updates in batches
+        if (ordersToUpdateStatus.length > 0) {
+          console.log(`Updating status for ${ordersToUpdateStatus.length} existing orders...`);
+          for (let i = 0; i < ordersToUpdateStatus.length; i += batchSize) {
+            const batch = ordersToUpdateStatus.slice(i, i + batchSize);
+            const { error: updateError } = await supabase
+              .from('orders')
+              .upsert(batch, {
+                onConflict: 'id'
+              });
+            
+            if (updateError) {
+              console.error('Order status update error:', updateError);
+              throw new Error(`Order status update failed: ${updateError.message}`);
+            }
+            console.log(`Successfully updated status for batch ${Math.floor(i/batchSize) + 1} of existing orders`);
+          }
         }
       }
       
       // Upsert archived orders
       if (ordersToUpsertArchived.length > 0) {
+        console.log('Upserting directly to archived orders table...');
+        for (let i = 0; i < ordersToUpsertArchived.length; i += batchSize) {
+          const batch = ordersToUpsertArchived.slice(i, i + batchSize);
+          
+          // Prepare the batch by removing manufactured, packed, and id fields
+          const cleanedBatch = batch.map(order => {
+            // Create a new object without the manufactured, packed, and id fields
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { manufactured, packed, id, ...cleanedOrder } = order;
+            return cleanedOrder;
+          });
+          
+          // Insert into archived_orders
+          const { error: insertError } = await supabase
+            .from('archived_orders')
+            .upsert(cleanedBatch, {
+              onConflict: 'order_id'
+            });
+          
+          if (insertError) {
+            console.error('Error upserting to archived orders:', insertError);
+          } else {
+            console.log(`Successfully upserted batch ${i/batchSize + 1} of archived orders`);
+          }
+        }
+      }
+
+      // Move orders from active to archived
+      if (ordersToMove.length > 0) {
         console.log('Moving orders from active to archived...');
         for (let i = 0; i < ordersToMove.length; i += batchSize) {
           const batch = ordersToMove.slice(i, i + batchSize);
           
+          // Prepare the batch by removing manufactured, packed, and id fields
+          const cleanedBatch = batch.map(order => {
+            // Create a new object without the manufactured, packed, and id fields
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { manufactured, packed, id, ...cleanedOrder } = order;
+            return cleanedOrder;
+          });
+          
           // First insert into archived_orders
           const { error: insertError } = await supabase
             .from('archived_orders')
-            .upsert(batch, {
+            .upsert(cleanedBatch, {
               onConflict: 'order_id'
             });
           
@@ -290,6 +406,12 @@ export const syncOrders = createAsyncThunk(
       
       if (missingOrders.length > 0) {
         console.error('Some orders failed to be inserted:', missingOrders);
+        
+        // Log more detailed information about each missing order to help with debugging
+        missingOrders.forEach(order => {
+          console.error(`Failed order details - ID: "${order.order_id}", Length: ${order.order_id.length}, Status: "${order.status}"`);
+        });
+        
         throw new Error(`Failed to insert ${missingOrders.length} orders`);
       }
 
@@ -569,14 +691,14 @@ export const syncOrders = createAsyncThunk(
       }
 
       // Step 3: No need for a separate "Archive Completed Orders" step since we already handled it above
-      
-      //Fetch updated data
-      console.log('Fetching updated data from Supabase...');
-      
+        
+        //Fetch updated data
+        console.log('Fetching updated data from Supabase...');
+        
       const { data: updatedOrders, error: fetchUpdatedOrdersError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('status', 'Pending'); // Only fetch pending orders
+          .from('orders')
+          .select('*')
+          .eq('status', 'Pending'); // Only fetch pending orders
 
       if(fetchUpdatedOrdersError) {
         console.error('Fetch orders error:', fetchUpdatedOrdersError);
@@ -584,8 +706,8 @@ export const syncOrders = createAsyncThunk(
       }
 
       const { data: updatedItems, error: fetchUpdatedItemsError } = await supabase
-        .from('order_items')
-        .select('*');
+          .from('order_items')
+          .select('*');
       if(fetchUpdatedItemsError) {
         console.error('Fetch items error: ', fetchUpdatedItemsError);
         throw new Error(`Fetch items failed: ${fetchUpdatedItemsError.message}`);
@@ -594,24 +716,24 @@ export const syncOrders = createAsyncThunk(
       console.log(`Fetched ${updatedItems?.length || 0} order items from Supabase`);
 
       const updatedOrderItems = (updatedItems || []).reduce((acc, item) => {
-        acc[item.order_id] = acc[item.order_id] || [];
-        acc[item.order_id].push(item);
-        return acc;
-      }, {} as Record<string, OrderItem[]>);
+          acc[item.order_id] = acc[item.order_id] || [];
+          acc[item.order_id].push(item);
+          return acc;
+        }, {} as Record<string, OrderItem[]>);
 
-      console.log('Sync completed successfully');
-      return {
-        orders: updatedOrders || orders,
-        orderItems: updatedOrderItems || orderItems,
-        total,
-        last_page: lastPage,
-      };
-    } catch (error) {
-      console.error('Sync error:', error);
-      dispatch(setSyncStatus('error'));
-      throw new Error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    console.log('Sync completed successfully');
+    return {
+      orders: updatedOrders || orders,
+      orderItems: updatedOrderItems || orderItems,
+      total,
+      last_page: lastPage,
+    };
+  } catch (error) {
+    console.error('Sync error:', error);
+    dispatch(setSyncStatus('error'));
+    throw new Error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
 );
 
 
@@ -621,20 +743,28 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
     page, 
     perPage,
     manufactured = undefined,
-    packed = undefined
+    packed = undefined,
+    status = undefined,
+    view = 'manufacturing'
   }: { 
     page: number; 
     perPage: number;
     manufactured?: boolean;
     packed?: boolean;
+    status?: string;
+    view?: 'manufacturing' | 'packing' | 'archived';
   }) => {
-    console.log(`Fetching orders from Supabase, page: ${page}, perPage: ${perPage}`);
+    console.log(`Fetching ${view} orders from Supabase, page: ${page}, perPage: ${perPage}, status: ${status}, manufactured: ${manufactured}, packed: ${packed}`);
     
-    // Build the query
+    // Build the query - FETCH ALL ORDERS AT ONCE to sort properly
     let query = supabase
       .from('orders')
-      .select('*')
-      .eq('status', 'Pending');
+      .select('*');
+    
+    // Add status filter if specified
+    if (status !== undefined) {
+      query = query.eq('status', status);
+    }
 
     // Add manufactured filter if specified
     if (manufactured !== undefined) {
@@ -646,52 +776,71 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       query = query.eq('packed', packed);
     }
 
-    // Add pagination and ordering
-    const { data: orders, error: ordersError } = await query
-      .range((page - 1) * perPage, page * perPage - 1)
+    // Get ALL orders matching the criteria (no pagination)
+    const { data: allOrders, error: ordersError } = await query
       .order('order_date', { ascending: false });
 
     if (ordersError) throw new Error(`Fetch orders failed: ${ordersError.message}`);
-    console.log(`Fetched ${orders.length} orders from Supabase`);
+    console.log(`Fetched ${allOrders.length} ${view} orders from Supabase`);
 
-    const orderIds = orders.map(o => o.order_id);
-    const { data: orderItems, error: itemsError } = await supabase
+    // Fetch order items for all orders
+    const allOrderIds = allOrders.map(o => o.order_id);
+
+    const { data: allOrderItems, error: itemsError } = await supabase
       .from('order_items')
       .select('*')
-      .in('order_id', orderIds);
+      .in('order_id', allOrderIds);
 
     if (itemsError) throw new Error(`Fetch items failed: ${itemsError.message}`);
-    console.log(`Fetched ${orderItems.length} order items for ${orderIds.length} orders`);
+    console.log(`Fetched ${allOrderItems?.length || 0} order items for ${allOrderIds.length} orders`);
 
-    // Process order items to ensure completed status is correct
-    const processedOrderItems = orderItems.map(item => ({
-      ...item,
-      completed: item.completed || false // Ensure completed is always a boolean
-    }));
-
-    const orderItemsMap = processedOrderItems.reduce((acc, item) => {
+    // Create a map of all order items
+    const allOrderItemsMap = (allOrderItems || []).reduce((acc, item) => {
       acc[item.order_id] = acc[item.order_id] || [];
-      acc[item.order_id].push(item);
+      acc[item.order_id].push({
+        ...item,
+        completed: item.completed || false  // Ensure completed is always a boolean
+      });
       return acc;
     }, {} as Record<string, OrderItem[]>);
 
-    // Get total count with the same filters
-    let countQuery = supabase
-      .from('orders')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'Pending');
+    // Calculate priority for each order based on its items and sort ALL orders
+    const ordersWithPriority = allOrders.map(order => {
+      const items = allOrderItemsMap[order.order_id] || [];
+      const priority = items.length > 0 
+        ? Math.max(...items.map((item: OrderItem) => item.priority || 0)) 
+        : 0;
+      return { ...order, calculatedPriority: priority } as OrderWithPriority;
+    });
 
-    if (manufactured !== undefined) {
-      countQuery = countQuery.eq('manufactured', manufactured);
-    }
-    if (packed !== undefined) {
-      countQuery = countQuery.eq('packed', packed);
-    }
+    // Sort ALL orders by priority in descending order
+    const sortedOrders = ordersWithPriority.sort((a, b) => 
+      b.calculatedPriority - a.calculatedPriority
+    );
 
-    const { count } = await countQuery;
-    console.log(`Total filtered orders in Supabase: ${count}`);
+    // Now apply pagination to the sorted orders
+    const startIndex = (page - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
 
-    return { orders, orderItems: orderItemsMap, total: count || 0, page };
+    console.log(`Applied pagination: showing orders ${startIndex+1} to ${Math.min(endIndex, sortedOrders.length)} of ${sortedOrders.length}`);
+
+    // Create a map of order items for just the paginated orders
+    const paginatedOrderIds = paginatedOrders.map(o => o.order_id);
+    const paginatedOrderItemsMap = paginatedOrderIds.reduce((acc, orderId) => {
+      if (allOrderItemsMap[orderId]) {
+        acc[orderId] = allOrderItemsMap[orderId];
+      }
+      return acc;
+    }, {} as Record<string, OrderItem[]>);
+
+    return { 
+      orders: paginatedOrders, 
+      orderItems: paginatedOrderItemsMap, 
+      total: sortedOrders.length, 
+      page, 
+      view 
+    };
   }
 );
 
@@ -751,34 +900,65 @@ const ordersSlice = createSlice({
       state,
       action: PayloadAction<{ orderId: string; itemId: string; completed: boolean }>
     ) => {
-      const items = state.orderItems[action.payload.orderId];
+      const orderId = action.payload.orderId;
+      const itemId = action.payload.itemId;
+      const completed = action.payload.completed;
+      const items = state.orderItems[orderId];
+      
       if (items) {
-        const item = items.find(i => i.id === action.payload.itemId);
+        const item = items.find(i => i.id === itemId);
         if (item) {
           // Only update if the value is actually different
-          if (item.completed !== action.payload.completed) {
-            item.completed = action.payload.completed;
-            // Update the order's items_completed count
-            const order = state.allOrders.find(o => o.order_id === action.payload.orderId);
-            if (order) {
-              order.items_completed = items.filter(i => i.completed).length;
+          if (item.completed !== completed) {
+            item.completed = completed;
+            
+            // Calculate the new items_completed count
+            const newCompletedCount = items.filter(i => i.completed).length;
+            
+            // Update items_completed in allOrders
+            const orderInAllOrders = state.allOrders.find(o => o.order_id === orderId);
+            if (orderInAllOrders) {
+              orderInAllOrders.items_completed = newCompletedCount;
+            }
+            
+            // Update items_completed in manufacturingOrders
+            const orderInManufacturing = state.manufacturingOrders.find(o => o.order_id === orderId);
+            if (orderInManufacturing) {
+              orderInManufacturing.items_completed = newCompletedCount;
+            }
+            
+            // Update items_completed in packingOrders
+            const orderInPacking = state.packingOrders.find(o => o.order_id === orderId);
+            if (orderInPacking) {
+              orderInPacking.items_completed = newCompletedCount;
             }
             
             // Update the item in Supabase
             supabase
               .from('order_items')
               .update({ 
-                completed: action.payload.completed, 
+                completed: completed, 
                 updated_at: new Date().toISOString() 
               })
-              .eq('id', action.payload.itemId)
+              .eq('id', itemId)
               .then(({ error }) => {
                 if (error) {
                   console.error('Error updating item in Supabase:', error);
                   // Revert the change if the update failed
-                  item.completed = !action.payload.completed;
-                  if (order) {
-                    order.items_completed = items.filter(i => i.completed).length;
+                  item.completed = !completed;
+                  
+                  // Recalculate the items_completed count
+                  const originalCompletedCount = items.filter(i => i.completed).length;
+                  
+                  // Update all arrays with original count
+                  if (orderInAllOrders) {
+                    orderInAllOrders.items_completed = originalCompletedCount;
+                  }
+                  if (orderInManufacturing) {
+                    orderInManufacturing.items_completed = originalCompletedCount;
+                  }
+                  if (orderInPacking) {
+                    orderInPacking.items_completed = originalCompletedCount;
                   }
                 }
               });
@@ -822,6 +1002,9 @@ const ordersSlice = createSlice({
         }
       }
     },
+    setCurrentView: (state, action: PayloadAction<'manufacturing' | 'packing' | 'archived'>) => {
+      state.currentView = action.payload;
+    },
   },
   extraReducers: builder => {
     builder
@@ -846,14 +1029,23 @@ const ordersSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchOrdersFromSupabase.fulfilled, (state, action) => {
-        const { orders, orderItems, total, page } = action.payload;
-        // Update allOrders without overwriting
-        const existingOrderIds = new Set(state.allOrders.map(o => o.order_id));
-        const newOrders = orders.filter(o => !existingOrderIds.has(o.order_id));
-        state.allOrders = [...state.allOrders, ...newOrders];
+        const { orders, orderItems, total, page, view } = action.payload;
+        
+        // Update state based on view
+        if (view === 'manufacturing') {
+          state.manufacturingOrders = orders;
+          state.totalManufacturingOrders = total;
+        } else if (view === 'packing') {
+          state.packingOrders = orders;
+          state.totalPackingOrders = total;
+        } else {
+          // Default or 'all' view
+          state.allOrders = orders;
+          state.totalOrders = total;
+        }
+        
         // Update orderItems
         state.orderItems = { ...state.orderItems, ...orderItems };
-        state.totalOrders = total;
         state.currentPage = page;
         state.loading = false;
       })
@@ -889,6 +1081,7 @@ export const {
   removeOrder,
   addOrderItem,
   removeOrderItem, 
+  setCurrentView, 
 } = ordersSlice.actions;
 export default ordersSlice.reducer;
 
@@ -898,6 +1091,44 @@ export default ordersSlice.reducer;
 const selectOrdersState = (state: RootState) => state.orders;
 
 export const selectAllOrders = createSelector([selectOrdersState], orders => orders.allOrders);
+
+export const selectManufacturingOrders = createSelector(
+  [selectOrdersState], 
+  state => state.manufacturingOrders
+);
+
+export const selectPackingOrders = createSelector(
+  [selectOrdersState], 
+  state => state.packingOrders
+);
+
+export const selectCurrentViewOrders = createSelector(
+  [selectOrdersState],
+  state => {
+    switch (state.currentView) {
+      case 'manufacturing':
+        return state.manufacturingOrders;
+      case 'packing':
+        return state.packingOrders;
+      default:
+        return state.allOrders;
+    }
+  }
+);
+
+export const selectCurrentViewTotal = createSelector(
+  [selectOrdersState],
+  state => {
+    switch (state.currentView) {
+      case 'manufacturing':
+        return state.totalManufacturingOrders;
+      case 'packing':
+        return state.totalPackingOrders;
+      default:
+        return state.totalOrders;
+    }
+  }
+);
 
 export const selectSortedOrders = createSelector(
   [selectAllOrders, selectOrdersState],
@@ -928,8 +1159,25 @@ export const selectOrderItemsById = (orderId: string) =>
 
 export const selectOrderProgress = (orderId: string) =>
   createSelector([selectOrdersState], orders => {
-    const order = orders.allOrders.find((o) => o.order_id === orderId);
-    return order ? `${order.items_completed}/${order.total_items}` : 'N/A';
+    // First check in manufacturing orders
+    let order = orders.manufacturingOrders.find((o) => o.order_id === orderId);
+    
+    // If not found, check in packing orders
+    if (!order) {
+      order = orders.packingOrders.find((o) => o.order_id === orderId);
+    }
+    
+    // If still not found, check in allOrders
+    if (!order) {
+      order = orders.allOrders.find((o) => o.order_id === orderId);
+    }
+    
+    // Handle the order properties regardless of whether calculatedPriority exists
+    if (order) {
+      return `${order.items_completed}/${order.total_items}`;
+    }
+    
+    return 'N/A';
   });
 
 export const selectArchivedOrders = createSelector(
@@ -947,18 +1195,27 @@ export const selectArchivedOrders = createSelector(
 
     // Fetch items for each archived order
     const orderItems: Record<string, OrderItem[]> = {};
-    for (const order of archivedOrders || []) {
+    
+    if (archivedOrders && archivedOrders.length > 0) {
+      const orderIds = archivedOrders.map(order => order.order_id);
+      
+      // Use a single query to get all items at once
       const { data: items, error: itemsError } = await supabase
         .from('archived_order_items')
         .select('*')
-        .eq('order_id', order.order_id);
+        .in('order_id', orderIds);
 
       if (itemsError) {
-        console.error(`Error fetching items for order ${order.order_id}:`, itemsError);
-        continue;
+        console.error(`Error fetching archived items:`, itemsError);
+      } else if (items) {
+        // Group items by order_id
+        items.forEach(item => {
+          if (!orderItems[item.order_id]) {
+            orderItems[item.order_id] = [];
+          }
+          orderItems[item.order_id].push(item);
+        });
       }
-
-      orderItems[order.order_id] = items || [];
     }
 
     return {

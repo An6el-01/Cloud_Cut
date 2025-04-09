@@ -50,9 +50,17 @@ export default function Admin() {
     }, []);
 
     const loadArchivedOrders = async () => {
-        const state = store.getState();
-        const archived = await selectArchivedOrders(state);
-        setArchivedOrders(archived);
+        setIsRefreshing(true);
+        try {
+            const state = store.getState();
+            const archived = await selectArchivedOrders(state);
+            setArchivedOrders(archived);
+            console.log(`Loaded ${archived.orders.length} archived orders with ${Object.keys(archived.orderItems).length} order items`);
+        } catch (error) {
+            console.error('Error loading archived orders:', error);
+        } finally {
+            setIsRefreshing(false);
+        }
     };
 
     const handleOrderClick = (orderId: string) => {

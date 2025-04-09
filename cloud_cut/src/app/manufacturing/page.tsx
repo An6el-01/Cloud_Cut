@@ -9,18 +9,23 @@ import {
   syncOrders,
   setSelectedOrderId,
   updateItemCompleted,
-  selectPaginatedOrders,
+  selectManufacturingOrders,
   selectOrderItemsById,
   selectOrderProgress,
   exportPendingOrdersCSV,
+  setCurrentView,
+  selectCurrentViewTotal,
 } from "@/redux/slices/ordersSlice";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
-import { OrderItem } from "@/types/redux";
+import { OrderItem, Order } from "@/types/redux";
+
+// Define OrderWithPriority type
+type OrderWithPriority = Order & { calculatedPriority: number };
 
 export default function Manufacturing() {
   const dispatch = useDispatch<AppDispatch>();
-  const orders = useSelector(selectPaginatedOrders); // These are already "Completed" orders
-  const totalOrders = useSelector((state: RootState) => state.orders.totalOrders); // Total "Completed" orders
+  const orders = useSelector(selectManufacturingOrders); // Use manufacturing-specific selector
+  const totalOrders = useSelector(selectCurrentViewTotal); // Use view-specific total
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ""));
   const { currentPage, loading, error,} = useSelector(
@@ -51,11 +56,17 @@ export default function Manufacturing() {
   );
 
   useEffect(() => {
+    // Set the current view first
+    dispatch(setCurrentView('manufacturing'));
+    
+    // Then fetch orders with the manufacturing-specific filters
     dispatch(fetchOrdersFromSupabase({ 
       page: currentPage, 
       perPage: ordersPerPage,
       manufactured: false,
-      packed: false
+      packed: false,
+      status: "Pending",
+      view: 'manufacturing'
     }));
 
     const ordersSubscription = subscribeToOrders((payload) => {
@@ -112,7 +123,14 @@ export default function Manufacturing() {
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
-      dispatch(fetchOrdersFromSupabase({ page: newPage, perPage: ordersPerPage }));
+      dispatch(fetchOrdersFromSupabase({ 
+        page: newPage, 
+        perPage: ordersPerPage,
+        manufactured: false,
+        packed: false,
+        status: "Pending",
+        view: 'manufacturing'
+      }));
     }
   };
 
@@ -124,8 +142,15 @@ export default function Manufacturing() {
     setIsRefreshing(true);
     dispatch(syncOrders())
       .then(() => {
-        // Fetch the first page of "Completed" orders after syncing
-        dispatch(fetchOrdersFromSupabase({ page: 1, perPage: ordersPerPage }));
+        // Fetch the first page of orders after syncing with the correct filters
+        dispatch(fetchOrdersFromSupabase({ 
+          page: 1, 
+          perPage: ordersPerPage,
+          manufactured: false,
+          packed: false,
+          status: "Pending",
+          view: 'manufacturing'
+        }));
       })
       .catch((error) => {
         console.error('Error in syncOrders:', error);
@@ -231,10 +256,12 @@ export default function Manufacturing() {
                       {orders.map((order) => {
                         // Get the items for this specific order
                         const orderItems = orderItemsById[order.order_id] || [];
-                        // Calculate the highest priority for this order's items
-                        const orderPriority = orderItems.length > 0
-                          ? Math.max(...orderItems.map((item) => item.priority || 0))
-                          : 0;
+                        // Use the calculated priority property if it exists
+                        const displayPriority = 'calculatedPriority' in order 
+                          ? (order as OrderWithPriority).calculatedPriority 
+                          : (orderItems.length > 0
+                            ? Math.max(...orderItems.map((item) => item.priority || 0))
+                            : 0);
 
                         return (
                           <tr
@@ -247,7 +274,7 @@ export default function Manufacturing() {
                           >
                             <td className="px-4 py-2 text-black">{order.order_id}</td>
                             <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                            <td className="px-4 py-2 text-black">{orderPriority}</td>
+                            <td className="px-4 py-2 text-black">{displayPriority}</td>
                             <td className="px-4 py-2 text-black">
                               {new Date(order.order_date).toLocaleDateString("en-GB")}
                             </td>

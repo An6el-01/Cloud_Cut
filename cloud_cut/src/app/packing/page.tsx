@@ -9,17 +9,22 @@ import {
     syncOrders,
     setSelectedOrderId,
     updateItemCompleted,
-    selectPaginatedOrders,
+    selectPackingOrders,
     selectOrderItemsById,
     selectOrderProgress,
+    setCurrentView,
+    selectCurrentViewTotal,
 } from "@/redux/slices/ordersSlice";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
-import { OrderItem } from "@/types/redux";
+import { OrderItem, Order } from "@/types/redux";
+
+// Define OrderWithPriority type
+type OrderWithPriority = Order & { calculatedPriority: number };
 
 export default function Packing() {
     const dispatch = useDispatch<AppDispatch>();
-    const orders = useSelector(selectPaginatedOrders);
-    const totalOrders = useSelector((state: RootState) => state.orders.totalOrders);
+    const orders = useSelector(selectPackingOrders);
+    const totalOrders = useSelector(selectCurrentViewTotal);
     const selectedOrderId = useSelector((state: RootState) =>  state.orders.selectedOrderId);
     const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ''));
     const { currentPage, loading, error } = useSelector((state: RootState) => state.orders);
@@ -44,14 +49,29 @@ export default function Packing() {
     );
 
     useEffect(() => {
-        dispatch(fetchOrdersFromSupabase({ page: currentPage, perPage: ordersPerPage }));
+        // Set the current view first
+        dispatch(setCurrentView('packing'));
+        
+        dispatch(fetchOrdersFromSupabase({ 
+            page: currentPage, 
+            perPage: ordersPerPage,
+            manufactured: true,
+            packed: false,
+            status: "Pending",
+            view: 'packing'
+        }));
         
         const ordersSubscription = subscribeToOrders((payload) => 
         {
-            if (payload.eventType === 'INSERT' && payload.new.status === 'Completed') {
+            if (payload.eventType === 'INSERT' && 
+                payload.new.status === 'Pending' && 
+                payload.new.manufactured === true && 
+                payload.new.packed === false) {
                 dispatch({ type: "orders/addOrder", payload: payload.new });
             } else if (payload.eventType === 'UPDATE') {
-                if (payload.new.status === "Completed") {
+                if (payload.new.status === "Pending" && 
+                    payload.new.manufactured === true && 
+                    payload.new.packed === false) {
                     dispatch({ type: "orders/updateOrder", payload: payload.new });
                 } else {
                     dispatch({ type: "orders/removeOrder", payload: payload.new });
@@ -92,7 +112,14 @@ export default function Packing() {
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= totalPages) {
-            dispatch(fetchOrdersFromSupabase({ page: newPage, perPage: ordersPerPage }));
+            dispatch(fetchOrdersFromSupabase({ 
+                page: newPage,
+                perPage: ordersPerPage,
+                manufactured: true,
+                packed: false,
+                status: "Pending",
+                view: 'packing'
+            }));
         }
     };
 
@@ -105,7 +132,14 @@ export default function Packing() {
         dispatch(syncOrders())
             .then(() => {
                 //Fetch the first page of completed orders after sync
-                dispatch(fetchOrdersFromSupabase({ page: 1, perPage: ordersPerPage }));
+                dispatch(fetchOrdersFromSupabase({ 
+                    page: 1, 
+                    perPage: ordersPerPage,
+                    manufactured: true,
+                    packed: false,
+                    status: "Pending",
+                    view: 'packing'
+                }));
             })
             .catch((error) => {
                 console.error('Error in syncOrders:', error);
@@ -173,7 +207,7 @@ export default function Packing() {
                                                 <th className="px-4 py-4 text-center text-black text-md">Order ID</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Customer Name</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Priority</th>
-                                                <th className="px-4 py-4 text-center text-black text-md">Order Date</th>
+                                                <th className="px-4 py-4 text-center text-black text-md whitespace-nowrap">Order Date</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Progress</th>
                                             </tr>
                                         </thead>
@@ -181,10 +215,12 @@ export default function Packing() {
                                             {orders.map((order) => {
                                                 //Get the items for this specific order
                                                 const orderItems = orderItemsById[order.order_id] || [];
-                                                //Calculate the highest priority for this order's items
-                                                const orderPriority = orderItems.length > 0
-                                                ? Math.max(...orderItems.map((item) => item.priority || 0))
-                                                : 0;
+                                                // Use the calculated priority property if it exists
+                                                const displayPriority = 'calculatedPriority' in order 
+                                                ? (order as OrderWithPriority).calculatedPriority 
+                                                : (orderItems.length > 0
+                                                    ? Math.max(...orderItems.map((item) => item.priority || 0))
+                                                    : 0);
 
                                                 return(
                                                     <tr
@@ -198,7 +234,7 @@ export default function Packing() {
                                                     >
                                                         <td className="px-4 py-2 text-black">{order.order_id}</td>
                                                         <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                                                        <td className="px-4 py-2 text-black">{orderPriority}</td>
+                                                        <td className="px-4 py-2 text-black">{displayPriority}</td>
                                                         <td className="px-4 py-2 text-black">
                                                             {new Date(order.order_date).toLocaleDateString("en-GB")}
                                                         </td>
@@ -257,8 +293,10 @@ export default function Packing() {
                                     </div>
                                     <div>
                                         <p className="text-sm text-gray-400 underline">Priority Level:</p>
-                                        <p className="font-medium">{Math.max(...selectedOrderItems.map((item) => item.priority 
-                                            || 0))}
+                                        <p className="font-medium">
+                                            {'calculatedPriority' in selectedOrder 
+                                                ? (selectedOrder as OrderWithPriority).calculatedPriority 
+                                                : Math.max(...selectedOrderItems.map((item) => item.priority || 0))}
                                         </p>
                                     </div>
                                     <div>
