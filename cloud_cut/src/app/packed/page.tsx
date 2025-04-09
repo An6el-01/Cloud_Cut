@@ -6,24 +6,22 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import {
   fetchOrdersFromSupabase,
-  syncOrders,
   setSelectedOrderId,
   updateItemCompleted,
   selectPaginatedOrders,
   selectOrderItemsById,
   selectOrderProgress,
-  exportPendingOrdersCSV,
 } from "@/redux/slices/ordersSlice";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import { OrderItem } from "@/types/redux";
 
-export default function Manufacturing() {
+export default function Packed() {
   const dispatch = useDispatch<AppDispatch>();
-  const orders = useSelector(selectPaginatedOrders); // These are already "Completed" orders
-  const totalOrders = useSelector((state: RootState) => state.orders.totalOrders); // Total "Completed" orders
+  const orders = useSelector(selectPaginatedOrders);
+  const totalOrders = useSelector((state: RootState) => state.orders.totalOrders);
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ""));
-  const { currentPage, loading, error,} = useSelector(
+  const { currentPage, loading, error } = useSelector(
     (state: RootState) => state.orders
   );
   const orderProgress = useSelector((state: RootState) =>
@@ -35,12 +33,10 @@ export default function Manufacturing() {
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
 
-  // No need to filter orders since fetchOrdersFromSupabase already filters by "Completed"
   const totalPages = Math.ceil(totalOrders / ordersPerPage);
 
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
 
   // Use useSelector to get order items for each order in the table
   const orderItemsById = useSelector((state: RootState) =>
@@ -54,19 +50,19 @@ export default function Manufacturing() {
     dispatch(fetchOrdersFromSupabase({ 
       page: currentPage, 
       perPage: ordersPerPage,
-      manufactured: false,
+      manufactured: true,
       packed: false
     }));
 
     const ordersSubscription = subscribeToOrders((payload) => {
       if (payload.eventType === "INSERT" && 
           payload.new.status === "Pending" && 
-          !payload.new.manufactured && 
+          payload.new.manufactured && 
           !payload.new.packed) {
         dispatch({ type: "orders/addOrder", payload: payload.new });
       } else if (payload.eventType === "UPDATE") {
         if (payload.new.status === "Pending" && 
-            !payload.new.manufactured && 
+            payload.new.manufactured && 
             !payload.new.packed) {
           dispatch({ type: "orders/updateOrder", payload: payload.new });
         } else {
@@ -81,7 +77,6 @@ export default function Manufacturing() {
       if (payload.eventType === "INSERT") {
         dispatch({ type: "orders/addOrderItem", payload: payload.new });
       } else if (payload.eventType === "UPDATE") {
-        // Only update if the item exists and the completed status has changed
         const currentItem = selectedOrderItems?.find(item => item.id === payload.new.id);
         if (currentItem && currentItem.completed !== payload.new.completed) {
           dispatch(
@@ -101,7 +96,7 @@ export default function Manufacturing() {
       ordersSubscription.unsubscribe();
       itemsSubscription.unsubscribe();
     };
-  }, [dispatch, currentPage]);
+  }, [dispatch, currentPage, selectedOrderItems]);
 
   const handleOrderClick = (orderId: string) => {
     dispatch(setSelectedOrderId(orderId));
@@ -112,7 +107,12 @@ export default function Manufacturing() {
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
-      dispatch(fetchOrdersFromSupabase({ page: newPage, perPage: ordersPerPage }));
+      dispatch(fetchOrdersFromSupabase({ 
+        page: newPage, 
+        perPage: ordersPerPage,
+        manufactured: true,
+        packed: false
+      }));
     }
   };
 
@@ -122,29 +122,16 @@ export default function Manufacturing() {
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    dispatch(syncOrders())
-      .then(() => {
-        // Fetch the first page of "Completed" orders after syncing
-        dispatch(fetchOrdersFromSupabase({ page: 1, perPage: ordersPerPage }));
-      })
-      .catch((error) => {
-        console.error('Error in syncOrders:', error);
-      })
+    dispatch(fetchOrdersFromSupabase({ 
+      page: currentPage, 
+      perPage: ordersPerPage,
+      manufactured: true,
+      packed: false
+    }))
       .finally(() => {
         setIsRefreshing(false);
       });
   };
-
-  const handleExportCSV = () => {
-    setIsExporting(true);
-    dispatch(exportPendingOrdersCSV())
-      .catch((error) => {
-        console.error("Error exporting CSV:", error);
-      })
-      .finally(() => {
-        setIsExporting(false);
-      })
-  }
 
   return (
     <div className="min-h-screen">
@@ -153,7 +140,7 @@ export default function Manufacturing() {
         {/* Orders Queue Section */}
         <div className="flex-1 max-w-3xl">
           <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
-            <h1 className="text-2xl font-bold text-white">Orders Queue</h1>
+            <h1 className="text-2xl font-bold text-white">Orders Ready For Packing</h1>
             <button
               onClick={handleRefresh}
               className={`px-4 py-2 text-white font-semibold rounded-lg transition-all duration-300 z-10 border-2 border-red-500 ${
@@ -167,25 +154,10 @@ export default function Manufacturing() {
               {isRefreshing ? (
                 <>
                   <span className="animate-spin">↻</span>
-                  <span>Syncing...</span>
+                  <span>Refreshing...</span>
                 </>
               ) : (
                 "Refresh Orders"
-              )}
-            </button>
-            <button
-              onClick={handleExportCSV}
-              className={`px-4 py-2 text-white font-semibold rounded-lg transition-all duration-300 z-10 border-2 border-green-500 ${isExporting ? "bg-green-600 animate-pulse flex items-center gap-2 cursor-not-allowed"
-                : "bg-gray-700 hover:bg-gray-600"}`}
-                disabled= {isExporting}
-            >
-              {isExporting ? (
-                <>
-                  <span className= "animate-spin">↓</span>
-                  <span>Exporting...</span>
-                </>
-              ) : (
-                "Export CSV"
               )}
             </button>
           </div>
@@ -207,7 +179,7 @@ export default function Manufacturing() {
               </div>
             ) : orders.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-black">No orders found</p>
+                <p className="text-black">No orders ready for packing</p>
                 <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
               </div>
             ) : (
@@ -229,9 +201,7 @@ export default function Manufacturing() {
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {orders.map((order) => {
-                        // Get the items for this specific order
                         const orderItems = orderItemsById[order.order_id] || [];
-                        // Calculate the highest priority for this order's items
                         const orderPriority = orderItems.length > 0
                           ? Math.max(...orderItems.map((item) => item.priority || 0))
                           : 0;
@@ -262,7 +232,7 @@ export default function Manufacturing() {
                   <div className="text-sm text-gray-600">
                     Showing {(currentPage - 1) * ordersPerPage + 1} to{" "}
                     {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders}{" "}
-                    pending orders
+                    orders ready for packing
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -372,4 +342,4 @@ export default function Manufacturing() {
       </div>
     </div>
   );
-}
+} 

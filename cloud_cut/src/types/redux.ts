@@ -14,6 +14,8 @@ export interface Order {
     raw_data: DespatchCloudOrder;
     created_at: string;
     updated_at: string;
+    manufactured: boolean;
+    packed: boolean;
 }   
 
 export interface OrderItem {

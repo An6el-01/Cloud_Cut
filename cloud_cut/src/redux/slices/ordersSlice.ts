@@ -69,6 +69,8 @@ export const syncOrders = createAsyncThunk(
           raw_data: order,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          manufactured: status === 'Completed',
+          packed: status === 'Completed'
         };
       });
 
@@ -109,7 +111,7 @@ export const syncOrders = createAsyncThunk(
             completed: order.status_description === 'Despatched',
             foamsheet: foamSheet,
             extra_info: item.options || 'N/A',
-            priority, // Use the individual priority
+            priority,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
@@ -121,201 +123,536 @@ export const syncOrders = createAsyncThunk(
       
       console.log(`Total order items to process: ${totalOrderItems}`);
 
-      //STEP 1: Upsert orders into 'orders' table
-      console.log('Upserting orders to supabase "orders" table...');
-      console.log('Orders about to be upserted:', orders.map(o => ({ order_id: o.order_id, status: o.status})));
+      //STEP 1: Check for existing orders in both tables before upserting
+      console.log('Checking for existing orders in both tables...');
       
-      const { error: ordersError } = await supabase
+      // Get existing order IDs from both tables
+      const { data: existingActiveOrders, error: activeCheckError } = await supabase
         .from('orders')
-        .upsert(orders, {
-          onConflict: 'order_id'
-        });
+        .select('order_id');
       
-      if (ordersError) {
-        console.error('Orders upsert error:', ordersError);
-        throw new Error(`Orders upsert failed: ${ordersError.message}`);
+      const { data: existingArchivedOrders, error: archivedCheckError } = await supabase
+        .from('archived_orders')
+        .select('order_id');
+      
+      if (activeCheckError || archivedCheckError) {
+        console.error('Error checking existing orders:', activeCheckError || archivedCheckError);
+        throw new Error(`Failed to check existing orders: ${(activeCheckError || archivedCheckError)?.message}`);
+      }
+      
+      const existingActiveOrderIds = new Set(existingActiveOrders?.map(o => o.order_id) || []);
+      const existingArchivedOrderIds = new Set(existingArchivedOrders?.map(o => o.order_id) || []);
+      
+      console.log(`Found ${existingActiveOrderIds.size} active orders and ${existingArchivedOrderIds.size} archived orders`);
+      
+      // Filter orders to insert/update for each table
+      const ordersToUpsertActive = orders.filter(order => 
+        (order.status === 'Pending' || !order.status) && 
+        !existingArchivedOrderIds.has(order.order_id)
+      );
+      
+      const ordersToUpsertArchived = orders.filter(order => 
+        order.status === 'Despatched' && 
+        !existingActiveOrderIds.has(order.order_id) &&
+        !existingArchivedOrderIds.has(order.order_id)
+      );
+      
+      // Orders that need status updates (i.e., changed from Pending to Despatched)
+      const ordersToMove = orders.filter(order => 
+        order.status === 'Despatched' && 
+        existingActiveOrderIds.has(order.order_id) &&
+        !existingArchivedOrderIds.has(order.order_id)
+      );
+      
+      console.log(`Orders to upsert in active table: ${ordersToUpsertActive.length}`);
+      console.log(`Orders to upsert in archived table: ${ordersToUpsertArchived.length}`);
+      console.log(`Orders to move from active to archived: ${ordersToMove.length}`);
+
+      //STEP 2: Upsert orders into appropriate tables
+      console.log('Upserting orders to respective tables...');
+      
+      // Split orders into batches to avoid payload size issues
+      const batchSize = 50;
+      
+      // Upsert active orders
+      if (ordersToUpsertActive.length > 0) {
+        for (let i = 0; i < ordersToUpsertActive.length; i += batchSize) {
+          const batch = ordersToUpsertActive.slice(i, i + batchSize);
+          const { error: ordersError } = await supabase
+            .from('orders')
+            .upsert(batch, {
+              onConflict: 'order_id'
+            });
+          
+          if (ordersError) {
+            console.error('Active orders upsert error:', ordersError);
+            throw new Error(`Active orders upsert failed: ${ordersError.message}`);
+          }
+          console.log(`Successfully upserted batch ${i/batchSize + 1} of active orders`);
+        }
+      }
+      
+      // Upsert archived orders
+      if (ordersToUpsertArchived.length > 0) {
+        console.log('Moving orders from active to archived...');
+        for (let i = 0; i < ordersToMove.length; i += batchSize) {
+          const batch = ordersToMove.slice(i, i + batchSize);
+          
+          // First insert into archived_orders
+          const { error: insertError } = await supabase
+            .from('archived_orders')
+            .upsert(batch, {
+              onConflict: 'order_id'
+            });
+          
+          if (insertError) {
+            console.error('Error moving orders to archived:', insertError);
+            continue;
+          }
+          
+          // Then delete from orders table
+          const batchOrderIds = batch.map(o => o.order_id);
+          const { error: deleteError } = await supabase
+            .from('orders')
+            .delete()
+            .in('order_id', batchOrderIds);
+          
+          if (deleteError) {
+            console.error('Error deleting moved orders from active table:', deleteError);
+          } else {
+            console.log(`Successfully moved batch ${i/batchSize + 1} of orders to archived`);
+          }
+        }
+      }
+
+      // Add a longer delay to ensure orders are committed
+      console.log('Waiting for orders to be committed...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Update our tracking of which orders are where
+      existingArchivedOrderIds.forEach(id => existingActiveOrderIds.delete(id));
+      ordersToUpsertArchived.forEach(order => existingArchivedOrderIds.add(order.order_id));
+      ordersToMove.forEach(order => {
+        existingActiveOrderIds.delete(order.order_id);
+        existingArchivedOrderIds.add(order.order_id);
+      });
+      ordersToUpsertActive.forEach(order => {
+        if (!existingActiveOrderIds.has(order.order_id)) {
+          existingActiveOrderIds.add(order.order_id);
+        }
+      });
+
+      // Verify orders exist with retries, checking both tables
+      let verifiedOrders = null;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (retryCount < maxRetries) {
+        // Check both orders and archived_orders tables
+        const { data: activeOrders, error: activeError } = await supabase
+          .from('orders')
+          .select('order_id')
+          .in('order_id', orders.map(o => o.order_id));
+
+        const { data: archivedOrders, error: archivedError } = await supabase
+          .from('archived_orders')
+          .select('order_id')
+          .in('order_id', orders.map(o => o.order_id));
+
+        if (activeError || archivedError) {
+          console.error(`Error verifying orders (attempt ${retryCount + 1}):`, activeError || archivedError);
+          retryCount++;
+          if (retryCount < maxRetries) {
+            console.log('Retrying verification after delay...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            continue;
+          }
+          throw new Error(`Failed to verify orders after ${maxRetries} attempts: ${(activeError || archivedError)?.message}`);
+        }
+
+        // Combine results from both tables
+        verifiedOrders = [...(activeOrders || []), ...(archivedOrders || [])];
+        console.log(`Verified ${verifiedOrders.length} orders on attempt ${retryCount + 1}`);
+        break;
+      }
+
+      if (!verifiedOrders) {
+        throw new Error('Failed to verify orders after all retries');
+      }
+
+      // Log the verification results
+      console.log('Verified order IDs:', Array.from(verifiedOrders.map(o => o.order_id)));
+      console.log('Total orders to process:', orders.length);
+      console.log('Orders found in database:', verifiedOrders.length);
+
+      // Only consider orders as missing if they are not in either table
+      const missingOrders = orders.filter(o => !verifiedOrders.some(vo => vo.order_id === o.order_id));
+      
+      if (missingOrders.length > 0) {
+        console.error('Some orders failed to be inserted:', missingOrders);
+        throw new Error(`Failed to insert ${missingOrders.length} orders`);
       }
 
       //STEP 2: Handle order items with separate insert and update
       console.log('Processing order items for Supabase...');
+      
+      // First, get all existing order items from both tables
+      const { data: existingOrderItems, error: fetchExistingItemsError } = await supabase
+        .from('order_items')
+        .select('id');
+      
+      const { data: existingArchivedItems, error: fetchExistingArchivedItemsError } = await supabase
+        .from('archived_order_items')
+        .select('id');
+
+      if (fetchExistingItemsError || fetchExistingArchivedItemsError) {
+        console.error('Error fetching existing items:', fetchExistingItemsError || fetchExistingArchivedItemsError);
+        throw new Error(`Failed to fetch existing items: ${(fetchExistingItemsError || fetchExistingArchivedItemsError)?.message}`);
+      }
+
+      const existingItemIds = new Set(existingOrderItems?.map(item => item.id) || []);
+      const existingArchivedItemIds = new Set(existingArchivedItems?.map(item => item.id) || []);
+      
+      console.log(`Found ${existingItemIds.size} active items and ${existingArchivedItemIds.size} archived items`);
+      
+      // Prepare arrays for insert and update operations
+      const itemsToInsertActive: OrderItem[] = [];
+      const itemsToUpdateActive: OrderItem[] = [];
+      const itemsToInsertArchived: OrderItem[] = [];
+      const itemsToUpdateArchived: OrderItem[] = [];
+      const itemsToMoveToArchived: OrderItem[] = [];
+
       for (const orderId in orderItems) {
         const items = orderItems[orderId];
-        console.log(`Processing ${items.length} items for order ${orderId}`);
-
-        // First verify the order exists
-        const { data: orderExists, error: checkError } = await supabase
-          .from('orders')
-          .select('order_id')
-          .eq('order_id', orderId)
-          .single();
-
-        if (checkError || !orderExists) {
-          console.error(`Order ${orderId} not found in database, skipping items`);
-          continue;
-        }
-
-        //Fetch existing items for this order
-        const { data: existingItems, error: fetchItemsError } = await supabase
-          .from('order_items')
-          .select('id')
-          .eq('order_id', orderId);
         
-        if (fetchItemsError) {
-          console.error(`Fetch existing items error for order ${orderId}:`, fetchItemsError);
+        // Skip if order doesn't exist in either table
+        if (!existingActiveOrderIds.has(orderId) && !existingArchivedOrderIds.has(orderId)) {
+          console.warn(`Skipping items for non-existent order: ${orderId}`);
           continue;
         }
 
-        const existingItemIds = new Set(existingItems.map(item => item.id));
-        const itemsToInsert = items.filter(item => !existingItemIds.has(item.id));
-        const itemsToUpdate = items.filter(item => existingItemIds.has(item.id));
+        const orderIsArchived = existingArchivedOrderIds.has(orderId);
+        
+        items.forEach(item => {
+          const itemId = item.id;
+          const itemExistsInActive = existingItemIds.has(itemId);
+          const itemExistsInArchived = existingArchivedItemIds.has(itemId);
 
-        //Insert new items
-        if (itemsToInsert.length > 0) {
-          console.log(`Inserting ${itemsToInsert.length} new items for order ${orderId}`);
+          if (orderIsArchived) {
+            // Order is in archived_orders table
+            if (itemExistsInArchived) {
+              itemsToUpdateArchived.push(item);
+            } else {
+              // Create a unique hash ID for this archived item
+              const uniqueString = `${item.order_id}-${item.sku_id}`;
+              let hash = 0;
+              for (let i = 0; i < uniqueString.length; i++) {
+                const char = uniqueString.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+              }
+              const positiveHash = Math.abs(hash) % 2147483647;
+              
+              itemsToInsertArchived.push({
+                ...item,
+                id: positiveHash.toString()
+              });
+            }
+            
+            // If the item exists in active but the order is now archived, we need to delete it from active
+            if (itemExistsInActive) {
+              // Will handle this in a separate deletion step
+              itemsToMoveToArchived.push(item);
+            }
+          } else {
+            // Order is in active orders table
+            if (itemExistsInActive) {
+              itemsToUpdateActive.push(item);
+            } else {
+              itemsToInsertActive.push(item);
+            }
+          }
+        });
+      }
+
+      console.log(`Items to insert in active table: ${itemsToInsertActive.length}`);
+      console.log(`Items to update in active table: ${itemsToUpdateActive.length}`);
+      console.log(`Items to insert in archived table: ${itemsToInsertArchived.length}`);
+      console.log(`Items to update in archived table: ${itemsToUpdateArchived.length}`);
+      console.log(`Items to move from active to archived: ${itemsToMoveToArchived.length}`);
+
+      // Insert new active items in batches
+      if (itemsToInsertActive.length > 0) {
+        console.log(`Inserting ${itemsToInsertActive.length} new active items in batches`);
+        for (let i = 0; i < itemsToInsertActive.length; i += batchSize) {
+          const batch = itemsToInsertActive.slice(i, i + batchSize);
           const { error: insertError } = await supabase
             .from('order_items')
-            .insert(itemsToInsert);
+            .insert(batch);
           
           if (insertError) {
-            console.error(`Insert error for order ${orderId}:`, insertError);
-            continue;
+            console.error('Error inserting new active items:', insertError);
+            console.error('Failed batch:', batch);
+            throw new Error(`Failed to insert new active items: ${insertError.message}`);
+          }
+          console.log(`Successfully inserted batch ${i/batchSize + 1} of active items`);
+        }
+      }
+
+      // Insert items for archived orders
+      if (itemsToInsertArchived.length > 0) {
+        console.log(`Inserting ${itemsToInsertArchived.length} items for archived orders`);
+        
+        // First, get the existing archived item IDs to check for duplicates
+        const allItemIds = new Set<string>();
+        const { data: existingIDs, error: existingIDsError } = await supabase
+          .from('archived_order_items')
+          .select('id');
+        
+        if (!existingIDsError && existingIDs) {
+          existingIDs.forEach(item => allItemIds.add(item.id.toString()));
+          console.log(`Found ${allItemIds.size} existing archived item IDs`);
+        }
+        
+        // Process items in batches
+        for (let i = 0; i < itemsToInsertArchived.length; i += batchSize) {
+          const batch = itemsToInsertArchived.slice(i, i + batchSize);
+          
+          // Create unique IDs that won't conflict, using a more robust method
+          const processedBatch = batch.map(item => {
+            // Create a unique string that includes more varied information
+            const uniqueString = `${item.order_id}-${item.sku_id}-${item.item_name.substring(0, 10)}`;
+            
+            // More robust hash function
+            let hash = 0;
+            const prime = 31;
+            for (let i = 0; i < uniqueString.length; i++) {
+              hash = Math.imul(hash, prime) + uniqueString.charCodeAt(i);
+            }
+            
+            // Ensure positive number and within safe integer range with more entropy
+            const positiveHash = Math.abs(hash) % 1000000000;
+            
+            // Make sure the ID doesn't already exist
+            let finalId = positiveHash;
+            let attempt = 0;
+            while (allItemIds.has(finalId.toString()) && attempt < 10) {
+              // If there's a collision, modify the hash slightly
+              finalId = (positiveHash + attempt * 1000 + Math.floor(Math.random() * 1000)) % 2147483647;
+              attempt++;
+            }
+            
+            // Add this ID to our set to avoid future collisions
+            allItemIds.add(finalId.toString());
+            
+            return {
+              ...item,
+              id: finalId
+            };
+          });
+          
+          // Use upsert with onConflict instead of insert
+          const { error: archiveError } = await supabase
+            .from('archived_order_items')
+            .upsert(processedBatch, {
+              onConflict: 'id',
+              ignoreDuplicates: true
+            });
+          
+          if (archiveError) {
+            console.error('Error upserting archived items:', archiveError);
+            console.error('Failed batch:', processedBatch);
+            console.warn('Continue with sync despite archived items insertion error');
+            // Don't throw here to allow the process to continue
+          } else {
+            console.log(`Successfully upserted batch ${Math.floor(i/batchSize) + 1} of archived items`);
           }
         }
+      }
 
-        //Update Existing Items
-        if (itemsToUpdate.length > 0) {
-          console.log(`Updating ${itemsToUpdate.length} existing items for order ${orderId}`);
-          for(const item of itemsToUpdate){
+      // Update existing active items in batches
+      if (itemsToUpdateActive.length > 0) {
+        console.log(`Updating ${itemsToUpdateActive.length} existing active items`);
+        for (let i = 0; i < itemsToUpdateActive.length; i += batchSize) {
+          const batch = itemsToUpdateActive.slice(i, i + batchSize);
+          for (const item of batch) {
             const { error: updateError } = await supabase
               .from('order_items')
               .update({
                 quantity: item.quantity,
                 completed: item.completed,
                 priority: item.priority,
-                updated_at: item.updated_at,
+                updated_at: item.updated_at
               })
               .eq('id', item.id);
             
             if (updateError) {
-              console.error(`Update error for item ${item.id} in order ${orderId}:`, updateError);
-              continue;
+              console.error(`Error updating active item ${item.id}:`, updateError);
+              // Continue with other updates even if one fails
             }
           }
+          console.log(`Successfully updated batch ${i/batchSize + 1} of active items`);
         }
       }
 
-      // Step 3: Archive Completed Orders
-      const completedOrders = orders.filter(order => order.status === 'Despatched');
-      if(completedOrders.length > 0) {
-        console.log(`Processing ${completedOrders.length} completed orders for archiving...`);
-        
-        const orderIds = completedOrders.map(order => order.order_id);
-        
-        // First check which orders are already archived
-        const { data: existingArchivedOrders, error: checkError } = await supabase
-          .from('archived_orders')
-          .select('order_id')
-          .in('order_id', orderIds);
-        
-        if (checkError) {
-          console.error('Error checking archived orders:', checkError);
-          console.warn('Archiving failed but continuing with sync');
-        } else {
-          // Filter out orders that are already archived
-          const existingArchivedOrderIds = new Set(existingArchivedOrders?.map(o => o.order_id) || []);
-          const ordersToArchive = completedOrders.filter(order => !existingArchivedOrderIds.has(order.order_id));
-          
-          if (ordersToArchive.length > 0) {
-            console.log(`Found ${ordersToArchive.length} orders to archive`);
-            
-            // Update the status of orders to trigger the archive process
+      // Update existing archived items in batches
+      if (itemsToUpdateArchived.length > 0) {
+        console.log(`Updating ${itemsToUpdateArchived.length} existing archived items`);
+        for (let i = 0; i < itemsToUpdateArchived.length; i += batchSize) {
+          const batch = itemsToUpdateArchived.slice(i, i + batchSize);
+          for (const item of batch) {
             const { error: updateError } = await supabase
-              .from('orders')
-              .update({ status: 'Archived' })
-              .in('order_id', ordersToArchive.map(o => o.order_id));
+              .from('archived_order_items')
+              .update({
+                quantity: item.quantity,
+                completed: item.completed,
+                priority: item.priority,
+                updated_at: item.updated_at
+              })
+              .eq('id', item.id);
             
             if (updateError) {
-              console.error('Error updating order status for archiving:', updateError);
-              console.warn('Archiving failed but continuing with sync');
-            } else {
-              console.log('Successfully triggered archiving for completed orders');
-              
-              // Delete the orders from the main orders table after they've been archived
-              console.log('Removing archived orders from main orders table...');
-              const { error: deleteOrdersError } = await supabase
-                .from('orders')
-                .delete()
-                .in('order_id', ordersToArchive.map(o => o.order_id));
-              
-              if (deleteOrdersError) {
-                console.error('Error deleting orders:', deleteOrdersError);
-              }
+              console.error(`Error updating archived item ${item.id}:`, updateError);
+              // Continue with other updates even if one fails
             }
+          }
+          console.log(`Successfully updated batch ${i/batchSize + 1} of archived items`);
+        }
+      }
+
+      // Handle items that need to be moved from active to archived
+      if (itemsToMoveToArchived.length > 0) {
+        console.log(`Moving ${itemsToMoveToArchived.length} items from active to archived`);
+        
+        // First, prepare these items with proper IDs for the archived table
+        const processedItemsToMove = itemsToMoveToArchived.map(item => {
+          const uniqueString = `${item.order_id}-${item.sku_id}`;
+          let hash = 0;
+          for (let i = 0; i < uniqueString.length; i++) {
+            const char = uniqueString.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+          }
+          const positiveHash = Math.abs(hash) % 2147483647;
+          
+          return {
+            ...item,
+            id: positiveHash.toString()
+          };
+        });
+        
+        // Insert into archived_order_items in batches
+        for (let i = 0; i < processedItemsToMove.length; i += batchSize) {
+          const batch = processedItemsToMove.slice(i, i + batchSize);
+          const { error: insertError } = await supabase
+            .from('archived_order_items')
+            .insert(batch);
+          
+          if (insertError) {
+            console.error('Error moving items to archived:', insertError);
+            console.warn('Continuing despite error moving items');
           } else {
-            console.log('No new orders to archive');
+            // Delete from order_items
+            const itemIds = itemsToMoveToArchived.slice(i, i + batchSize).map(item => item.id);
+            const { error: deleteError } = await supabase
+              .from('order_items')
+              .delete()
+              .in('id', itemIds);
+            
+            if (deleteError) {
+              console.error('Error deleting moved items from active table:', deleteError);
+            } else {
+              console.log(`Successfully moved batch ${i/batchSize + 1} of items to archived`);
+            }
           }
         }
       }
-        
-        //Fetch updated data
-        console.log('Fetching updated data from Supabase...');
-        
-        const { data: updatedOrders, error: fetchOrdersError } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('status', 'Pending'); // Only fetch pending orders
 
-        if(fetchOrdersError) {
-          console.error('Fetch orders error:', fetchOrdersError);
-          throw new Error(`Fetch orders failed: ${fetchOrdersError.message}`);
-        }
+      // Step 3: No need for a separate "Archive Completed Orders" step since we already handled it above
+      
+      //Fetch updated data
+      console.log('Fetching updated data from Supabase...');
+      
+      const { data: updatedOrders, error: fetchUpdatedOrdersError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'Pending'); // Only fetch pending orders
 
-        const { data: updatedItems, error: fetchItemsError } = await supabase
-          .from('order_items')
-          .select('*');
-        if(fetchItemsError) {
-          console.error('Fetch items error: ', fetchItemsError);
-          throw new Error(`Fetch items failed: ${fetchItemsError.message}`);
-        }
+      if(fetchUpdatedOrdersError) {
+        console.error('Fetch orders error:', fetchUpdatedOrdersError);
+        throw new Error(`Fetch orders failed: ${fetchUpdatedOrdersError.message}`);
+      }
 
-        console.log(`Fetched ${updatedItems.length} order items from Supabase`);
+      const { data: updatedItems, error: fetchUpdatedItemsError } = await supabase
+        .from('order_items')
+        .select('*');
+      if(fetchUpdatedItemsError) {
+        console.error('Fetch items error: ', fetchUpdatedItemsError);
+        throw new Error(`Fetch items failed: ${fetchUpdatedItemsError.message}`);
+      }
 
-        const updatedOrderItems = updatedItems.reduce((acc, item) => {
-          acc[item.order_id] = acc[item.order_id] || [];
-          acc[item.order_id].push(item);
-          return acc;
-        }, {} as Record<string, OrderItem[]>);
+      console.log(`Fetched ${updatedItems?.length || 0} order items from Supabase`);
 
-    console.log('Sync completed successfully');
-    return {
-      orders: updatedOrders || orders,
-      orderItems: updatedOrderItems || orderItems,
-      total,
-      last_page: lastPage,
-    };
-  } catch (error) {
-    console.error('Sync error:', error);
-    dispatch(setSyncStatus('error'));
-    throw new Error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const updatedOrderItems = (updatedItems || []).reduce((acc, item) => {
+        acc[item.order_id] = acc[item.order_id] || [];
+        acc[item.order_id].push(item);
+        return acc;
+      }, {} as Record<string, OrderItem[]>);
+
+      console.log('Sync completed successfully');
+      return {
+        orders: updatedOrders || orders,
+        orderItems: updatedOrderItems || orderItems,
+        total,
+        last_page: lastPage,
+      };
+    } catch (error) {
+      console.error('Sync error:', error);
+      dispatch(setSyncStatus('error'));
+      throw new Error(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
-}
 );
 
 
 export const fetchOrdersFromSupabase = createAsyncThunk(
   'orders/fetchOrdersFromSupabase',
-  async ({ page, perPage }: { page: number; perPage: number }) => {
+  async ({ 
+    page, 
+    perPage,
+    manufactured = undefined,
+    packed = undefined
+  }: { 
+    page: number; 
+    perPage: number;
+    manufactured?: boolean;
+    packed?: boolean;
+  }) => {
     console.log(`Fetching orders from Supabase, page: ${page}, perPage: ${perPage}`);
-    // Fetch only orders with status = 'Completed'
-    const { data: orders, error: ordersError } = await supabase
+    
+    // Build the query
+    let query = supabase
       .from('orders')
       .select('*')
-      .eq('status', 'Pending') // Filter by status
+      .eq('status', 'Pending');
+
+    // Add manufactured filter if specified
+    if (manufactured !== undefined) {
+      query = query.eq('manufactured', manufactured);
+    }
+
+    // Add packed filter if specified
+    if (packed !== undefined) {
+      query = query.eq('packed', packed);
+    }
+
+    // Add pagination and ordering
+    const { data: orders, error: ordersError } = await query
       .range((page - 1) * perPage, page * perPage - 1)
       .order('order_date', { ascending: false });
 
     if (ordersError) throw new Error(`Fetch orders failed: ${ordersError.message}`);
-    console.log(`Fetched ${orders.length} completed orders from Supabase`);
+    console.log(`Fetched ${orders.length} orders from Supabase`);
 
     const orderIds = orders.map(o => o.order_id);
     const { data: orderItems, error: itemsError } = await supabase
@@ -326,18 +663,33 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
     if (itemsError) throw new Error(`Fetch items failed: ${itemsError.message}`);
     console.log(`Fetched ${orderItems.length} order items for ${orderIds.length} orders`);
 
-    const orderItemsMap = orderItems.reduce((acc, item) => {
+    // Process order items to ensure completed status is correct
+    const processedOrderItems = orderItems.map(item => ({
+      ...item,
+      completed: item.completed || false // Ensure completed is always a boolean
+    }));
+
+    const orderItemsMap = processedOrderItems.reduce((acc, item) => {
       acc[item.order_id] = acc[item.order_id] || [];
       acc[item.order_id].push(item);
       return acc;
     }, {} as Record<string, OrderItem[]>);
 
-    // Fetch the total count of "Completed" orders
-    const { count } = await supabase
+    // Get total count with the same filters
+    let countQuery = supabase
       .from('orders')
       .select('*', { count: 'exact', head: true })
-      .eq('status', 'Pending'); // Filter by status
-    console.log(`Total pending orders in Supabase: ${count}`);
+      .eq('status', 'Pending');
+
+    if (manufactured !== undefined) {
+      countQuery = countQuery.eq('manufactured', manufactured);
+    }
+    if (packed !== undefined) {
+      countQuery = countQuery.eq('packed', packed);
+    }
+
+    const { count } = await countQuery;
+    console.log(`Total filtered orders in Supabase: ${count}`);
 
     return { orders, orderItems: orderItemsMap, total: count || 0, page };
   }
@@ -403,9 +755,34 @@ const ordersSlice = createSlice({
       if (items) {
         const item = items.find(i => i.id === action.payload.itemId);
         if (item) {
-          item.completed = action.payload.completed;
-          const order = state.allOrders.find(o => o.order_id === action.payload.orderId);
-          if (order) order.items_completed = items.filter(i => i.completed).length;
+          // Only update if the value is actually different
+          if (item.completed !== action.payload.completed) {
+            item.completed = action.payload.completed;
+            // Update the order's items_completed count
+            const order = state.allOrders.find(o => o.order_id === action.payload.orderId);
+            if (order) {
+              order.items_completed = items.filter(i => i.completed).length;
+            }
+            
+            // Update the item in Supabase
+            supabase
+              .from('order_items')
+              .update({ 
+                completed: action.payload.completed, 
+                updated_at: new Date().toISOString() 
+              })
+              .eq('id', action.payload.itemId)
+              .then(({ error }) => {
+                if (error) {
+                  console.error('Error updating item in Supabase:', error);
+                  // Revert the change if the update failed
+                  item.completed = !action.payload.completed;
+                  if (order) {
+                    order.items_completed = items.filter(i => i.completed).length;
+                  }
+                }
+              });
+          }
         }
       }
     },
