@@ -7,8 +7,10 @@ import { AppDispatch, RootState } from '@/redux/store';
 import Image from 'next/image';
 import {
     setSelectedOrderId,
-    selectArchivedOrders,
 } from "@/redux/slices/ordersSlice";
+import {
+    selectArchivedOrders,
+} from "@/redux/slices/ordersSelectors";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import OrderItemsOverlay from '@/components/OrderItemsOverlay';
 import { Order, OrderItem } from '@/types/redux';
@@ -102,24 +104,18 @@ export default function Admin() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm flex justify-between items-center p-4">
                         <h1 className="text-2xl font-bold text-white">Completed Orders</h1>
                         <button
-                            onClick={handleRefresh}
-                            className={`px-4 py-2 text-white font-semibold rounded-lg transition-all duration-300 z-10 border-2 border-red-500 ${
-                                isRefreshing
-                                    ? "bg-blue-600 animate-pulse flex items-center gap-2 cursor-not-allowed"
-                                    : "bg-gray-700 hover:bg-gray-600"
-                            }`}
-                            disabled={isRefreshing}
-                            style={{ position: "relative" }}
-                        >
-                            {isRefreshing ? (
-                                <>
-                                    <span className="animate-spin">↻</span>
-                                    <span>syncing...</span>
-                                </>
-                            ) : (
-                                "Refresh Orders"
-                            )}
-                        </button>
+                  onClick={handleRefresh}
+                  className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
+                  disabled={isRefreshing}
+                  aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
+                >
+                  <span className={`${isRefreshing ? "animate-spin" : ""} text-red-400`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.67-8.9" />
+                    </svg>
+                  </span>
+                  <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
+                </button>
                     </div>
                     {/* Table Container */}
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm">
