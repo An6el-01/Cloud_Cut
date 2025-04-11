@@ -539,14 +539,15 @@ export default function Manufacturing() {
                     <p className="font-medium">{selectedOrder.status}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-400 underline">Priority Level:</p>
-                    <p className="font-medium">
-                      {(() => {
-                        const filteredItems = filterItemsBySku(selectedOrderItems);
-                        if (filteredItems.length === 0) return 'N/A';
-                        return Math.max(...filteredItems.map(item => item.priority || 0));
-                      })()}
-                    </p>
+                      <p className="text-sm text-gray-400 underline">Despatch Cloud:</p>
+                      <a 
+                          href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${selectedOrder.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer" 
+                          className="font-medium text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                          View in Despatch Cloud
+                      </a>
                   </div>
                   <div>
                     <p className="text-sm text-gray-400 underline">Customer Name:</p>

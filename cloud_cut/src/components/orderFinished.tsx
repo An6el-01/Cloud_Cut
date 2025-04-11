@@ -1,18 +1,22 @@
 "use client";
 
-import React, {useRef, useEffect} from "react";
+import React, {useRef, useEffect, useState} from "react";
 
 export default function OrderFinished({
     isOpen,
     onClose,
     onConfirm,
     orderId,
+    id,
 } : {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: (orderId: string) => void;
     orderId: string;
+    id: string;
 }) {
+    const [showDespatch, setShowDespatch] = useState(false);
+    const despatchUrl = `https://shadowfoam.despatchcloud.net/orders/edit?id=${id}`;
 
     // Trap focus inside modal when open for accessibility
     const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -47,6 +51,14 @@ export default function OrderFinished({
         }
     };
 
+    const handleConfirmClick = () => {
+        setShowDespatch(true);
+    };
+
+    const handleDoneClick = () => {
+        onConfirm(orderId);
+    };
+
     if (!isOpen) return null;
 
     return(
@@ -79,35 +91,67 @@ export default function OrderFinished({
                     id="dialog-title"
                     className="text-xl font-bold text-gray-900 dark:text-white mb-4"
                 >
-                    Confirm Order Completion
+                    {showDespatch ? "Despatch Order" : "Confirm Order Completion"}
                 </h2>
 
                 <div className="mb-6 text-gray-700 dark:text-gray-300 space-y-3">
-                    <p>
-                        Are you confirming that <span className="font-semibold">all items</span> for this order have been finished?
-                    </p>
-                    <p className="flex items-center bg-blue-50 dark:bg-blue-900/30 p-3 rounded-lg">
-                        <span className="text-blue-600 dark:text-blue-400 mr-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                </svg>
-                        </span>
-                        <span>
-                            Order: <strong className="font-semibold">{orderId}</strong> will be marked as complete.
-                        </span>
-                    </p>
+                    {showDespatch ? (
+                        <>
+                            <p>
+                                Please despatch the order using the link below:
+                            </p>
+                            <a
+                                href={despatchUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-center"
+                            >
+                                Despatch Order
+                            </a>
+                            <p className="mt-4">
+                                Once you have completed the despatch process, click the button below to mark the order as complete.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p>
+                                Are you confirming that <span className="font-semibold">all items</span> for this order have been finished?
+                            </p>
+                            <p className="flex items-center bg-blue-50 dark:bg-blue-900/30 p-3 rounded-lg">
+                                <span className="text-blue-600 dark:text-blue-400 mr-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                    </svg>
+                                </span>
+                                <span>
+                                    Order: <strong className="font-semibold">{orderId}</strong> will be marked as complete.
+                                </span>
+                            </p>
+                        </>
+                    )}
                 </div>
 
                 <div className="flex justify-center">
-                    <button
-                        type="button"
-                        ref={confirmButtonRef}
-                        onClick={() => onConfirm(orderId)}
-                        className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-md hover:shadow-lg"
-                        aria-label="Confirm and mark as complete"
-                    >
-                        Confirm Completion
-                    </button>
+                    {showDespatch ? (
+                        <button
+                            type="button"
+                            onClick={handleDoneClick}
+                            className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-md hover:shadow-lg"
+                            aria-label="Mark order as complete"
+                        >
+                            Done
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            ref={confirmButtonRef}
+                            onClick={handleConfirmClick}
+                            className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-md hover:shadow-lg"
+                            aria-label="Confirm and proceed to despatch"
+                        >
+                            Confirm Completion
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

@@ -431,13 +431,17 @@ export default function Packing() {
                                         <p className="font-medium">{selectedOrder.status}</p>
                                     </div>
                                     <div>
-                                        <p className="text-sm text-gray-400 underline">Priority Level:</p>
-                                        <p className="font-medium">
-                                            {'calculatedPriority' in selectedOrder
-                                                ? (selectedOrder as OrderWithPriority).calculatedPriority
-                                                : Math.max(...selectedOrderItems.map((item) => item.priority || 0))}
-                                        </p>
+                                        <p className="text-sm text-gray-400 underline">Despatch Cloud:</p>
+                                        <a 
+                                            href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${selectedOrder.id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer" 
+                                            className="font-medium text-blue-400 hover:text-blue-300 transition-colors"
+                                        >
+                                            View in Despatch Cloud
+                                        </a>
                                     </div>
+                                   
                                     <div>
                                         <p className="text-sm text-gray-400 underline">Customer Name:</p>
                                         <p className="font-medium">{selectedOrder.customer_name}</p>
@@ -577,6 +581,7 @@ export default function Packing() {
                     onClose={handleCancelOrderFinished}
                     onConfirm={handleMarkCompleted}
                     orderId={selectedOrder.order_id}
+                    id={selectedOrder.id.toString()}
                 />
             )}
         </div>
