@@ -176,72 +176,90 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                     manufactured: !hasFoamInserts, // Set based on foam inserts
                     packed: false
                 };
-                
-                // Insert the order into the orders table
-                const { error: insertOrderError } = await supabase
-                    .from('orders')
-                    .insert([orderForInsertion]);
-                
-                if (insertOrderError) {
-                    throw new Error(`Failed to insert order into orders table: ${insertOrderError.message}`);
-                }
-                
-                // 4. If there are items to move
-                if (orderItems && orderItems.length > 0) {
-                    // Prepare items for insertion - create clean objects with only necessary fields
-                    const itemsToInsert = orderItems.map(item => {
-                        const cleanItem = {
-                            order_id: item.order_id,
-                            sku_id: item.sku_id,
-                            item_name: item.item_name,
-                            quantity: item.quantity,
-                            completed: false, // Reset completed status
-                            foamsheet: item.foamsheet,
-                            extra_info: item.extra_info,
-                            priority: item.priority,
-                            created_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString()
-                        };
-                        return cleanItem;
-                    });
-                    
-                    // Insert items into order_items table
-                    const { error: insertItemsError } = await supabase
-                        .from('order_items')
-                        .insert(itemsToInsert);
-                    
-                    if (insertItemsError) {
-                        throw new Error(`Failed to insert items into order_items table: ${insertItemsError.message}`);
-                    }
-                    
-                    // 5. Delete the items from archived_order_items
+
+                // Start a transaction-like operation
+                try {
+                    // 4. Delete from archived_order_items first
                     const { error: deleteItemsError } = await supabase
                         .from('archived_order_items')
                         .delete()
                         .eq('order_id', updatedOrder.order_id);
-                    
+
                     if (deleteItemsError) {
                         throw new Error(`Failed to delete items from archived_order_items: ${deleteItemsError.message}`);
                     }
+
+                    // 5. Delete from archived_orders
+                    const { error: deleteOrderError } = await supabase
+                        .from('archived_orders')
+                        .delete()
+                        .eq('order_id', updatedOrder.order_id);
+
+                    if (deleteOrderError) {
+                        throw new Error(`Failed to delete order from archived_orders: ${deleteOrderError.message}`);
+                    }
+                    
+                    // 6. Insert the order into the orders table
+                    const { error: insertOrderError } = await supabase
+                        .from('orders')
+                        .insert([orderForInsertion]);
+                    
+                    if (insertOrderError) {
+                        throw new Error(`Failed to insert order into orders table: ${insertOrderError.message}`);
+                    }
+
+                    // 7. If there are items to move
+                    if (archivedItems && archivedItems.length > 0) {
+                        // Prepare items for insertion - create clean objects with only necessary fields
+                        const itemsToInsert = archivedItems.map(item => {
+                            const cleanItem = {
+                                order_id: item.order_id,
+                                sku_id: item.sku_id,
+                                item_name: item.item_name,
+                                quantity: item.quantity,
+                                completed: false, // Reset completed status
+                                foamsheet: item.foamsheet,
+                                extra_info: item.extra_info,
+                                priority: item.priority,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            };
+                            return cleanItem;
+                        });
+                        
+                        // Insert items into order_items table
+                        const { error: insertItemsError } = await supabase
+                            .from('order_items')
+                            .insert(itemsToInsert);
+                        
+                        if (insertItemsError) {
+                            // If items insertion fails, we should clean up the order
+                            await supabase
+                                .from('orders')
+                                .delete()
+                                .eq('order_id', updatedOrder.order_id);
+                            
+                            throw new Error(`Failed to insert items into order_items table: ${insertItemsError.message}`);
+                        }
+                    }
+
+                    setSuccess('Order moved from archived to active successfully!');
+                    onSave(updatedOrder);
+                    return;
+                } catch (error) {
+                    // If any step fails, try to clean up
+                    try {
+                        await supabase
+                            .from('orders')
+                            .delete()
+                            .eq('order_id', updatedOrder.order_id);
+                    } catch (cleanupError) {
+                        console.error('Cleanup failed:', cleanupError);
+                    }
+                    throw error;
                 }
-                
-                // 6. Delete the order from archived_orders
-                const { error: deleteOrderError } = await supabase
-                    .from('archived_orders')
-                    .delete()
-                    .eq('order_id', updatedOrder.order_id);
-                
-                if (deleteOrderError) {
-                    throw new Error(`Failed to delete order from archived_orders: ${deleteOrderError.message}`);
-                }
-                
-                // 7. Update our local state with the clean inserted order
-                updatedOrder.manufactured = orderForInsertion.manufactured;
-                updatedOrder.packed = orderForInsertion.packed;
-                updatedOrder.items_completed = 0;
-                
-                console.log('Successfully moved order and items to active tables');
-            } 
+            }
+
             // Handle normal update (no table changes)
             else {
                 // Determine which table to update

@@ -6,11 +6,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, checkAuth, signOut, supabase } from "@/utils/supabase";
 import type { Profile } from "@/utils/supabase";
+import EditProfile from "@/components/editProfile";
+import ChangePassword from "@/components/changePassword";
 
 export default function Profile() {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isEditing, setIsEditing] = useState(false);
+    const [showChangePassword, setShowChangePassword] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
@@ -51,6 +55,46 @@ export default function Profile() {
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to logout");
         }
+    };
+
+    const handleEditProfile = () => {
+        setIsEditing(true);
+    };
+
+    const handleCloseEdit = () => {
+        setIsEditing(false);
+    };
+
+    const handleSaveProfile = async (updatedProfile: Profile) => {
+        try {
+            // Update the profile in the database
+            const { error } = await supabase
+                .from("profiles")
+                .update({
+                    name: updatedProfile.name,
+                    email: updatedProfile.email,
+                    phone: updatedProfile.phone,
+                    role: updatedProfile.role,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", updatedProfile.id);
+
+            if (error) throw error;
+
+            // Update local state
+            setProfile(updatedProfile);
+            setIsEditing(false);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to update profile");
+        }
+    };
+
+    const handleChangePassword = () => {
+        setShowChangePassword(true);
+    };
+
+    const handleCloseChangePassword = () => {
+        setShowChangePassword(false);
     };
 
     if (error) {
@@ -125,6 +169,18 @@ export default function Profile() {
         <div className="min-h-screen ">
             <Navbar />
             
+            {isEditing && profile && (
+                <EditProfile 
+                    user={profile}
+                    onClose={handleCloseEdit}
+                    onSave={handleSaveProfile}
+                />
+            )}
+
+            {showChangePassword && (
+                <ChangePassword onClose={handleCloseChangePassword} />
+            )}
+            
             <div className="container mx-auto h-[calc(100vh-64px)] pt-16 px-4 sm:px-6 lg:px-8 flex items-center justify-center">
                 <div className="w-full max-w-4xl max-h-[calc(100vh-104px)]">
                     {/* Profile Card */}
@@ -175,7 +231,7 @@ export default function Profile() {
                                 </div>
                                 <button
                                     className="inline-flex items-center px-3 py-1 border border-transparent rounded-md text-xs font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 shadow-sm"
-                                    onClick={() => alert('Edit profile functionality would go here')}
+                                    onClick={handleEditProfile}
                                 >
                                     <svg className="-ml-0.5 mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -239,7 +295,7 @@ export default function Profile() {
                                             </div>
                                             <button
                                                 className="inline-flex items-center px-2 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200"
-                                                onClick={() => alert('Change password functionality would go here')}
+                                                onClick={handleChangePassword}
                                             >
                                                 <svg className="-ml-0.5 mr-1 h-3 w-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
