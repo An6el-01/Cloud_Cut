@@ -408,6 +408,20 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                     Edit Order - {editedOrder.order_id}
                 </h2>
 
+                <div className="mb-6 flex items-center space-x-2 border-b border-gray-200 dark:border-gray-700 pb-4">
+                    <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    <a 
+                        href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${editedOrder.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer" 
+                        className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                    >
+                        View in Despatch Cloud
+                    </a>
+                </div>
+
                 {isLoading ? (
                     <div className="text-center py-8">
                         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900 dark:border-gray-300 mx-auto"/>
@@ -526,7 +540,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Country cannot be changed</p>
                             </div>
                         </div>
-                        
+
                         {/* Order Items Section */}
                         <div className="mt-8">
                             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Order Items</h3>
@@ -560,7 +574,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                         <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
                                             {orderItems.map((item, index) => (
                                                 <tr key={item.id} className={item.isEditing ? "bg-blue-50 dark:bg-blue-900/20" : ""}>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                    <td className="px-4 py-3 ">
                                                         {item.isEditing ? (
                                                             <input
                                                                 type="text"

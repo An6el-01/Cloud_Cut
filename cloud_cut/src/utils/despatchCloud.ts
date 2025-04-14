@@ -6,8 +6,6 @@ import { optimizeItemName } from './optimizeItemName';
 
 // Use environment variable or default to localhost for development
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-const DESPATCH_CLOUD_EMAIL = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_EMAIL || "";
-const DESPATCH_CLOUD_PASSWORD = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_PASSWORD || "";
 
 export interface OrdersResponse {
   data: DespatchCloudOrder[];
@@ -25,44 +23,81 @@ export interface InventoryResponse {
   per_page: number;
 }
 
+let authToken: string | null = null;
+
 async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = await getAuthToken();
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-  if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
-  return response.json();
+  if (!authToken) {
+    authToken = await getAuthToken();
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    // If unauthorized, try to refresh token once
+    if (response.status === 401) {
+      console.log('Token expired, refreshing...');
+      authToken = await getAuthToken();
+      const retryResponse = await fetch(url, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+      });
+      
+      if (!retryResponse.ok) {
+        throw new Error(`API request failed: ${retryResponse.statusText}`);
+      }
+      return retryResponse.json();
+    }
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.statusText}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Error in fetchWithAuth:', error);
+    throw error;
+  }
 }
 
 export async function getAuthToken(): Promise<string> {
   const url = `${BASE_URL}/api/despatchCloud/proxy?path=auth/login`;
   console.log('Attempting to authenticate with:', url);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({
-      email: DESPATCH_CLOUD_EMAIL,
-      password: DESPATCH_CLOUD_PASSWORD,
-    }),
-  });
-  if (!response.ok) {
-    console.error('Authentication failed:', response.status, response.statusText);
-    throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Authentication failed:', response.status, response.statusText, errorText);
+      throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (!data.token) {
+      throw new Error('No token received in response');
+    }
+
+    return data.token;
+  } catch (error) {
+    console.error('Error in getAuthToken:', error);
+    throw error;
   }
-  const data = await response.json();
-  console.log('Auth token received:', data.token);
-  if (!data.token) {
-    throw new Error('No token received in response');
-  }
-  return data.token;
 }
 
 export async function fetchOrders(page: number = 1, perPage: number = 15): Promise<OrdersResponse> {

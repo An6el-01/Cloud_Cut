@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 const DESPATCH_CLOUD_DOMAIN = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_DOMAIN || "";
+const DESPATCH_CLOUD_EMAIL = process.env.DESPATCH_CLOUD_EMAIL;
+const DESPATCH_CLOUD_PASSWORD = process.env.DESPATCH_CLOUD_PASSWORD;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { path, ...queryParams } = req.query;
@@ -23,16 +25,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
         console.log('Proxying request to:', url);
         console.log('Request method:', req.method);
-        console.log('Request headers:', req.headers);
 
+        // Special handling for login requests
+        if (pathString === 'auth/login') {
+            // Use server-side environment variables for authentication
+            const loginBody = {
+                email: DESPATCH_CLOUD_EMAIL,
+                password: DESPATCH_CLOUD_PASSWORD
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(loginBody)
+            });
+
+            if (!response.ok) {
+                console.error('Login error:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                });
+                return res.status(response.status).json({
+                    error: response.statusText,
+                    details: 'Authentication failed'
+                });
+            }
+
+            const data = await response.json();
+            return res.status(200).json(data);
+        }
+
+        // For all other requests
         const response = await fetch(url, {
             method: req.method,
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                ...(req.method === 'POST' && req.body ? {} : { 
-                    'Authorization': req.headers.authorization || '',
-                }),
+                'Authorization': req.headers.authorization || '',
             },
             body: req.method === 'POST' ? JSON.stringify(req.body) : undefined,
         });

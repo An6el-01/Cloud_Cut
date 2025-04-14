@@ -2,17 +2,16 @@
  * Serve inventory.csv to client side from server side.
  * 
  * Helps us better map the name, and foam sheet for each item in an order. 
- * 
  */
 
-import type { NextApiRequest, NextApiResponse } from "next";
+import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from "path";
 
 const CSV_FILE = path.join(process.cwd(), 'src', 'csv', 'inventory.csv');
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    try{
+export async function GET() {
+    try {
         const csvContent = await fs.readFile(CSV_FILE, 'utf8');
         const lines = csvContent.trim().split('\n');
         const headers = lines[0].split(',').map(h => h.trim());
@@ -23,12 +22,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 return obj;
             }, {} as Record<string, string>);
         });
-        res.status(200).json(inventory);
-    } catch(error){
+        
+        return NextResponse.json(inventory);
+    } catch (error) {
         console.error('Error reading inventory.csv:', error);
-        res.status(500).json({
-            error: 'Failed to read inventory',
-            details: error instanceof Error ? error.message : 'Unknown error',
-        });
+        return NextResponse.json(
+            {
+                error: 'Failed to read inventory',
+                details: error instanceof Error ? error.message : 'Unknown error',
+            },
+            { status: 500 }
+        );
     }
-}
+} 

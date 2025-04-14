@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { fetchProfiles, addUser, updateUser, deleteUser, checkAuth, Profile } from "@/utils/supabase";
 
 export default function Team() {
+  const [mounted, setMounted] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -17,6 +18,10 @@ export default function Team() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const initialize = async () => {
@@ -96,6 +101,14 @@ export default function Team() {
     }
   };
 
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse text-gray-700">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen">
       <div className="fixed top-0 left-0 w-full z-10">
@@ -105,7 +118,7 @@ export default function Team() {
       <div className="flex flex-col items-center min-h-screen pt-44 space-y-6">
         {/* Add User Form */}
         <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 w-[80vw] max-w-[1200px] min-w-[900px] shadow-lg border border-gray-200">
-          <form onSubmit={handleAddUser} className="flex flex-wrap items-end gap-4">
+          <form onSubmit={handleAddUser} className="flex flex-wrap items-end gap-4" autoComplete="off">
             <div className="flex-1 min-w-[200px] space-y-1">
               <label htmlFor="name" className="block text-sm font-medium text-gray-700">
                 Name
@@ -114,11 +127,13 @@ export default function Team() {
                 <input
                   type="text"
                   id="name"
+                  name="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full h-10 p-2 pl-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white text-gray-900 transition-all"
                   placeholder="Enter name"
                   required
+                  autoComplete="off"
                 />
                 <svg className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -133,11 +148,13 @@ export default function Team() {
                 <input
                   type="email"
                   id="email"
+                  name="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full h-10 p-2 pl-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white text-gray-900 transition-all"
                   placeholder="Enter email"
                   required
+                  autoComplete="off"
                 />
                 <svg className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -152,11 +169,13 @@ export default function Team() {
                 <input
                   type="tel"
                   id="phone"
+                  name="phone"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full h-10 p-2 pl-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white text-gray-900 transition-all"
                   placeholder="Enter phone number"
                   required
+                  autoComplete="off"
                 />
                 <svg className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -170,6 +189,7 @@ export default function Team() {
               <div className="relative">
                 <select
                   id="role"
+                  name="role"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full h-10 p-2 pl-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white text-gray-900 appearance-none cursor-pointer transition-all"

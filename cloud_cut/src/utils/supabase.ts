@@ -1,18 +1,23 @@
 import { Order, OrderItem } from "@/types/redux";
-import { createClient, UserMetadata } from "@supabase/supabase-js";
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { UserMetadata } from "@supabase/supabase-js";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!;
+let supabaseInstance: ReturnType<typeof createClientComponentClient> | null = null;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+// Client-side Supabase instance
+export const getSupabaseClient = () => {
+  if (!supabaseInstance) {
+    supabaseInstance = createClientComponentClient();
   }
-});
+  return supabaseInstance;
+};
+
+export const supabase = getSupabaseClient();
+
+// Remove client-side admin instance for security
+// Admin operations should be moved to server-side API routes
+// export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 // Profile interface
 export interface Profile {
@@ -23,15 +28,26 @@ export interface Profile {
   role: string;
 }
 
+// Define allowed admin roles
+const ADMIN_ROLES = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
+
 // Auth helper functions
 export const signUp = async (email: string, password: string, options?: { data?: UserMetadata }) => {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options,
+  // Move signup to server-side API route for security
+  const response = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, password, options }),
   });
-  if (error) throw new Error(error.message);
-  return data;
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message);
+  }
+
+  return response.json();
 };
 
 export const signIn = async (email: string, password: string) => {
@@ -65,10 +81,9 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
     .from("profiles")
     .select("id, name, email, phone, role")
     .order("name", { ascending: true });
-    console.log("name", { ascending: true });
 
   if (error) throw new Error("Failed to fetch profiles: " + error.message);
-  return data || [];
+  return (data as Profile[]) || [];
 };
 
 export const addUser = async (
@@ -77,54 +92,49 @@ export const addUser = async (
   phone: string,
   role: string
 ): Promise<void> => {
-  const tempPassword = "TempPassword123!";
-  
-  // First check if the email already exists
-  const { data: existingUser } = await supabase
-    .from("profiles")
-    .select("email")
-    .eq("email", email)
+  // First check if the current user is authenticated
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error("You must be logged in to perform this action");
+  }
+
+  // Get the current user's role from the profiles table
+  const { data: userProfile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('email', session.user.email as string)
     .single();
 
-  if (existingUser) {
-    throw new Error("A user with this email already exists. Please use a different email address.");
+  if (profileError) {
+    console.error('Error fetching user profile:', profileError);
+    throw new Error("Failed to verify user permissions");
   }
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password: tempPassword,
-    options: {
-      data: { name, phone, role, needsPasswordReset: true },
+  console.log('Current user role from profiles:', userProfile?.role);
+  console.log('ADMIN_ROLES:', ADMIN_ROLES);
+  console.log('userProfile.role:', userProfile?.role);
+
+  if (!userProfile || !ADMIN_ROLES.includes(userProfile.role as string)) {
+    throw new Error("Only administrators can add new users");
+  }
+
+  console.log('Adding user:', { email, name, phone, role });
+  const response = await fetch('/api/auth/create-user', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
+    credentials: 'include',
+    body: JSON.stringify({ email, name, phone, role }),
   });
+
+  const data = await response.json();
   
-  if (error) {
-    if (error.message.includes("User already registered")) {
-      throw new Error("A user with this email already exists. Please use a different email address.");
-    }
-    throw new Error(error.message);
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to create user");
   }
 
-  //Insert into profiles table
-  const userId = data.user?.id;
-  if(!userId) throw new Error("Failed to get user ID after signup");
-
-  const { error: insertError } = await supabase
-    .from("profiles")
-    .insert({
-      id: userId,
-      name,
-      email,
-      phone,
-      role,
-    });
-
-  if (insertError) {
-    if (insertError.message.includes("duplicate key value")) {
-      throw new Error("A user with this email already exists. Please use a different email address.");
-    }
-    throw new Error("Failed to insert profile: " + insertError.message);
-  }
+  return data;
 };
 
 export const updateUser = async (profile: Profile): Promise<void> => {
@@ -141,17 +151,15 @@ export const updateUser = async (profile: Profile): Promise<void> => {
 };
 
 export const deleteUser = async (id: string): Promise<void> => {
-  // First delete the profile
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .delete()
-    .eq("id", id);
+  // Move delete operation to server-side API route
+  const response = await fetch(`/api/auth/delete-user/${id}`, {
+    method: 'DELETE',
+  });
 
-  if (profileError) throw new Error("Failed to delete profile: " + profileError.message);
-
-  // Then delete the auth user using the admin client
-  const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
-  if (authError) throw new Error("Failed to delete user: " + authError.message);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message);
+  }
 };
 
 export const subscribeToOrders = (callback: (payload: RealtimePostgresChangesPayload<Order>) =>  void) => {
