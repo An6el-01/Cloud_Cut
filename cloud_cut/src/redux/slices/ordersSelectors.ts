@@ -118,14 +118,14 @@ export const selectArchivedOrders = createSelector(
       // Use a single query to get all items at once
       const { data: items, error: itemsError } = await supabase
         .from('archived_order_items')
-        .select('*')
+        .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at')
         .in('order_id', orderIds);
 
       if (itemsError) {
         console.error(`Error fetching archived items:`, itemsError);
       } else if (items) {
         // Group items by order_id
-        items.forEach(item => {
+        (items as OrderItem[]).forEach(item => {
           if (!orderItems[item.order_id]) {
             orderItems[item.order_id] = [];
           }

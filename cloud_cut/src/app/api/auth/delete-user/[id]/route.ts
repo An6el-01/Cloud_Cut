@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient, getSupabaseAdmin, verifyAdminRole } from '@/utils/supabaseServer';
-import { cookies } from 'next/headers';
+
+export const runtime = 'nodejs';
 
 export async function DELETE(
   request: Request,
@@ -10,8 +11,7 @@ export async function DELETE(
     console.log('API Route - Starting delete-user request');
     
     // Get the server-side Supabase client with API route flag
-    const cookieStore = cookies();
-    const supabase = getSupabaseServerClient(true);
+    const supabase = getSupabaseServerClient();
 
     // Get the session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -33,7 +33,7 @@ export async function DELETE(
 
     // Verify admin role with API route flag
     try {
-      await verifyAdminRole(session.user.email, true);
+      await verifyAdminRole(session.user.email);
     } catch (error) {
       console.log('API Route - Admin verification failed:', error);
       return NextResponse.json(

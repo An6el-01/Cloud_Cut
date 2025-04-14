@@ -10,6 +10,12 @@ import { downloadCSV, generateCSV } from '@/utils/exportCSV';
 import { processItemsForOrders } from '../utils/orderUtils';
 import { setSyncStatus } from '../slices/ordersSlice';
 
+// Define helper type for Supabase response items
+type SupabaseOrderItem = {
+  order_id: string;
+  [key: string]: unknown;
+};
+
 // Add type extension for Order with calculatedPriority
 type OrderWithPriority = Order & { calculatedPriority: number };
 
@@ -191,7 +197,7 @@ export const syncOrders = createAsyncThunk(
             const updatedStatus = status === 'Despatched' ? 'Completed' : status;
             
             ordersToUpdate.push({
-              id: activeOrderMap.get(order_id),
+              id: activeOrderMap.get(order_id) as number | undefined,
               order_id: order_id, // Important: include order_id field
               status: updatedStatus,
               updated_at: new Date().toISOString()
@@ -232,7 +238,7 @@ export const syncOrders = createAsyncThunk(
           
           const { error: updateError } = await supabase
             .from('orders')
-            .upsert(batch, {
+            .upsert(batch as unknown as Record<string, unknown>[], {
               onConflict: 'id'
             });
           
@@ -273,7 +279,7 @@ export const syncOrders = createAsyncThunk(
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { data, error } = await supabase
               .from('orders')
-              .upsert(batch, { 
+              .upsert(batch as unknown as Record<string, unknown>[], { 
                 onConflict: 'order_id',
                 ignoreDuplicates: false
               });
@@ -414,11 +420,13 @@ export const syncOrders = createAsyncThunk(
       console.log(`Fetched ${activeItems?.length || 0} order items for pending orders`);
       
       // Create the final order items map
-      const updatedOrderItems = (activeItems || []).reduce((acc, item) => {
-        acc[item.order_id] = acc[item.order_id] || [];
-        acc[item.order_id].push(item);
+      const updatedOrderItems = (activeItems || []).reduce<Record<string, OrderItem[]>>((acc, item) => {
+        const typedItem = item as SupabaseOrderItem;
+        const orderID = typedItem.order_id;
+        if (!acc[orderID]) acc[orderID] = [];
+        acc[orderID].push(typedItem as unknown as OrderItem);
         return acc;
-      }, {} as Record<string, OrderItem[]>);
+      }, {});
 
       console.log('Sync completed successfully');
       
@@ -507,22 +515,25 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
     const allOrderItems = [...(activeItems || []), ...(archivedItems || [])];
 
     // Create a map of all order items
-    const allOrderItemsMap = allOrderItems.reduce((acc, item) => {
-      acc[item.order_id] = acc[item.order_id] || [];
-      acc[item.order_id].push({
-        ...item,
-        completed: item.completed || false  // Ensure completed is always a boolean
-      });
+    const allOrderItemsMap = allOrderItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
+      const typedItem = item as SupabaseOrderItem;
+      const orderID = typedItem.order_id;
+      if (!acc[orderID]) acc[orderID] = [];
+      acc[orderID].push({
+        ...typedItem,
+        completed: Boolean(typedItem.completed)
+      } as unknown as OrderItem);
       return acc;
-    }, {} as Record<string, OrderItem[]>);
+    }, {});
 
     // Calculate priority for each order based on its items and sort ALL orders
     const ordersWithPriority = allOrders.map(order => {
-      const items = allOrderItemsMap[order.order_id] || [];
+      const typedOrder = order as SupabaseOrderItem;
+      const items = allOrderItemsMap[typedOrder.order_id] || [];
       const priority = items.length > 0 
-        ? Math.max(...items.map((item: OrderItem) => item.priority || 0)) 
+        ? Math.max(...items.map(item => item.priority || 0)) 
         : 0;
-      return { ...order, calculatedPriority: priority } as OrderWithPriority;
+      return { ...typedOrder, calculatedPriority: priority } as unknown as OrderWithPriority;
     });
 
     // Sort ALL orders by priority in descending order
@@ -539,12 +550,13 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
 
     // Create a map of order items for just the paginated orders
     const paginatedOrderIds = paginatedOrders.map(o => o.order_id);
-    const paginatedOrderItemsMap = paginatedOrderIds.reduce((acc, orderId) => {
-      if (allOrderItemsMap[orderId]) {
-        acc[orderId] = allOrderItemsMap[orderId];
+    const paginatedOrderItemsMap = paginatedOrderIds.reduce<Record<string, OrderItem[]>>((acc, orderId) => {
+      const typedOrderId = orderId as string;
+      if (allOrderItemsMap[typedOrderId]) {
+        acc[typedOrderId] = allOrderItemsMap[typedOrderId];
       }
       return acc;
-    }, {} as Record<string, OrderItem[]>);
+    }, {});
 
     return { 
       orders: paginatedOrders, 
@@ -580,13 +592,18 @@ export const exportPendingOrdersCSV = createAsyncThunk(
     if (itemsError) throw new Error(`Fetch items failed: ${itemsError.message}`);
     console.log(`Fetched ${orderItems.length} order items`);
 
-    const orderItemsMap = orderItems.reduce((acc, item) => {
-      acc[item.order_id] = acc[item.order_id] || [];
-      acc[item.order_id].push(item);
+    const orderItemsMap = orderItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
+      const typedItem = item as SupabaseOrderItem;
+      const orderID = typedItem.order_id;
+      if (!acc[orderID]) acc[orderID] = [];
+      acc[orderID].push(typedItem as unknown as OrderItem);
       return acc;
-    }, {} as Record<string, OrderItem[]>);
+    }, {});
 
-    const csvContent = generateCSV(orders, orderItemsMap);
+    const csvContent = generateCSV(
+      orders as unknown as Order[],
+      orderItemsMap
+    );
     downloadCSV(csvContent, `pending_orders_${new Date().toISOString().split("T")[0]}.csv`);
 
     return { orders, orderItems: orderItemsMap }; //Return data to update state if needed
@@ -642,14 +659,16 @@ export const initialFetch = createAsyncThunk(
     const allOrderItems = [...(activeItems || []), ...(archivedItems || [])];
     
     // Create a map for better access
-    const orderItemsMap = allOrderItems.reduce((acc, item) => {
-      acc[item.order_id] = acc[item.order_id] || [];
-      acc[item.order_id].push({
-        ...item,
-        completed: item.completed || false
-      });
+    const orderItemsMap = allOrderItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
+      const typedItem = item as SupabaseOrderItem;
+      const orderID = typedItem.order_id;
+      acc[orderID] = acc[orderID] || [];
+      acc[orderID].push({
+        ...typedItem,
+        completed: Boolean(typedItem.completed)
+      } as unknown as OrderItem);
       return acc;
-    }, {} as Record<string, OrderItem[]>);
+    }, {});
     
     // Get sync status
     const { data: syncData, error: syncError } = await supabase
@@ -668,6 +687,55 @@ export const initialFetch = createAsyncThunk(
       orders: pendingOrders || [], 
       orderItems: orderItemsMap,
       syncStatus
+    };
+  }
+);
+
+export const fetchArchivedOrders = createAsyncThunk(
+  'orders/fetchArchivedOrders',
+  async () => {
+    console.log('Fetching archived orders...');
+    
+    const { data: archivedOrders, error } = await supabase
+      .from('archived_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching archived orders:', error);
+      throw new Error(`Failed to fetch archived orders: ${error.message}`);
+    }
+
+    // Fetch items for each archived order
+    const orderItems: Record<string, OrderItem[]> = {};
+    
+    if (archivedOrders && archivedOrders.length > 0) {
+      const orderIds = archivedOrders.map(order => order.order_id);
+      
+      // Use a single query to get all items at once
+      const { data: items, error: itemsError } = await supabase
+        .from('archived_order_items')
+        .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at')
+        .in('order_id', orderIds);
+
+      if (itemsError) {
+        console.error(`Error fetching archived items:`, itemsError);
+      } else if (items) {
+        // Group items by order_id
+        (items as unknown as OrderItem[]).forEach(item => {
+          if (!orderItems[item.order_id]) {
+            orderItems[item.order_id] = [];
+          }
+          orderItems[item.order_id].push(item);
+        });
+      }
+    }
+
+    console.log(`Fetched ${archivedOrders?.length || 0} archived orders with ${Object.keys(orderItems).length} order items`);
+    
+    return {
+      orders: archivedOrders as unknown as Order[],
+      orderItems
     };
   }
 );

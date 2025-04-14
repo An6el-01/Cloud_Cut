@@ -1,22 +1,19 @@
 "use client";
 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
-import { useEffect, useRef, useState, useCallback } from "react";
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import Image from 'next/image';
-import {
-    setSelectedOrderId,
-} from "@/redux/slices/ordersSlice";
-import {
-    selectArchivedOrders,
-} from "@/redux/slices/ordersSelectors";
+import { setSelectedOrderId } from "@/redux/slices/ordersSlice";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
+import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import OrderItemsOverlay from '@/components/OrderItemsOverlay';
 import { Order, OrderItem } from '@/types/redux';
-import { store } from '@/redux/store';
 import { createPortal } from 'react-dom';
 import EditCompOrder from '@/components/editCompOrder';
+
+import { fetchArchivedOrders } from '@/redux/thunks/ordersThunks';
 
 // Define types used by the dropdown component
 type SortField = 'order_id' | 'order_date' | 'customer_name';
@@ -199,9 +196,12 @@ const SortDropdown = ({
     );
 };
 
+// Add type guard at the top of the file
+
+
 export default function Admin() {
     const dispatch = useDispatch<AppDispatch>();
-    const [archivedOrders, setArchivedOrders] = useState<{ orders: Order[], orderItems: Record<string, OrderItem[]> }>({ orders: [], orderItems: {} });
+    const { archivedOrders, archivedOrderItems } = useSelector((state: RootState) => state.orders);
     const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
     const [showOrderItems, setShowOrderItems] = useState(false);
     const { loading, error } = useSelector((state: RootState) => state.orders);
@@ -231,46 +231,79 @@ export default function Admin() {
     const currentOrders = filteredOrders.slice(indexOfFirstOrder, indexOfLastOrder);
     const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
 
-    // Subscribe to real-time updates and fetch archived orders on mount
+    // Fetch archived orders on component mount
     useEffect(() => {
-        loadArchivedOrders();
+        dispatch(fetchArchivedOrders());
+    }, [dispatch]);
 
-        const ordersSubscription = subscribeToOrders((payload) => {
+    // Filter and sort orders when dependencies change
+    useEffect(() => {
+        if (!archivedOrders) return;
+
+        let result = [...archivedOrders];
+
+        // Apply search filter
+        if (searchTerm) {
+            const lowerSearchTerm = searchTerm.toLowerCase();
+            result = result.filter(
+                (order) =>
+                    order.order_id.toLowerCase().includes(lowerSearchTerm) ||
+                    order.customer_name.toLowerCase().includes(lowerSearchTerm)
+            );
+        }
+
+        // Apply sorting
+        result.sort((a, b) => {
+            if (a[sortConfig.field] < b[sortConfig.field]) {
+                return sortConfig.direction === 'asc' ? -1 : 1;
+            }
+            if (a[sortConfig.field] > b[sortConfig.field]) {
+                return sortConfig.direction === 'asc' ? 1 : -1;
+            }
+            return 0;
+        });
+
+        setFilteredOrders(result);
+    }, [archivedOrders, searchTerm, sortConfig]);
+
+    // Set up real-time updates for archived orders
+    useEffect(() => {
+        const subscription = subscribeToOrders((payload: RealtimePostgresChangesPayload<Order>) => {
             if (payload.eventType === "INSERT" && payload.new.status === "Archived") {
-                loadArchivedOrders();
+                dispatch(fetchArchivedOrders());
             } else if (payload.eventType === "UPDATE" && payload.new.status === "Archived") {
-                loadArchivedOrders();
+                dispatch(fetchArchivedOrders());
             } else if (payload.eventType === "DELETE") {
-                loadArchivedOrders();
+                dispatch(fetchArchivedOrders());
             }
         });
 
-        const itemsSubscription = subscribeToOrderItems((payload) => {
+        const itemsSubscription = subscribeToOrderItems((payload: RealtimePostgresChangesPayload<OrderItem>) => {
             if (payload.eventType === "INSERT" || payload.eventType === "UPDATE" || payload.eventType === "DELETE") {
-                loadArchivedOrders();
+                dispatch(fetchArchivedOrders());
             }
         });
 
         return () => {
-            ordersSubscription.unsubscribe();
+            subscription.unsubscribe();
             itemsSubscription.unsubscribe();
         };
-    }, []);
+    }, [dispatch]);
     
     // Filter orders when search term or original orders change
     useEffect(() => {
         filterOrders();
-    }, [searchTerm, archivedOrders.orders]);
+    }, [searchTerm, archivedOrders]);
     
     // Filter orders based on search term
     const filterOrders = () => {
         if (!searchTerm.trim()) {
-            setFilteredOrders(archivedOrders.orders);
+            setFilteredOrders(archivedOrders);
             return;
         }
         
         const term = searchTerm.toLowerCase().trim();
-        const filtered = archivedOrders.orders.filter(order => 
+        const filtered = archivedOrders.filter(order => 
             order.order_id.toLowerCase().includes(term) || 
             order.customer_name.toLowerCase().includes(term)
         );
@@ -283,20 +316,6 @@ export default function Admin() {
     // Clear search
     const handleClearSearch = () => {
         setSearchTerm("");
-    };
-
-    const loadArchivedOrders = async () => {
-        setIsRefreshing(true);
-        try {
-            const state = store.getState();
-            const archived = await selectArchivedOrders(state);
-            setArchivedOrders(archived);
-            console.log(`Loaded ${archived.orders.length} archived orders with ${Object.keys(archived.orderItems).length} order items`);
-        } catch (error) {
-            console.error('Error loading archived orders:', error);
-        } finally {
-            setIsRefreshing(false);
-        }
     };
 
     const handleOrderClick = (orderId: string) => {
@@ -317,7 +336,7 @@ export default function Admin() {
 
     const handleRefresh = () => {
         setIsRefreshing(true);
-        loadArchivedOrders()
+        dispatch(fetchArchivedOrders())
             .finally(() => {
                 setIsRefreshing(false);
             });
@@ -330,66 +349,12 @@ export default function Admin() {
         setSortConfig({ field, direction });
     }, [sortConfig]);
     
-    // Apply sorting and filtering to orders
-    useEffect(() => {
-        let result = [...archivedOrders.orders];
-        
-        // Apply search filter
-        if (searchTerm.trim()) {
-            const term = searchTerm.toLowerCase().trim();
-            result = result.filter(order => 
-                order.order_id.toLowerCase().includes(term) || 
-                order.customer_name.toLowerCase().includes(term)
-            );
-        }
-        
-        // Apply sorting
-        result.sort((a, b) => {
-            let comparison = 0;
-            
-            switch (sortConfig.field) {
-                case 'order_id':
-                    comparison = a.order_id.localeCompare(b.order_id);
-                    break;
-                case 'order_date':
-                    comparison = new Date(a.order_date).getTime() - new Date(b.order_date).getTime();
-                    break;
-                case 'customer_name':
-                    comparison = a.customer_name.localeCompare(b.customer_name);
-                    break;
-                default:
-                    return 0;
-            }
-            
-            return sortConfig.direction === 'asc' ? comparison : -comparison;
-        });
-        
-        setFilteredOrders(result);
-        // Reset to first page when search or sort changes
-        setCurrentPage(1);
-    }, [searchTerm, archivedOrders.orders, sortConfig]);
-
     // Handle edit button click
     const handleEditClick = (order: Order, e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent triggering the row click
         setEditingOrder(order);
     };
     
-    // Handle save after editing
-    const handleSaveEdit = (updatedOrder: Order) => {
-        // Update the order in our local state
-        const updatedOrders = archivedOrders.orders.map(order => 
-            order.order_id === updatedOrder.order_id ? updatedOrder : order
-        );
-        
-        setArchivedOrders(prev => ({
-            ...prev,
-            orders: updatedOrders
-        }));
-        
-        // Clear the editing state
-        setEditingOrder(null);
-    };
 
     return (
         <div className="relative min-h-screen text-white">
@@ -405,7 +370,7 @@ export default function Admin() {
                     <OrderItemsOverlay
                         orderId={selectedOrderId}
                         onClose={() => setShowOrderItems(false)}
-                        items={archivedOrders.orderItems[selectedOrderId] || []}
+                        items={archivedOrderItems[selectedOrderId] || []}
                     />
                 )}
                 {/* Left Section: Orders Table */}
@@ -733,7 +698,7 @@ export default function Admin() {
                 <EditCompOrder
                     order={editingOrder}
                     onClose={() => setEditingOrder(null)}
-                    onSave={handleSaveEdit}
+                    onSave={() => dispatch(fetchArchivedOrders())}
                 />
             )}
         </div>

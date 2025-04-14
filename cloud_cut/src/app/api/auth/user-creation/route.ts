@@ -17,7 +17,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: Request) {
-  console.log('API Route - POST /api/auth/create-user - Starting');
+  console.log('API Route - POST /api/auth/user-creation - Starting');
   console.log('API Route - Request method:', request.method);
   
   try {

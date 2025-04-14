@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/utils/supabaseServer';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: Request) {
   try {
     console.log('API Route - Starting signup request');

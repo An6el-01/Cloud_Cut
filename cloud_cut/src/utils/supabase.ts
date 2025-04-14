@@ -2,6 +2,7 @@ import { Order, OrderItem } from "@/types/redux";
 import { createBrowserClient } from '@supabase/ssr';
 import { UserMetadata } from "@supabase/supabase-js";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { createUser, deleteUser as deleteUserAction } from '@/app/actions';
 
 let supabaseInstance: ReturnType<typeof createBrowserClient> | null = null;
 
@@ -77,13 +78,44 @@ export const checkAuth = async (): Promise<boolean> => {
 
 // Team-related functions
 export const fetchProfiles = async (): Promise<Profile[]> => {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, name, email, phone, role")
-    .order("name", { ascending: true });
-
-  if (error) throw new Error("Failed to fetch profiles: " + error.message);
-  return (data as Profile[]) || [];
+  try {
+    console.log('Client - Fetching profiles from API');
+    const response = await fetch('/api/team/profiles', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+    
+    console.log('Client - Received response, status:', response.status);
+    
+    // Handle empty responses
+    const text = await response.text();
+    if (!text) {
+      console.error('Client - Empty response received');
+      return [];
+    }
+    
+    try {
+      // Attempt to parse the response as JSON
+      const data = JSON.parse(text);
+      console.log('Client - Successfully parsed JSON response');
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch profiles');
+      }
+      
+      return data.profiles || [];
+    } catch (parseError) {
+      console.error('Client - JSON parsing error:', parseError);
+      console.error('Client - Raw response text:', text);
+      throw new Error('Failed to parse server response');
+    }
+  } catch (error) {
+    console.error('Client - Error fetching profiles:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to fetch profiles');
+  }
 };
 
 export const addUser = async (
@@ -91,7 +123,7 @@ export const addUser = async (
   name: string,
   phone: string,
   role: string
-): Promise<void> => {
+): Promise<{ success: boolean; message: string }> => {
   // First check if the current user is authenticated
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
@@ -119,22 +151,28 @@ export const addUser = async (
   }
 
   console.log('Adding user:', { email, name, phone, role });
-  const response = await fetch('/api/auth/create-user', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify({ email, name, phone, role }),
-  });
-
-  const data = await response.json();
   
-  if (!response.ok) {
-    throw new Error(data.message || "Failed to create user");
+  try {
+    // Use server action instead of API route
+    const result = await createUser({
+      email,
+      name,
+      phone,
+      role,
+      adminEmail: session.user.email || ''
+    });
+    
+    console.log('Create user response:', result);
+    
+    if (!result.success) {
+      throw new Error(result.message || "Failed to create user");
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error creating user:', error);
+    throw error;
   }
-
-  return data;
 };
 
 export const updateUser = async (profile: Profile): Promise<void> => {
@@ -151,14 +189,29 @@ export const updateUser = async (profile: Profile): Promise<void> => {
 };
 
 export const deleteUser = async (id: string): Promise<void> => {
-  // Move delete operation to server-side API route
-  const response = await fetch(`/api/auth/delete-user/${id}`, {
-    method: 'DELETE',
-  });
+  // First check if the current user is authenticated
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error("You must be logged in to perform this action");
+  }
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message);
+  // Use server action instead of API route
+  try {
+    const result = await deleteUserAction({
+      userId: id,
+      adminEmail: session.user.email || ''
+    });
+    
+    console.log('Delete user response:', result);
+    
+    if (!result.success) {
+      throw new Error(result.message || "Failed to delete user");
+    }
+    
+    return;
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    throw error;
   }
 };
 
@@ -173,5 +226,12 @@ export const subscribeToOrderItems = (callback: (payload: RealtimePostgresChange
   return supabase
     .channel('order_items')
     .on('postgres_changes' , { event: '*', schema: 'public', table: 'order_items' }, callback)
+    .subscribe();
+}
+
+export const subscribeToProfiles = (callback: (payload: RealtimePostgresChangesPayload<Profile>) => void) => {
+  return supabase
+    .channel('profiles')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, callback)
     .subscribe();
 }

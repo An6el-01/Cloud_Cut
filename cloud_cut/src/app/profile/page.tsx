@@ -31,12 +31,12 @@ export default function Profile() {
                     // Fetch the user's profile information
                     const { data, error } = await supabase
                         .from("profiles")
-                        .select("*")
+                        .select("id, name, email, phone, role")
                         .eq("id", user.id)
                         .single();
 
                     if (error) throw error;
-                    setProfile(data);
+                    setProfile(data as Profile);
                 }
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to load profile");

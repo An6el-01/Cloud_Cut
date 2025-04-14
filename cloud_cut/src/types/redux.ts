@@ -36,15 +36,20 @@ export interface OrdersState {
     allOrders: Order[],
     manufacturingOrders: Order[],
     packingOrders: Order[],
+    archivedOrders: Order[],
     orderItems: Record<string, OrderItem[]>;
+    archivedOrderItems: Record<string, OrderItem[]>;
     currentPage: number;
     ordersPerPage: number;
     totalOrders: number;
     totalManufacturingOrders: number;
     totalPackingOrders: number;
+    totalArchivedOrders: number;
     selectedOrderId: string | null;
     loading: boolean,
     error: string | null;
+    archivedOrdersLoading: boolean;
+    archivedOrdersError: string | null;
     syncStatus: 'idle' | 'syncing' | 'error';
     currentView: 'manufacturing' | 'packing' | 'archived';
 }

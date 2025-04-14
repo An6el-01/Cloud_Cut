@@ -8,7 +8,8 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from "path";
 
-const CSV_FILE = path.join(process.cwd(), 'src', 'csv', 'inventory.csv');
+// Update path to the data folder instead of csv folder
+const CSV_FILE = path.join(process.cwd(), 'src', 'data', 'inventory.csv');
 
 export async function GET() {
     try {

@@ -20,10 +20,17 @@ function isOrderItem(item: unknown): item is OrderItem {
     if (!item || typeof item !== 'object') return false;
     const i = item as Record<string, unknown>;
     return (
-        typeof i.id === 'number' &&
+        typeof i.id === 'string' &&
         typeof i.order_id === 'string' &&
         typeof i.sku_id === 'string' &&
-        typeof i.item_name === 'string'
+        typeof i.item_name === 'string' &&
+        typeof i.quantity === 'number' &&
+        typeof i.completed === 'boolean' &&
+        typeof i.foamsheet === 'string' &&
+        typeof i.extra_info === 'string' &&
+        typeof i.priority === 'number' &&
+        typeof i.created_at === 'string' &&
+        typeof i.updated_at === 'string'
     );
 }
 
@@ -60,21 +67,67 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
         setItemsError(null);
         
         try {
-            const table = order.status === 'Completed' ? 'archived_order_items' : 'order_items';
-            
-            const { data, error } = await supabase
-                .from(table)
+            // Try to fetch from active orders first
+            const { data: activeItems, error: activeError } = await supabase
+                .from('archived_order_items')
                 .select('*')
                 .eq('order_id', order.order_id);
-            
-            if (error) {
-                throw new Error(`Failed to fetch order items: ${error.message}`);
+
+            if (activeError) {
+                console.error('Error fetching active items:', activeError);
             }
-            
-            if (data) {
-                const validItems = data.filter(isOrderItem);
-                const editableItems: EditedItem[] = validItems.map(item => ({ ...item, isEditing: false }));
+
+            if (activeItems && activeItems.length > 0) {
+                // If active items found, use them
+                const validItems = activeItems.filter(isOrderItem);
+                const editableItems = validItems.map(item => ({
+                    isEditing: false,
+                    id: item.id,
+                    order_id: item.order_id,
+                    sku_id: item.sku_id,
+                    item_name: item.item_name,
+                    quantity: item.quantity,
+                    completed: item.completed,
+                    foamsheet: item.foamsheet,
+                    extra_info: item.extra_info,
+                    priority: item.priority,
+                    created_at: item.created_at,
+                    updated_at: item.updated_at
+                })) as EditedItem[];
                 setOrderItems(editableItems);
+            } else {
+                // If no active items, try archived items
+                const { data: archivedItems, error: archivedError } = await supabase
+                    .from('archived_order_items')
+                    .select('*')
+                    .eq('order_id', order.order_id);
+
+                if (archivedError) {
+                    console.error('Error fetching archived items:', archivedError);
+                    throw new Error(`Failed to fetch archived items: ${archivedError.message}`);
+                }
+
+                if (archivedItems && archivedItems.length > 0) {
+                    const validItems = archivedItems.filter(isOrderItem);
+                    const editableItems = validItems.map(item => ({
+                        isEditing: false,
+                        id: item.id,
+                        order_id: item.order_id,
+                        sku_id: item.sku_id,
+                        item_name: item.item_name,
+                        quantity: item.quantity,
+                        completed: item.completed,
+                        foamsheet: item.foamsheet,
+                        extra_info: item.extra_info,
+                        priority: item.priority,
+                        created_at: item.created_at,
+                        updated_at: item.updated_at
+                    })) as EditedItem[];
+                    setOrderItems(editableItems);
+                } else {
+                    // No items found in either table
+                    setOrderItems([]);
+                }
             }
         } catch (err) {
             console.error('Error fetching order items:', err);
@@ -82,7 +135,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
         } finally {
             setIsLoadingItems(false);
         }
-    }, [order.order_id, order.status]);
+    }, [order.order_id]);
 
     // Fetch order items when the component mounts
     useEffect(() => {
@@ -163,14 +216,15 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                 updated_at: new Date().toISOString()
             };
             
-            const wasCompleted = order.status === 'Completed';
-            const isPending = updatedOrder.status === 'Pending';
+            // const wasCompleted = order.status === 'Completed';
+            // const isPending = updatedOrder.status === 'Pending';
             
-            if (wasCompleted && isPending) {
-                await handleCompletedToPending(updatedOrder);
-            } else {
-                await handleRegularUpdate(updatedOrder);
-            }
+            // if (wasCompleted && isPending) {
+            //     await handleCompletedToPending(updatedOrder);
+            // } else {
+            //     await handleRegularUpdate(updatedOrder);
+            // }
+            await handleRegularUpdate(updatedOrder);
             
             onSave(updatedOrder);
             setSuccess('Order and items updated successfully!');
@@ -187,31 +241,31 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
         }
     };
 
-    // Handle transition from Completed to Pending
-    const handleCompletedToPending = async (updatedOrder: Order) => {
-        const { data: archivedItems, error: fetchItemsError } = await supabase
-            .from('archived_order_items')
-            .select('*')
-            .eq('order_id', updatedOrder.order_id);
+    // // Handle transition from Completed to Pending
+    // const handleCompletedToPending = async (updatedOrder: Order) => {
+    //     const { data: archivedItems, error: fetchItemsError } = await supabase
+    //         .from('archived_order_items')
+    //         .select('*')
+    //         .eq('order_id', updatedOrder.order_id);
         
-        if (fetchItemsError) {
-            throw new Error(`Failed to fetch archived items: ${fetchItemsError.message}`);
-        }
+    //     if (fetchItemsError) {
+    //         throw new Error(`Failed to fetch archived items: ${fetchItemsError.message}`);
+    //     }
 
-        const hasFoamInserts = archivedItems?.some(item => 
-            item.sku_id?.startsWith('SFI') || item.sku_id?.startsWith('SFC')
-        ) || false;
+    //     const hasFoamInserts = archivedItems?.some(item => 
+    //         item.sku_id?.startsWith('SFI') || item.sku_id?.startsWith('SFC')
+    //     ) || false;
 
-        const orderForInsertion = {
-            ...updatedOrder,
-            items_completed: 0,
-            manufactured: !hasFoamInserts,
-            packed: false,
-            created_at: new Date().toISOString()
-        };
+    //     const orderForInsertion = {
+    //         ...updatedOrder,
+    //         items_completed: 0,
+    //         manufactured: !hasFoamInserts,
+    //         packed: false,
+    //         created_at: new Date().toISOString()
+    //     };
 
-        await moveOrderFromArchivedToActive(orderForInsertion, archivedItems || []);
-    };
+    //     await moveOrderFromArchivedToActive(orderForInsertion, archivedItems || []);
+    // };
 
     // Handle regular order update
     const handleRegularUpdate = async (updatedOrder: Order) => {
@@ -243,56 +297,57 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
     };
 
     // Move order from archived to active tables
-    const moveOrderFromArchivedToActive = async (orderForInsertion: Order, archivedItems: OrderItem[]) => {
-        try {
-            await supabase
-                .from('archived_order_items')
-                .delete()
-                .eq('order_id', orderForInsertion.order_id);
+    // const moveOrderFromArchivedToActive = async (orderForInsertion: Order, archivedItems: OrderItem[]) => {
+    //     try {
+    //         await supabase
+    //             .from('archived_order_items')
+    //             .delete()
+    //             .eq('order_id', orderForInsertion.order_id);
 
-            await supabase
-                .from('archived_orders')
-                .delete()
-                .eq('order_id', orderForInsertion.order_id);
+    //         await supabase
+    //             .from('archived_orders')
+    //             .delete()
+    //             .eq('order_id', orderForInsertion.order_id);
             
-            const orderData = { ...orderForInsertion } as unknown as Record<string, unknown>;
-            const { error: insertError } = await supabase
-                .from('orders')
-                .insert([orderData]);
+    //         const orderData = { ...orderForInsertion } as unknown as Record<string, unknown>;
+    //         const { error: insertError } = await supabase
+    //             .from('orders')
+    //             .insert([orderData]);
 
-            if (insertError) {
-                throw new Error(`Failed to insert order: ${insertError.message}`);
-            }
+    //         if (insertError) {
+    //             throw new Error(`Failed to insert order: ${insertError.message}`);
+    //         }
 
-            if (archivedItems.length > 0) {
-                const itemsToInsert = archivedItems.map(item => ({
-                    ...item,
-                    completed: false,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                })) as unknown as Record<string, unknown>[];
+    //         if (archivedItems.length > 0) {
+    //             const itemsToInsert = archivedItems.map(item => ({
+    //                 ...item,
+    //                 completed: false,
+    //                 created_at: new Date().toISOString(),
+    //                 updated_at: new Date().toISOString()
+    //             })) as unknown as Record<string, unknown>[];
                 
-                const { error: itemsError } = await supabase
-                    .from('order_items')
-                    .insert(itemsToInsert);
+    //             const { error: itemsError } = await supabase
+    //                 .from('order_items')
+    //                 .insert(itemsToInsert);
 
-                if (itemsError) {
-                    throw new Error(`Failed to insert items: ${itemsError.message}`);
-                }
-            }
-        } catch (error) {
-            // Cleanup on failure
-            await supabase
-                .from('orders')
-                .delete()
-                .eq('order_id', orderForInsertion.order_id);
+    //             if (itemsError) {
+    //                 throw new Error(`Failed to insert items: ${itemsError.message}`);
+    //             }
+    //         }
+    //     } catch (error) {
+    //         // Cleanup on failure
+    //         await supabase
+    //             .from('orders')
+    //             .delete()
+    //             .eq('order_id', orderForInsertion.order_id);
             
-            throw error;
-        }
-    };
+    //         throw error;
+    //     }
+    // };
 
     // Update order and its items
     const updateOrderAndItems = async (updatedOrder: Record<string, unknown>, table: string, itemsTable: string) => {
+        // Update the order
         const { error: updateError } = await supabase
             .from(table)
             .update(updatedOrder)
@@ -302,19 +357,33 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
             throw new Error(`Failed to update order in ${table}: ${updateError.message}`);
         }
 
+        // Update the items
         const itemsToUpdate = orderItems.filter(item => item.isEditing);
         
         for (const item of itemsToUpdate) {
-            const { isEditing: _, ...cleanItem } = item;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { isEditing, ...cleanItem } = item;
             const itemData = { ...cleanItem, updated_at: new Date().toISOString() } as unknown as Record<string, unknown>;
             
-            const { error: itemUpdateError } = await supabase
+            // Try to update in primary items table first
+            const { error: primaryUpdateError } = await supabase
                 .from(itemsTable)
                 .update(itemData)
                 .eq('id', item.id);
             
-            if (itemUpdateError) {
-                throw new Error(`Failed to update item ${item.id}: ${itemUpdateError.message}`);
+            if (primaryUpdateError) {
+                console.warn(`Could not update item in ${itemsTable}, trying alternative table`);
+                
+                // If failed, try the other table
+                const alternativeTable = itemsTable === 'order_items' ? 'archived_order_items' : 'order_items';
+                const { error: secondaryUpdateError } = await supabase
+                    .from(alternativeTable)
+                    .update(itemData)
+                    .eq('id', item.id);
+                
+                if (secondaryUpdateError) {
+                    throw new Error(`Failed to update item ${item.id} in either table: ${secondaryUpdateError.message}`);
+                }
             }
         }
     };

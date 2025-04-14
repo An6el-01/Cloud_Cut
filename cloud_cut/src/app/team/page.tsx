@@ -4,7 +4,16 @@ import Navbar from "@/components/Navbar";
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { fetchProfiles, addUser, updateUser, deleteUser, checkAuth, Profile } from "@/utils/supabase";
+import { 
+  fetchProfiles, 
+  addUser, 
+  updateUser, 
+  deleteUser, 
+  checkAuth, 
+  Profile, 
+  subscribeToProfiles 
+} from "@/utils/supabase";
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export default function Team() {
   const [mounted, setMounted] = useState(false);
@@ -23,6 +32,7 @@ export default function Team() {
     setMounted(true);
   }, []);
 
+  // Set up real-time subscription to profile changes
   useEffect(() => {
     const initialize = async () => {
       const isAuthenticated = await checkAuth();
@@ -33,6 +43,33 @@ export default function Team() {
           const data = await fetchProfiles();
           console.log("useEffect - fetched profiles:", data);
           setProfiles(data);
+
+          // Subscribe to profile changes
+          const subscription = subscribeToProfiles((payload: RealtimePostgresChangesPayload<Profile>) => {
+            console.log("Profile change detected:", payload);
+            
+            if (payload.eventType === "INSERT") {
+              // Add new profile to the list
+              setProfiles(current => [...current, payload.new]);
+            } else if (payload.eventType === "UPDATE") {
+              // Update existing profile in the list
+              setProfiles(current => 
+                current.map(profile => 
+                  profile.id === payload.new.id ? payload.new : profile
+                )
+              );
+            } else if (payload.eventType === "DELETE") {
+              // Remove deleted profile from the list
+              setProfiles(current => 
+                current.filter(profile => profile.id !== payload.old.id)
+              );
+            }
+          });
+
+          // Cleanup subscription on component unmount
+          return () => {
+            subscription.unsubscribe();
+          };
         } catch (err) {
           setError(err instanceof Error ? err.message : "Failed to load profiles");
         }
@@ -54,15 +91,13 @@ export default function Team() {
     }
 
     try {
-      await addUser(email, name, phone, role);
-      setSuccess(`User ${name} created successfully! Temporary password: TempPassword123!`);
+      const result = await addUser(email, name, phone, role);
+      setSuccess(result.message || `User ${name} created successfully!`);
       setName("");
       setEmail("");
       setPhone("");
       setRole("");
-      const updatedProfiles = await fetchProfiles();
-      console.log("handleAddUser - updated profiles:", updatedProfiles);
-      setProfiles(updatedProfiles);
+      // Real-time subscription will handle updating profiles
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
     }
@@ -81,8 +116,7 @@ export default function Team() {
       await updateUser(editingProfile);
       setSuccess("User updated successfully!");
       setEditingProfile(null);
-      const updatedProfiles = await fetchProfiles();
-      setProfiles(updatedProfiles);
+      // Real-time subscription will handle updating profiles
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update user");
     }
@@ -94,8 +128,7 @@ export default function Team() {
     try {
       await deleteUser(id);
       setSuccess("User deleted successfully!");
-      const updatedProfiles = await fetchProfiles();
-      setProfiles(updatedProfiles);
+      // Real-time subscription will handle updating profiles
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete user");
     }

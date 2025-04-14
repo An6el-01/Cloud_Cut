@@ -56,7 +56,7 @@ export default function OrderItemsOverlay({ orderId, onClose, items: initialItem
                     // Try to fetch from active orders first
                     const { data: activeItems, error: activeError } = await supabase
                         .from('order_items')
-                        .select('*')
+                        .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at')
                         .eq('order_id', orderId);
 
                     if (activeError) {
@@ -67,7 +67,7 @@ export default function OrderItemsOverlay({ orderId, onClose, items: initialItem
                         // If no active items, try archived items
                         const { data: archivedItems, error: archivedError } = await supabase
                             .from('archived_order_items')
-                            .select('*')
+                            .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at')
                             .eq('order_id', orderId);
 
                         if (archivedError) {
@@ -75,10 +75,10 @@ export default function OrderItemsOverlay({ orderId, onClose, items: initialItem
                         }
 
                         if (archivedItems) {
-                            setItems(archivedItems);
+                            setItems(archivedItems as OrderItem[]);
                         }
                     } else {
-                        setItems(activeItems);
+                        setItems(activeItems as OrderItem[]);
                     }
                 } catch (error) {
                     console.error('Error fetching items:', error);

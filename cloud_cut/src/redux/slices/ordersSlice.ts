@@ -4,21 +4,27 @@ import { OrdersState, Order, OrderItem } from '@/types/redux';
 import { supabase } from '@/utils/supabase';
 // Import thunks without the circular dependency
 // We'll import these in the extraReducers section directly
+import { fetchArchivedOrders } from '../thunks/ordersThunks';
 
 // Initial State
 const initialState: OrdersState = {
   allOrders: [],
   manufacturingOrders: [],
   packingOrders: [],
+  archivedOrders: [],
   orderItems: {},
+  archivedOrderItems: {},
   currentPage: 1,
   ordersPerPage: 15,
   totalOrders: 0,
   totalManufacturingOrders: 0,
   totalPackingOrders: 0, 
+  totalArchivedOrders: 0,
   selectedOrderId: null,
   loading: false,
   error: null,
+  archivedOrdersLoading: false,
+  archivedOrdersError: null,
   syncStatus: 'idle',
   currentView: 'manufacturing',
 };
@@ -192,8 +198,25 @@ export const ordersSlice = createSlice({
       state.currentView = action.payload;
     },
   },
-  extraReducers: () => {
-    // We'll handle these separately to avoid circular dependency
+  extraReducers: (builder) => {
+    // Handle the fetchArchivedOrders thunk
+    builder
+      .addCase(fetchArchivedOrders.pending, (state) => {
+        state.archivedOrdersLoading = true;
+        state.archivedOrdersError = null;
+      })
+      .addCase(fetchArchivedOrders.fulfilled, (state, action) => {
+        state.archivedOrders = action.payload.orders;
+        state.archivedOrderItems = action.payload.orderItems;
+        state.totalArchivedOrders = action.payload.orders.length;
+        state.archivedOrdersLoading = false;
+        console.log(`Loaded ${state.archivedOrders.length} archived orders with ${Object.values(state.archivedOrderItems).flat().length} order items into state`);
+      })
+      .addCase(fetchArchivedOrders.rejected, (state, action) => {
+        state.archivedOrdersLoading = false;
+        state.archivedOrdersError = action.error.message || 'Failed to fetch archived orders';
+        console.error('Failed to fetch archived orders:', action.error);
+      });
   },
 });
 
@@ -231,10 +254,12 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
       error: null,
     };
   } else if (syncOrders.fulfilled.match(action)) {
+    const orders = action.payload.orders as unknown as Order[];
+    const items = action.payload.orderItems as unknown as Record<string, OrderItem[]>;
     newState = {
       ...newState,
-      allOrders: action.payload.orders,
-      orderItems: action.payload.orderItems,
+      allOrders: orders,
+      orderItems: items,
       totalOrders: action.payload.total,
       loading: false,
       syncStatus: 'idle',
@@ -253,26 +278,28 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
       error: null,
     };
   } else if (fetchOrdersFromSupabase.fulfilled.match(action)) {
-    const { orders, orderItems, total, page, view } = action.payload;
+    const { orders: rawOrders, orderItems: rawItems, total, page, view } = action.payload;
+    const typedOrders = rawOrders as unknown as Order[];
+    const typedItems = rawItems as unknown as Record<string, OrderItem[]>;
     
     // Update state based on view
     if (view === 'manufacturing') {
       newState = {
         ...newState,
-        manufacturingOrders: orders,
+        manufacturingOrders: typedOrders,
         totalManufacturingOrders: total,
       };
     } else if (view === 'packing') {
       newState = {
         ...newState,
-        packingOrders: orders,
+        packingOrders: typedOrders,
         totalPackingOrders: total,
       };
     } else {
       // Default or 'all' view
       newState = {
         ...newState,
-        allOrders: orders,
+        allOrders: typedOrders,
         totalOrders: total,
       };
     }
@@ -280,7 +307,7 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
     newState = {
       ...newState,
       // Update orderItems
-      orderItems: { ...newState.orderItems, ...orderItems },
+      orderItems: { ...newState.orderItems, ...typedItems },
       currentPage: page,
       loading: false,
     };
@@ -297,12 +324,14 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
       error: null,
     };
   } else if (exportPendingOrdersCSV.fulfilled.match(action)) {
+    const orders = action.payload.orders as unknown as Order[];
+    const items = action.payload.orderItems as unknown as Record<string, OrderItem[]>;
     newState = {
       ...newState,
       loading: false,
       //Optionally update state with fetched data
-      allOrders: action.payload.orders,
-      orderItems: action.payload.orderItems,
+      allOrders: orders,
+      orderItems: items,
     };
   } else if (exportPendingOrdersCSV.rejected.match(action)) {
     newState = {

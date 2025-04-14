@@ -50,6 +50,14 @@ export function getSupabaseRouteHandlerClient() {
     );
 }
 
+// Function specifically for serverless API routes that avoids using cookies()
+export function getServerlessClient() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+}
+
 export const getSupabaseAdmin = () => {
     if (!supabaseAdminInstance) {
         supabaseAdminInstance = createClient(supabaseUrl, supabaseServiceKey, {
@@ -67,7 +75,7 @@ export const ADMIN_ROLES = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
 
 // Helper function to verify admin role
 export const verifyAdminRole = async (email: string) => {
-    const supabase = getSupabaseServerClient();
+    const supabase = getSupabaseAdmin();
     
     const { data: userProfile, error: profileError } = await supabase
         .from('profiles')
@@ -80,7 +88,7 @@ export const verifyAdminRole = async (email: string) => {
         throw new Error("Failed to verify user permissions");
     }
 
-    if (!userProfile || !ADMIN_ROLES.includes(userProfile.role)) {
+    if (!userProfile || !ADMIN_ROLES.includes(userProfile.role as string)) {
         throw new Error("Only administrators can perform this action");
     }
 
