@@ -123,11 +123,13 @@ const SortDropdown = ({
                 {sortConfig.field === 'order_id' ? 'Sort: Order ID' : 
                 sortConfig.field === 'order_date' ? 'Sort: Date' : 'Sort: Customer'}
                 {sortConfig.direction === 'asc' ? 
-                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 20V4"/>
+                        <path d="M5 11l7-7 7 7"/>
                     </svg> : 
-                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4"></path>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 4v16"/>
+                        <path d="M19 13l-7 7-7-7"/>
                     </svg>
                 }
             </button>
@@ -437,13 +439,15 @@ export default function Admin() {
                                             </svg>
                                         </div>
                                         {searchTerm && (
-                                            <button 
+                                            <button
                                                 onClick={handleClearSearch}
-                                                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
+                                                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                                 aria-label="Clear search"
                                             >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"></path>
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <circle cx="12" cy="12" r="10"/>
+                                                    <path d="m15 9-6 6"/>
+                                                    <path d="m9 9 6 6"/>
                                                 </svg>
                                             </button>
                                         )}
@@ -460,13 +464,16 @@ export default function Admin() {
                                     {/* Refresh button */}
                                     <button
                                         onClick={handleRefresh}
-                                        className={`flex-shrink-0 flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
+                                        className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
                                         disabled={isRefreshing}
                                         aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
                                     >
                                         <span className={`${isRefreshing ? "animate-spin" : ""} text-red-400`}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.67-8.9" />
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                                                <path d="M21 3v5h-5"/>
+                                                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                                                <path d="M8 16H3v5"/>
                                             </svg>
                                         </span>
                                         <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
@@ -614,16 +621,13 @@ export default function Admin() {
                                                         </td>
                                                         <td className="px-4 py-2 text-black">
                                                             <button
-                                                                className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                                className="p-1 text-blue-600 hover:text-blue-800 focus:outline-none"
                                                                 onClick={(e) => handleEditClick(order, e)}
                                                                 aria-label={`Edit order ${order.order_id}`}
                                                             >
-                                                                <Image
-                                                                    src="/editPencil.png"
-                                                                    alt=""
-                                                                    width={15}
-                                                                    height={15}
-                                                                />
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/>
+                                                                </svg>
                                                             </button>
                                                         </td>
                                                         <td className="px-4 py-2 text-black">

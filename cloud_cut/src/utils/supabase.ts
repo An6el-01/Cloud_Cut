@@ -1,14 +1,14 @@
 import { Order, OrderItem } from "@/types/redux";
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@supabase/ssr';
 import { UserMetadata } from "@supabase/supabase-js";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
-let supabaseInstance: ReturnType<typeof createClientComponentClient> | null = null;
+let supabaseInstance: ReturnType<typeof createBrowserClient> | null = null;
 
 // Client-side Supabase instance
 export const getSupabaseClient = () => {
   if (!supabaseInstance) {
-    supabaseInstance = createClientComponentClient();
+    supabaseInstance = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
   }
   return supabaseInstance;
 };

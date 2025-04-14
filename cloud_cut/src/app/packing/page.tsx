@@ -279,18 +279,21 @@ export default function Packing() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
                         <h1 className="text-2xl font-bold text-white">Orders Ready For Packing</h1>
                         <button
-                  onClick={handleRefresh}
-                  className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
-                  disabled={isRefreshing}
-                  aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
-                >
-                  <span className={`${isRefreshing ? "animate-spin" : ""} text-red-400`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.67-8.9" />
-                    </svg>
-                  </span>
-                  <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
-                </button>
+                            onClick={handleRefresh}
+                            className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
+                            disabled={isRefreshing}
+                            aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
+                        >
+                            <span className={`${isRefreshing ? "animate-spin" : ""} text-red-400`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                                    <path d="M21 3v5h-5"/>
+                                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                                    <path d="M8 16H3v5"/>
+                                </svg>
+                            </span>
+                            <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
+                        </button>
                     </div>
                     <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
                         {loading ? (
@@ -478,8 +481,9 @@ export default function Packing() {
                                                     aria-label="Mark order as completed"
                                                     disabled={selectedOrderItems.length === 0}
                                                 >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transition-transform group-hover:scale-110" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                                                        <path d="m9 12 2 2 4-4"/>
                                                     </svg>
                                                     Complete Order
                                                 </button>
@@ -542,8 +546,9 @@ export default function Packing() {
                                                                         />
                                                                         <div className="w-5 h-5 border-2 border-gray-400 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
                                                                             {item.completed && (
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                                                                                    <path d="m9 12 2 2 4-4"/>
                                                                                 </svg>
                                                                             )}
                                                                         </div>

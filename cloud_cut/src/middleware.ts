@@ -1,18 +1,63 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
 
 // Define allowed admin roles
 const ADMIN_ROLES = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
 
-export async function middleware(req: NextRequest) {
-  console.log('Middleware - Request path:', req.nextUrl.pathname);
+export async function middleware(request: NextRequest) {
+  console.log('Middleware - Request path:', request.nextUrl.pathname);
   
-  // Create a response early so we can modify headers
-  const res = NextResponse.next();
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
 
-  // Create a new supabase client for each request
-  const supabase = createMiddlewareClient({ req, res });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({
+            name,
+            value: '',
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+          })
+        },
+      },
+    }
+  )
 
   try {
     // Refresh session if expired - required for Server Components
@@ -24,7 +69,7 @@ export async function middleware(req: NextRequest) {
     });
 
     // Protect API routes
-    if (req.nextUrl.pathname.startsWith('/api/auth/')) {
+    if (request.nextUrl.pathname.startsWith('/api/auth/')) {
       console.log('Middleware - Protecting API route');
       
       if (!session) {
@@ -36,8 +81,8 @@ export async function middleware(req: NextRequest) {
       }
 
       // For sensitive operations, check if user has admin role
-      if (req.nextUrl.pathname.includes('/create-user') ||
-          req.nextUrl.pathname.includes('/delete-user')) {
+      if (request.nextUrl.pathname.includes('/create-user') ||
+          request.nextUrl.pathname.includes('/delete-user')) {
         console.log('Middleware - Checking admin role for:', session.user.email);
         
         // Get user's role from profiles table
@@ -69,20 +114,20 @@ export async function middleware(req: NextRequest) {
     }
 
     // If there's no session and the user is trying to access a protected route
-    if (!session && !req.nextUrl.pathname.startsWith('/')) {
+    if (!session && !request.nextUrl.pathname.startsWith('/')) {
       console.log('Middleware - Redirecting to login');
       // Redirect to the login page
-      return NextResponse.redirect(new URL('/', req.url));
+      return NextResponse.redirect(new URL('/', request.url));
     }
 
     // If there's a session and the user is trying to access the login page
-    if (session && req.nextUrl.pathname === '/') {
+    if (session && request.nextUrl.pathname === '/') {
       console.log('Middleware - Redirecting to manufacturing');
       // Redirect to the manufacturing page
-      return NextResponse.redirect(new URL('/manufacturing', req.url));
+      return NextResponse.redirect(new URL('/manufacturing', request.url));
     }
 
-    return res;
+    return response;
   } catch (error) {
     console.error('Middleware - Error:', error);
     return NextResponse.json(

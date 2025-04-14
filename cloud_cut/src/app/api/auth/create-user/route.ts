@@ -6,7 +6,7 @@ export async function POST(request: Request) {
     console.log('API Route - Starting create-user request');
     
     // Get the server-side Supabase client with API route flag
-    const supabase = getSupabaseServerClient(true);
+    const supabase = getSupabaseServerClient();
 
     // Get the session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     // Verify admin role with API route flag
     try {
-      await verifyAdminRole(session.user.email, true);
+      await verifyAdminRole(session.user.email);
     } catch (error) {
       console.log('API Route - Admin verification failed:', error);
       return NextResponse.json(
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
             const { error: deleteError } = await supabaseAdmin
               .from('profiles')
               .delete()
-              .eq('id', profile.id);
+              .eq('id', profile.id as string);
             
             if (deleteError) {
               console.error('API Route - Error deleting profile:', deleteError);
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
 
       // Then clean up any existing auth users with this email
       const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const existingAuthUsers = existingUsers?.users.filter(u => u.email === email) || [];
+      const existingAuthUsers = existingUsers?.users.filter((u) => u.email === email) || [];
 
       console.log('API Route - Found auth users:', existingAuthUsers.length);
 

@@ -214,7 +214,7 @@ export default function Team() {
             <div className="flex-1 min-w-[200px] space-y-1">
               <button
                 type="submit"
-                className="w-full h-10 bg-gradient-to-r from-gray-950 to-red-600 text-white rounded-lg hover:from-gray-900 hover:to-red-700 transition-all font-medium shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+                className="w-full h-10 bg-gradient-to-r from-gray-950 to-red-600 text-white rounded-lg hover:from-gray-900 hover:to-red-700 transition-all font-medium shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-4 group"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -227,7 +227,7 @@ export default function Team() {
                   </span>
                 ) : (
                   <span className="flex items-center">
-                    <Image src="/addIcon.png" alt="" width={16} height={16} className="group-hover:scale-110 transition-transform" />
+                    <Image src="/addIcon.png" alt="" width={16} height={16} className="group-hover:scale-110 transition-transform mr-3" />
                     Add User
                   </span>
                 )}
