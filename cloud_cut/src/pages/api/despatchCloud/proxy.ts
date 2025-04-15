@@ -4,7 +4,45 @@ const DESPATCH_CLOUD_DOMAIN = process.env.NEXT_PUBLIC_DESPATCH_CLOUD_DOMAIN || "
 const DESPATCH_CLOUD_EMAIL = process.env.DESPATCH_CLOUD_EMAIL;
 const DESPATCH_CLOUD_PASSWORD = process.env.DESPATCH_CLOUD_PASSWORD;
 
+// CORS headers helper
+const setCorsHeaders = (res: NextApiResponse, req: NextApiRequest) => {
+    // Allowed origins
+    const allowedOrigins = [
+        'http://localhost:3000',
+        'https://cloud-9bcf5b671-angel-salinas-projects.vercel.app',
+        'https://cloud-cut.vercel.app',
+        'https://cloud-cut-angel-salinas-projects.vercel.app',
+        'https://cloud-cut-asalinas-shadowfoamc-angel-salinas-projects.vercel.app',
+    ];
+    
+    const origin = req.headers.origin;
+    
+    // Set 'Access-Control-Allow-Origin' if the origin is in the allowed origins list
+    if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+        // Fallback to any origin if none matched (for development)
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+    );
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    // Set CORS headers for all requests
+    setCorsHeaders(res, req);
+    
+    // Handle preflight OPTIONS request - MUST return 200 status
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+    
     const { path, ...queryParams } = req.query;
     
     // Construct the base URL with the path

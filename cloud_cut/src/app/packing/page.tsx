@@ -1,8 +1,8 @@
 "use client";
 
 import NavBar from "@/components/Navbar";
-import OrderFinished from "@/components/orderFinished";
-import { useEffect, useRef, useState } from "react";
+import StartPacking from "@/components/orderStartedPacking";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import {
@@ -33,7 +33,10 @@ export default function Packing() {
     const orders = useSelector(selectPackingOrders);
     const totalOrders = useSelector(selectCurrentViewTotal);
     const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
-    const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ''));
+
+    const selectedItemsSelector = useMemo(() => selectOrderItemsById(selectedOrderId || ''), [selectedOrderId]);
+    const selectedOrderItems = useSelector(selectedItemsSelector);
+
     const { currentPage, loading, error } = useSelector((state: RootState) => state.orders);
     const selectedRowRef = useRef<HTMLTableRowElement>(null);
     const ordersPerPage = 15;
@@ -132,46 +135,19 @@ export default function Packing() {
         }
     };
 
-    const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
-        // If marking as incomplete, just do it directly
-        if (!completed) {
-            dispatch(updateItemCompleted({ orderId, itemId, completed }));
-            return;
-        }
-
-        // Count how many items are already completed
-        const completedItems = selectedOrderItems.filter(item =>
-            item.completed || item.id === itemId // Count the current item if it's being marked as completed
-        );
-
-        // Check if this is the last item to complete
-        if (completedItems.length === selectedOrderItems.length && completed) {
-            // Store the pending item completion details
-            setPendingItemToComplete({
-                orderId,
-                itemId,
-                completed
-            });
-            // Show confirmation dialog
-            setShowOrderFinishedDialog(true);
-        } else {
-            // Not the last item, just mark it as completed
-            dispatch(updateItemCompleted({ orderId, itemId, completed }));
-        }
-    };
 
     const handleMarkCompleted = (orderId: string) => {
         // Close the confirmation dialog
         setShowOrderFinishedDialog(false);
 
+        console.log(`Marking order ${orderId} as completed`);
+        // Show loading state
+        setIsRefreshing(true);
+
         // If there's a pending item to complete
         if (pendingItemToComplete) {
             // Mark the item as completed
             dispatch(updateItemCompleted(pendingItemToComplete));
-
-            console.log(`Marking order ${orderId} as completed`);
-            // Show loading state
-            setIsRefreshing(true);
 
             // Update the order status in Redux
             dispatch(updateOrderStatus({
@@ -179,46 +155,27 @@ export default function Packing() {
                 status: "Completed"
             }));
 
-            // Directly update both status and packed in Supabase in a single operation
-            (async () => {
-                try {
-                    const { error } = await supabase
-                        .from('orders')
-                        .update({
-                            status: "Completed",
-                            packed: true,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('order_id', orderId);
-
-                    if (error) {
-                        console.error('Error updating order status in Supabase:', error);
-                    } else {
-                        console.log(`Successfully updated order ${orderId} as Completed and packed`);
-                    }
-                } catch (err) {
-                    console.error('Failed to update order status:', err);
-                }
-            })();
-
-            // Refresh the orders list to remove the completed order after a delay
-            setTimeout(() => {
-                console.log(`Refreshing orders after marking ${orderId} as completed`);
-                dispatch(fetchOrdersFromSupabase({
-                    page: currentPage,
-                    perPage: ordersPerPage,
-                    manufactured: true,
-                    packed: false,
-                    status: "Pending",
-                    view: 'packing'
-                }))
-                    .finally(() => {
-                        setIsRefreshing(false);
-                        // Clear the pending item
-                        setPendingItemToComplete(null);
-                    });
-            }, 2000); // Increased delay to ensure Supabase update completes
+            // Clear the pending item
+            setPendingItemToComplete(null);
         }
+
+        // Refresh the orders list to reflect the changes (now the order should be gone)
+        console.log(`Refreshing orders after marking ${orderId} as completed`);
+        
+        // Add a short delay to ensure database operations have completed
+        setTimeout(() => {
+            dispatch(fetchOrdersFromSupabase({
+                page: currentPage,
+                perPage: ordersPerPage,
+                manufactured: true,
+                packed: false,
+                status: "Pending",
+                view: 'packing'
+            }))
+            .finally(() => {
+                setIsRefreshing(false);
+            });
+        }, 1000);
     };
 
     // Function to handle cancellation of the confirmation dialog
@@ -229,23 +186,11 @@ export default function Packing() {
         setPendingItemToComplete(null);
     };
 
-    // Function to handle the "Mark Order Complete" button click
-    const handleCompleteOrderClick = () => {
+    // Function to handle the "" button click
+    const handleStartPackingClick = () => {
         if (!selectedOrder) return;
-        
-        // Check if all items are completed
-        const allItemsCompleted = selectedOrderItems.every(item => item.completed);
-        
-        if (allItemsCompleted) {
             // Show the OrderFinished dialog
             setShowOrderFinishedDialog(true);
-        } else {
-            // Show warning message with timeout
-            setShowWarning(true);
-            setTimeout(() => {
-                setShowWarning(false);
-            }, 4000);
-        }
     };
 
     const handleRefresh = () => {
@@ -457,26 +402,10 @@ export default function Packing() {
                                         {/* Progress indicator repositioned */}
                                         {selectedOrderItems.length > 0 && (
                                             <div className="flex items-center gap-3">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm text-gray-300">
-                                                        {selectedOrderItems.filter(item => item.completed).length} of {selectedOrderItems.length} items
-                                                    </span>
-                                                    <div className="w-24 bg-gray-700 rounded-full h-2">
-                                                        <div 
-                                                            className="bg-green-500 h-2 rounded-full transition-all duration-500 ease-out"
-                                                            style={{ 
-                                                                width: `${selectedOrderItems.length > 0 
-                                                                    ? (selectedOrderItems.filter(item => item.completed).length / selectedOrderItems.length) * 100 
-                                                                    : 0}%` 
-                                                            }}
-                                                            aria-hidden="true"
-                                                        ></div>
-                                                    </div>
-                                                </div>
                                                 
                                                 {/* Complete Order Button moved above */}
                                                 <button
-                                                    onClick={handleCompleteOrderClick}
+                                                    onClick={handleStartPackingClick}
                                                     className="group px-4 py-1.5 bg-gradient-to-br from-green-500 to-green-600 rounded-md text-white text-sm font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
                                                     aria-label="Mark order as completed"
                                                     disabled={selectedOrderItems.length === 0}
@@ -485,7 +414,7 @@ export default function Packing() {
                                                         <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
                                                         <path d="m9 12 2 2 4-4"/>
                                                     </svg>
-                                                    Complete Order
+                                                    Start Packing
                                                 </button>
                                             </div>
                                         )}
@@ -513,48 +442,18 @@ export default function Packing() {
                                         </div>
                                     ) : (
                                         <div className="overflow-x-auto bg-gray-900/30 rounded-lg border border-gray-700">
-                                            <table className="w-full text-white">
-                                                <thead className="bg-gray-800/50">
+                                            <table className="w-full text-white border-collapse">
+                                                <thead className="bg-gray-800/70">
                                                     <tr>
-                                                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Name</th>
-                                                        <th className="px-6 py-3 text-center text-sm font-medium text-gray-300 whitespace-nowrap">Foam Sheet</th>
-                                                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Quantity</th>
-                                                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Priority</th>
-                                                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Complete</th>
+                                                        <th className="px-6 py-4 text-left text-sm font-semibold text-gray-200 uppercase tracking-wider border-b border-gray-700">Name</th>
+                                                        <th className="px-6 py-4 text-center text-sm font-semibold text-gray-200 uppercase tracking-wider border-b border-gray-700">Quantity</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-700/50">
+                                                <tbody className="divide-y divide-gray-700/50 bg-gray-900/20">
                                                     {selectedOrderItems.map((item) => (
-                                                        <tr key={item.id} className="hover:bg-gray-800/30 transition-colors">
-                                                            <td className="px-4 py-3 text-left">{item.item_name}</td>
-                                                            <td className="px-4 py-3 text-center whitespace-nowrap">{item.foamsheet}</td>
-                                                            <td className="px-4 py-3 text-center">{item.quantity}</td>
-                                                            <td className="px-4 py-3 text-center">{item.priority}</td>
-                                                            <td className="px-4 py-3 text-center">
-                                                                <div className="flex justify-center">
-                                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={item.completed}
-                                                                            onChange={(e) => handleToggleCompleted(
-                                                                                selectedOrder.order_id,
-                                                                                item.id,
-                                                                                e.target.checked
-                                                                            )}
-                                                                            className="sr-only peer"
-                                                                            aria-label={`Mark ${item.item_name} as ${item.completed ? 'incomplete' : 'complete'}`}
-                                                                        />
-                                                                        <div className="w-5 h-5 border-2 border-gray-400 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                                                            {item.completed && (
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                                                                                    <path d="m9 12 2 2 4-4"/>
-                                                                                </svg>
-                                                                            )}
-                                                                        </div>
-                                                                    </label>
-                                                                </div>
-                                                            </td>
+                                                        <tr key={item.id} className="hover:bg-gray-800/40 transition-colors duration-150">
+                                                            <td className="px-6 py-4 text-left text-gray-200 font-medium">{item.item_name}</td>
+                                                            <td className="px-6 py-4 text-center text-gray-300">{item.quantity}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -581,11 +480,12 @@ export default function Packing() {
 
             {/* Order Finished Confirmation Dialog */}
             {showOrderFinishedDialog && selectedOrder && (
-                <OrderFinished
+                <StartPacking
                     isOpen={showOrderFinishedDialog}
                     onClose={handleCancelOrderFinished}
                     onConfirm={handleMarkCompleted}
-                    orderId={selectedOrder.order_id}
+                    selectedOrder={selectedOrder}
+                    selectedOrderItems={selectedOrderItems}
                     id={selectedOrder.id.toString()}
                 />
             )}

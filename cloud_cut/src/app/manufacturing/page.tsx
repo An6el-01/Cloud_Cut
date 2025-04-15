@@ -2,7 +2,7 @@
 
 import Navbar from "@/components/Navbar";
 import ManuConfirm from "@/components/manuConfirm";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import {
@@ -32,7 +32,10 @@ export default function Manufacturing() {
   const orders = useSelector(selectManufacturingOrders); // Use manufacturing-specific selector
   const totalOrders = useSelector(selectCurrentViewTotal); // Use view-specific total
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
-  const selectedOrderItems = useSelector(selectOrderItemsById(selectedOrderId || ""));
+
+  const selectedItemsSelector = useMemo(() => selectOrderItemsById(selectedOrderId || ''), [selectedOrderId]);
+  const selectedOrderItems = useSelector(selectedItemsSelector);
+
   const { currentPage, loading, error,} = useSelector((state: RootState) => state.orders);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
@@ -92,16 +95,25 @@ export default function Manufacturing() {
       return;
     }
     
-    const ordersToProcess = orders.filter(order => {
+    // First, handle orders with no items at all
+    const ordersWithNoItems = orders.filter(order => {
       const items = orderItemsById[order.order_id] || [];
-      // Only process orders that have items (so we know their items were loaded)
-      // but none of those items need manufacturing (no SFI/SFC SKUs)
-      const filteredItems = filterItemsBySku(items);
-      return filteredItems.length === 0 && items.length > 0;
+      return items.length === 0;
     });
     
+    // Then handle orders with items but none that need manufacturing
+    const ordersWithNonManufacturingItems = orders.filter(order => {
+      const items = orderItemsById[order.order_id] || [];
+      // Only process orders that have items but none require manufacturing
+      const filteredItems = filterItemsBySku(items);
+      return items.length > 0 && filteredItems.length === 0;
+    });
+    
+    // Combine both lists
+    const ordersToProcess = [...ordersWithNoItems, ...ordersWithNonManufacturingItems];
+    
     if (ordersToProcess.length > 0) {
-      console.log(`Found ${ordersToProcess.length} orders with no manufacturing items to auto-process`);
+      console.log(`Found ${ordersToProcess.length} orders to auto-process (${ordersWithNoItems.length} with no items, ${ordersWithNonManufacturingItems.length} with no manufacturing items)`);
       
       // Process each order sequentially
       for (const order of ordersToProcess) {
@@ -203,6 +215,21 @@ export default function Manufacturing() {
       return () => clearTimeout(timer);
     }
   }, [orders, orderItemsById]);
+
+  // Get the current view from Redux store
+  const currentView = useSelector((state: RootState) => state.orders.currentView);
+  
+  // Run auto-processing when view is set to manufacturing
+  useEffect(() => {
+    if (currentView === 'manufacturing' && orders.length > 0) {
+      // Add a slight delay to ensure state is settled
+      const timer = setTimeout(() => {
+        autoMarkOrdersWithNoManufacturingItems();
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentView, orders.length]);
 
   const handleOrderClick = (orderId: string) => {
     dispatch(setSelectedOrderId(orderId));

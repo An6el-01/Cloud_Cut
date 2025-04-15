@@ -45,8 +45,10 @@ export default function Team() {
           setProfiles(data);
 
           // Subscribe to profile changes
-          const subscription = subscribeToProfiles((payload: RealtimePostgresChangesPayload<Profile>) => {
-            console.log("Profile change detected:", payload);
+          const subscription = subscribeToProfiles((payload) => {
+            console.log("REALTIME EVENT RECEIVED:", payload);
+            console.log("Event type:", payload.eventType);
+            console.log("New data:", payload.new);
             
             if (payload.eventType === "INSERT") {
               // Add new profile to the list
@@ -93,6 +95,10 @@ export default function Team() {
     try {
       const result = await addUser(email, name, phone, role);
       setSuccess(result.message || `User ${name} created successfully!`);
+      
+      // Add this line to manually refresh profiles after adding a user
+      fetchProfiles().then(data => setProfiles(data));
+      
       setName("");
       setEmail("");
       setPhone("");

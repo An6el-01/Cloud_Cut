@@ -85,6 +85,7 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
       headers: {
         'Content-Type': 'application/json',
       },
+      cache: 'no-store',
       credentials: 'include',
     });
     

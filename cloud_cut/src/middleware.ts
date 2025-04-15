@@ -69,8 +69,9 @@ export async function middleware(request: NextRequest) {
     });
 
     // Protect API routes
-    if (request.nextUrl.pathname.startsWith('/api/auth/')) {
-      console.log('Middleware - Protecting API route');
+    if (request.nextUrl.pathname.startsWith('/api/auth/') || 
+        request.nextUrl.pathname.startsWith('/api/team/')) {
+      console.log('Middleware - Protecting API route:', request.nextUrl.pathname);
       
       if (!session) {
         console.log('Middleware - No session found for API route');

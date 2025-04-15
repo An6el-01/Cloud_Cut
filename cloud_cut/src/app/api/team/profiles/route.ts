@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/utils/supabaseServer';
+import { getSupabaseAdmin, getSupabaseRouteHandlerClient } from '@/utils/supabaseServer';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
     console.log('API Route - Starting profiles fetch');
+    
+    // Check who's making the request
+    const supabaseClient = getSupabaseRouteHandlerClient();
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    console.log('API Route - Auth Session:', session ? `User: ${session.user.email}` : 'No session found');
     
     // Use admin client to fetch profiles directly
     const supabase = getSupabaseAdmin();
@@ -28,6 +33,10 @@ export async function GET() {
       }
       
       console.log(`API Route - Successfully fetched ${data?.length || 0} profiles`);
+      if (data && data.length > 0) {
+        console.log('API Route - Profile emails:', data.map(p => p.email).join(', '));
+      }
+      
       const responseJson = { 
         success: true,
         profiles: data || []
