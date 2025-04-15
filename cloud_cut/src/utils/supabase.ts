@@ -104,18 +104,27 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
       console.log('Client - Successfully parsed JSON response');
       
       if (!response.ok) {
+        console.error('Client - Error response:', data.message || 'Unknown error');
         throw new Error(data.message || 'Failed to fetch profiles');
       }
       
       return data.profiles || [];
     } catch (parseError) {
       console.error('Client - JSON parsing error:', parseError);
-      console.error('Client - Raw response text:', text);
+      console.error('Client - Raw response text (first 100 chars):', text.substring(0, 100));
+      
+      // If we get HTML response, it's likely a server error
+      if (text.startsWith('<!DOCTYPE html>')) {
+        console.error('Client - Received HTML instead of JSON (server error)');
+        throw new Error('Server error occurred');
+      }
+      
       throw new Error('Failed to parse server response');
     }
   } catch (error) {
     console.error('Client - Error fetching profiles:', error);
-    throw new Error(error instanceof Error ? error.message : 'Failed to fetch profiles');
+    // Return empty array instead of throwing to avoid breaking UI
+    return [];
   }
 };
 

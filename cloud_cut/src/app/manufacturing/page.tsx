@@ -589,7 +589,7 @@ export default function Manufacturing() {
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-gray-300">
-                            {filterItemsBySku(selectedOrderItems).filter(item => item.completed).length} of {filterItemsBySku(selectedOrderItems).length} items
+                            {filterItemsBySku(selectedOrderItems).filter(item => item.completed).length}/{filterItemsBySku(selectedOrderItems).length} 
                           </span>
                           <div className="w-24 bg-gray-700 rounded-full h-2">
                             <div 
@@ -603,34 +603,6 @@ export default function Manufacturing() {
                             ></div>
                           </div>
                         </div>
-                        
-                        {/* Complete Order Button */}
-                        <button
-                          onClick={() => {
-                            // Check if all relevant items are completed
-                            const relevantItems = filterItemsBySku(selectedOrderItems);
-                            const allItemsCompleted = relevantItems.every(item => item.completed);
-                            
-                            if (allItemsCompleted && relevantItems.length > 0) {
-                              setShowConfirmDialog(true);
-                            } else {
-                              // Show warning message with timeout instead of alert
-                              setShowWarning(true);
-                              setTimeout(() => {
-                                setShowWarning(false);
-                              }, 4000);
-                            }
-                          }}
-                          className="group px-4 py-1.5 bg-gradient-to-br from-green-500 to-green-600 rounded-md text-white text-sm font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
-                          aria-label="Mark order as manufactured"
-                          disabled={filterItemsBySku(selectedOrderItems).length === 0}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                            <path d="m9 12 2 2 4-4"/>
-                          </svg>
-                          Mark Manufactured
-                        </button>
                       </div>
                     )}
                   </div>

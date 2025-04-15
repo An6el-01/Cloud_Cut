@@ -14,6 +14,7 @@ import {
   subscribeToProfiles 
 } from "@/utils/supabase";
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { getSupabaseClient } from "@/utils/supabase";
 
 export default function Team() {
   const [mounted, setMounted] = useState(false);
@@ -40,9 +41,11 @@ export default function Team() {
         router.push("/");
       } else {
         try {
+          setIsLoading(true);
           const data = await fetchProfiles();
           console.log("useEffect - fetched profiles:", data);
           setProfiles(data);
+          setError(null); // Clear any existing errors on successful fetch
 
           // Subscribe to profile changes
           const subscription = subscribeToProfiles((payload) => {
@@ -73,7 +76,10 @@ export default function Team() {
             subscription.unsubscribe();
           };
         } catch (err) {
+          console.error("Failed to load profiles:", err);
           setError(err instanceof Error ? err.message : "Failed to load profiles");
+        } finally {
+          setIsLoading(false);
         }
       }
     };
@@ -110,8 +116,33 @@ export default function Team() {
     setIsLoading(false);
   };
 
-  const handleEdit = (profile: Profile) => {
-    setEditingProfile(profile);
+  const handleEdit = async (profile: Profile) => {
+    try {
+      // Get the current session from Supabase
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        setError("You must be logged in to edit team members.");
+        return;
+      }
+      
+      // Find the profile with matching email from the session
+      const currentUserProfile = profiles.find(p => p.email === session.user.email);
+      const allowedRoles = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
+      
+      console.log("currentUserProfile role", currentUserProfile?.role);
+      
+      if (!currentUserProfile || !allowedRoles.includes(currentUserProfile.role)) {
+        setError("You don't have permission to edit team members. Admin access required.");
+        return;
+      }
+      
+      setEditingProfile(profile);
+    } catch (err) {
+      console.error("Error checking permissions:", err);
+      setError("Failed to verify permissions");
+    }
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -132,10 +163,31 @@ export default function Team() {
     if (!confirm("Are you sure you want to delete this user?")) return;
 
     try {
+      // Get the current session from Supabase
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        setError("You must be logged in to delete team members.");
+        return;
+      }
+      
+      // Find the profile with matching email from the session
+      const currentUserProfile = profiles.find(p => p.email === session.user.email);
+      const allowedRoles = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
+      
+      console.log("currentUserProfile role for delete", currentUserProfile?.role);
+      
+      if (!currentUserProfile || !allowedRoles.includes(currentUserProfile.role)) {
+        setError("You don't have permission to delete team members. Admin access required.");
+        return;
+      }
+
       await deleteUser(id);
       setSuccess("User deleted successfully!");
       // Real-time subscription will handle updating profiles
     } catch (err) {
+      console.error("Error deleting user:", err);
       setError(err instanceof Error ? err.message : "Failed to delete user");
     }
   };
@@ -385,13 +437,6 @@ export default function Team() {
               </div>
 
               <div className="flex justify-center space-x-4 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingProfile(null)}
-                  className="px-6 py-2.5 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all font-medium shadow-md hover:shadow-lg"
-                >
-                  Cancel
-                </button>
                 <button
                   type="submit"
                   className="px-6 py-2.5 bg-gradient-to-r from-gray-950 to-red-600 text-white rounded-lg hover:from-gray-900 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all font-medium shadow-md hover:shadow-lg"
