@@ -16,6 +16,8 @@ export interface Order {
     updated_at: string;
     manufactured: boolean;
     packed: boolean;
+    picking: boolean;
+    user_picking: string | null;
 }   
 
 export interface OrderItem {
@@ -36,6 +38,7 @@ export interface OrdersState {
     allOrders: Order[],
     manufacturingOrders: Order[],
     packingOrders: Order[],
+    pickingOrders: Order[],
     archivedOrders: Order[],
     orderItems: Record<string, OrderItem[]>;
     archivedOrderItems: Record<string, OrderItem[]>;
@@ -51,5 +54,5 @@ export interface OrdersState {
     archivedOrdersLoading: boolean;
     archivedOrdersError: string | null;
     syncStatus: 'idle' | 'syncing' | 'error';
-    currentView: 'manufacturing' | 'packing' | 'archived';
+    currentView: 'manufacturing' | 'packing' | 'picking' | 'archived';
 }

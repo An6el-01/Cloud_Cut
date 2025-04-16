@@ -482,8 +482,8 @@ export default function Manufacturing() {
                               ref={order.order_id === selectedOrderId ? selectedRowRef : null}
                               className={`transition-all duration-200 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${
                                 order.order_id === selectedOrderId 
-                                  ? "bg-blue-100/90 border-l-4 border-blue-500 shadow-md" 
-                                  : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
+                                  ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
+                                  : "hover:bg-gray-100/90 hover:border-l-4 hover:border-gray-300"
                               }`}
                               onClick={() => handleOrderClick(order.order_id)}
                             >

@@ -18,6 +18,11 @@ export const selectPackingOrders = createSelector(
   state => state.packingOrders
 );
 
+export const selectPickingOrders = createSelector(
+  [selectOrdersState],
+  state => state.pickingOrders
+);
+
 export const selectCurrentViewOrders = createSelector(
   [selectOrdersState],
   state => {
@@ -26,6 +31,8 @@ export const selectCurrentViewOrders = createSelector(
         return state.manufacturingOrders;
       case 'packing':
         return state.packingOrders;
+      case 'picking':
+        return state.pickingOrders;
       default:
         return state.allOrders;
     }
@@ -82,6 +89,11 @@ export const selectOrderProgress = (orderId: string) =>
     if (!order) {
       order = orders.packingOrders.find((o) => o.order_id === orderId);
     }
+
+    // If still not found, check in picking orders
+    if (!order) {
+      order = orders.pickingOrders.find((o) => o.order_id === orderId);
+    }
     
     // If still not found, check in allOrders
     if (!order) {
@@ -118,7 +130,7 @@ export const selectArchivedOrders = createSelector(
       // Use a single query to get all items at once
       const { data: items, error: itemsError } = await supabase
         .from('archived_order_items')
-        .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at')
+        .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at, archived_at')
         .in('order_id', orderIds);
 
       if (itemsError) {

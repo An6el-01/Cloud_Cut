@@ -77,7 +77,9 @@ export const syncOrders = createAsyncThunk(
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           manufactured: status === 'Completed',
-          packed: status === 'Completed'
+          packed: status === 'Completed',
+          picking: status === 'Completed',
+          user_picking: 'N/A'
         };
       });
 

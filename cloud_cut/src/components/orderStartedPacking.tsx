@@ -4,7 +4,7 @@ import React, {useRef, useEffect, useState} from "react";
 import { Order, OrderItem } from "@/types/redux";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
-import { updateItemCompleted, setCurrentView } from "@/redux/slices/ordersSlice";
+import { updateItemCompleted, setCurrentView, updateOrderPickingStatus } from "@/redux/slices/ordersSlice";
 import { supabase } from "@/utils/supabase";
 
 export default function StartPacking({
@@ -33,10 +33,22 @@ export default function StartPacking({
     const dialogRef = useRef<HTMLDivElement>(null);
     const {loading} = useSelector((state: RootState) => state.orders)
 
+    // Function to reset picking status - single source of truth
+    const resetPickingStatus = () => {
+        if (selectedOrder && isOpen) {
+            dispatch(updateOrderPickingStatus({
+                orderId: selectedOrder.order_id,
+                picking: false,
+                user_picking: 'N/A'
+            }));
+        }
+    };
+
     // Handle escape key press to close modal
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape" && isOpen) {
+                resetPickingStatus();
                 onClose();
             }
         };
@@ -52,11 +64,12 @@ export default function StartPacking({
             window.removeEventListener('keydown', handleKeyDown);
             document.body.style.overflow = '';
         };
-    }, [isOpen, onClose]);
+    }, [isOpen, onClose, dispatch, selectedOrder]);
 
     //Click outside to close
     const handleBackdropCLick = (e: React.MouseEvent) => {
         if (dialogRef.current && e.target === dialogRef.current) {
+            resetPickingStatus();
             onClose();
         }
     };
@@ -88,6 +101,7 @@ export default function StartPacking({
                 .update({
                     status: 'Completed',
                     packed: true,
+                    picking: true,
                     updated_at: new Date().toISOString()
                 })
                 .eq('order_id', selectedOrder.order_id);
@@ -280,6 +294,11 @@ export default function StartPacking({
             dispatch(updateItemCompleted({ orderId, itemId, completed }));
     };
 
+    const handleCloseClick = () => {
+        resetPickingStatus();
+        onClose();
+    };
+
     if (!isOpen) return null;
 
     return(
@@ -312,7 +331,7 @@ export default function StartPacking({
                     <button
                         type="button"
                         ref={closeButtonRef}
-                        onClick={onClose}
+                        onClick={handleCloseClick}
                         className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors duration-200 p-2 rounded-full hover:bg-gray-100
                                     focus:outline-none focus:ring-2 focus:ring-blue-500"
                         aria-label="Close dialog"

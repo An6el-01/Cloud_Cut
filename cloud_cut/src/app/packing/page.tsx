@@ -10,6 +10,7 @@ import {
     updateItemCompleted,
     updateOrderStatus,
     setCurrentView,
+    updateOrderPickingStatus,
 } from "@/redux/slices/ordersSlice";
 import {
     fetchOrdersFromSupabase,
@@ -21,7 +22,7 @@ import {
     selectOrderProgress,
     selectCurrentViewTotal,
 } from "@/redux/slices/ordersSelectors";
-import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
+import { subscribeToOrders, subscribeToOrderItems, getCurrentUser } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
 import { supabase } from "@/utils/supabase";
 
@@ -33,10 +34,8 @@ export default function Packing() {
     const orders = useSelector(selectPackingOrders);
     const totalOrders = useSelector(selectCurrentViewTotal);
     const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
-
     const selectedItemsSelector = useMemo(() => selectOrderItemsById(selectedOrderId || ''), [selectedOrderId]);
     const selectedOrderItems = useSelector(selectedItemsSelector);
-
     const { currentPage, loading, error } = useSelector((state: RootState) => state.orders);
     const selectedRowRef = useRef<HTMLTableRowElement>(null);
     const ordersPerPage = 15;
@@ -46,6 +45,7 @@ export default function Packing() {
     const [showOrderFinishedDialog, setShowOrderFinishedDialog] = useState(false);
     const [pendingItemToComplete, setPendingItemToComplete] = useState<{ orderId: string;itemId: string;completed: boolean; } | null>(null);
     const [showWarning, setShowWarning] = useState(false);
+    const [currentUserName, setCurrentUserName] = useState<string | null>(null);
 
     const orderProgress = useSelector((state: RootState) =>
         orders.reduce((acc, order) => {
@@ -114,6 +114,43 @@ export default function Packing() {
             itemsSubscription.unsubscribe();
         }
     }, [dispatch, currentPage]);
+
+    useEffect(() => {
+        const initialize = async () => {
+            try {
+                const currentUser = await getCurrentUser();
+                console.log('Current user from auth:', currentUser);
+
+                // Fetch the user's Name
+                if (currentUser) {
+                    const {data, error} = await supabase
+                        .from('profiles')
+                        .select('name')
+                        .eq('id', currentUser.id)
+                        .single();
+
+                    if (error) {
+                        console.error('Error fetching user profile:', error);
+                        return;
+                    }
+                    
+                    console.log('User profile data:', data);
+                    if (data && data.name) {
+                        setCurrentUserName(data.name as string);
+                        console.log('Set current user name to:', data.name);
+                    } else {
+                        console.warn('User profile exists but name is missing');
+                    }
+                } else {
+                    console.warn('No current user found');
+                }
+            } catch (error) {
+                console.error('Error in initialize function:', error);
+            }
+        };
+        
+        initialize();
+    }, []);
 
     const handleOrderClick = (orderId: string) => {
         dispatch(setSelectedOrderId(orderId));
@@ -189,8 +226,39 @@ export default function Packing() {
     // Function to handle the "" button click
     const handleStartPackingClick = () => {
         if (!selectedOrder) return;
-            // Show the OrderFinished dialog
-            setShowOrderFinishedDialog(true);
+        
+        // Debug log to see the value of currentUserName
+        console.log('Current user name before dispatch:', currentUserName);
+        
+        // Set the order status to "Picking"
+        dispatch(updateOrderPickingStatus({
+            orderId: selectedOrder.order_id,
+            picking: true,
+            user_picking: currentUserName || 'N/A',
+        }));
+        
+        // Also manually update the local state for immediate UI feedback
+        const updatedOrders = orders.map(order => {
+            if (order.order_id === selectedOrder.order_id) {
+                return {
+                    ...order,
+                    picking: true,
+                    user_picking: currentUserName || 'N/A'
+                };
+            }
+            return order;
+        });
+        
+        // Log the status after a small delay to allow state to update
+        setTimeout(() => {
+            // Find the order after state update
+            const updatedOrder = updatedOrders.find((o) => o.order_id === selectedOrder.order_id);
+            console.log(`Order Picking Status: ${updatedOrder?.picking}`);
+            console.log(`Order User Picking Status: ${updatedOrder?.user_picking}`);
+        }, 1000);
+        
+        // Show the OrderFinished dialog
+        setShowOrderFinishedDialog(true);
     };
 
     const handleRefresh = () => {
@@ -313,8 +381,10 @@ export default function Packing() {
                                                             ref={order.order_id === selectedOrderId ? selectedRowRef : null}
                                                             className={`transition-all duration-200 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${
                                                                 order.order_id === selectedOrderId 
-                                                                ? "bg-blue-100/90 border-l-4 border-blue-500 shadow-md" 
-                                                                : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
+                                                                ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
+                                                                : order.picking
+                                                                  ? "bg-green-200/90 border-l-4 border-green-500 shadow-md"
+                                                                  : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
                                                             }`}
                                                             onClick={() => handleOrderClick(order.order_id)}
                                                         >
@@ -370,7 +440,7 @@ export default function Packing() {
                         {selectedOrder ? (
                             <div className="space-y-6 text-white">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
+                                <div>
                                         <p className="text-sm text-gray-400 underline">Order Date:</p>
                                         <p className="font-medium">{new Date(selectedOrder.order_date).toLocaleDateString("en-GB")}</p>
                                     </div>
@@ -406,15 +476,20 @@ export default function Packing() {
                                                 {/* Complete Order Button moved above */}
                                                 <button
                                                     onClick={handleStartPackingClick}
-                                                    className="group px-4 py-1.5 bg-gradient-to-br from-green-500 to-green-600 rounded-md text-white text-sm font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
-                                                    aria-label="Mark order as completed"
-                                                    disabled={selectedOrderItems.length === 0}
+                                                    className={`group px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5
+                                                        ${selectedOrder?.picking 
+                                                        ? 'bg-gradient-to-br from-gray-400 to-gray-500 text-gray-100 opacity-75 cursor-not-allowed' 
+                                                        : 'bg-gradient-to-br from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500'
+                                                        }`}
+                                                    aria-label={selectedOrder?.picking ? "Order is already being picked" : "Start picking this order"}
+                                                    disabled={selectedOrderItems.length === 0 || selectedOrder?.picking}
+                                                    title={selectedOrder?.picking ? `Currently being picked by ${selectedOrder.user_picking}` : "Start picking this order"}
                                                 >
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                         <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
                                                         <path d="m9 12 2 2 4-4"/>
                                                     </svg>
-                                                    Start Packing
+                                                    {selectedOrder?.picking ? `Being picked by ${selectedOrder.user_picking}` : "Start Picking"}
                                                 </button>
                                             </div>
                                         )}

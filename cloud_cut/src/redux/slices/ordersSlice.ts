@@ -11,6 +11,7 @@ const initialState: OrdersState = {
   allOrders: [],
   manufacturingOrders: [],
   packingOrders: [],
+  pickingOrders: [],
   archivedOrders: [],
   orderItems: {},
   archivedOrderItems: {},
@@ -48,7 +49,7 @@ export const ordersSlice = createSlice({
       state,
       action: PayloadAction<{ orderId: string; manufactured: boolean }>
     ) => {
-      // Look for the order in both allOrders and manufacturingOrders
+      // Look for the order in both allOrders
       let order = state.allOrders.find(o => o.order_id === action.payload.orderId);
       
       // If not found in allOrders, check manufacturingOrders
@@ -197,6 +198,38 @@ export const ordersSlice = createSlice({
     setCurrentView: (state, action: PayloadAction<'manufacturing' | 'packing' | 'archived'>) => {
       state.currentView = action.payload;
     },
+    updateOrderPickingStatus: (state, action: PayloadAction<{ orderId: string; picking: boolean; user_picking: string }>) => {
+      
+      // Update in packingOrders 
+      const packingOrder = state.packingOrders.find(o => o.order_id === action.payload.orderId);
+      if (packingOrder) {
+        packingOrder.picking = action.payload.picking;
+        packingOrder.user_picking = action.payload.user_picking;
+      }
+      
+      // Update in Supabase database
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('orders')
+            .update({ 
+              picking: action.payload.picking,
+              user_picking: action.payload.user_picking,
+              updated_at: new Date().toISOString() 
+            })
+            .eq('order_id', action.payload.orderId);
+          
+          if (error) {
+            console.error('Error updating picking status in Supabase:', error);
+            throw error;
+          } else {
+            console.log(`Successfully updated picking status for order ${action.payload.orderId} to ${action.payload.picking} with user ${action.payload.user_picking}`, data);
+          }
+        } catch (err) {
+          console.error('Failed to update picking status:', err);
+        }
+      })();
+    },
   },
   extraReducers: (builder) => {
     // Handle the fetchArchivedOrders thunk
@@ -233,6 +266,7 @@ export const {
   addOrderItem,
   removeOrderItem, 
   setCurrentView,
+  updateOrderPickingStatus,
 } = ordersSlice.actions;
 
 // Import thunks after we've created the slice to avoid circular dependencies
