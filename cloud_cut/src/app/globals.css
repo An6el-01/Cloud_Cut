@@ -34,3 +34,28 @@ input::placeholder {
 .font-geist-mono {
   font-family: var(--font-geist-mono);
 }
+
+/* Pill toggle animations */
+.sliding-pill {
+  position: absolute;
+  height: 100%;
+  z-index: 0;
+  border-radius: 9999px;
+  background-image: linear-gradient(to right, #e11d48, #dc2626);
+  transition: transform 0.3s ease;
+  opacity: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  top: 0;
+  bottom: 0;
+  width: 50%;
+}
+
+.pill-first {
+  transform: translateX(0);
+  left: 0;
+}
+
+.pill-second {
+  transform: translateX(100%);
+  left: 0;
+}
