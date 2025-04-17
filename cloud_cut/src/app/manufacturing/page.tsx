@@ -56,6 +56,7 @@ export default function Manufacturing() {
   const [showWarning, setShowWarning] = useState(false);
   const [activeTab, setActiveTab] = useState<'orders' | 'medium'>('orders');
   const [selectedFoamSheet, setSelectedFoamSheet] = useState<string | null>(null);
+  const [sheetFilter, setSheetFilter] = useState('');
 
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
@@ -133,6 +134,25 @@ export default function Manufacturing() {
     }
     
     return sku; // Return original if no formatting could be applied
+  };
+
+  // Function to get the appropriate color for the foam sheet indicator
+  const getSheetColorClass = (sheetName: string): string => {
+    const name = sheetName.toUpperCase();
+    
+    if (name.includes('BLACK')) return 'bg-gray-900';
+    if (name.includes('BLUE')) return 'bg-blue-600';
+    if (name.includes('GREEN')) return 'bg-green-600';
+    if (name.includes('GREY') || name.includes('GRAY')) return 'bg-gray-500';
+    if (name.includes('ORANGE')) return 'bg-orange-500';
+    if (name.includes('PINK')) return 'bg-pink-500';
+    if (name.includes('PURPLE')) return 'bg-purple-600';
+    if (name.includes('RED')) return 'bg-red-600';
+    if (name.includes('TEAL')) return 'bg-teal-500';
+    if (name.includes('YELLOW')) return 'bg-yellow-500';
+    
+    // Fallback color if no match is found
+    return 'bg-gray-400';
   };
 
   // Function to find orders that contain a specific medium sheet
@@ -845,29 +865,32 @@ export default function Manufacturing() {
       
       {/* Medium Sheets Tab Active Section */}      
       {activeTab === 'medium' && (
-        <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
+        <div className="container mx-auto pt-6 pb-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
           {/**Medium Sheets Section */}
-          <div className="flex-1 max-w-5xl">
-            <div className="bg-gray-800/90 rounded-lg shadow-lg p-6 h-[calc(100vh-300px)]">
-              <h2 className="text-2xl font-bold text-white mb-6">Medium Sheets</h2>
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full bg-white/90 backdrop-blur-sm border border-[#1d1d1d] table-auto h-[calc(85vh-270px)]">
-                    <thead className="bg-[#1d1d1d]/90 sticky top-0">
+          <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
+            <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+              <div className="px-6 py-5 bg-black/90">
+                <h2 className="text-2xl font-bold text-white text-center">Medium Sheets</h2>
+              </div>
+              <div className="flex-1 overflow-auto p-4">                
+                <div className="h-full">
+                  <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
+                    <thead className="bg-[#1d1d1d] sticky top-0 z-10">
                       <tr>
-                        <th className= "px-4 py-4 text-center text-white text-lg">Foam Sheet</th>
-                        <th className= "px-4 py-4 text-center text-white text-lg">Quantity</th>
+                        <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Foam Sheet</th>
+                        <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-300">
                       {isRefreshing ? (
                         //Skeleton loading rows while refreshing
                         [...Array(5)].map((_, index) => (
                           <tr key={`skeleton-${index}`} className="animate-pulse">
-                            <td className="px-4 py-5">
-                              <div className= "h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                            <td className="px-6 py-5">
+                              <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                             </td>
                             <td>
-                              <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                              <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                             </td>
                           </tr>
                         ))
@@ -875,13 +898,25 @@ export default function Manufacturing() {
                         // Render medium sheet items and their quantities
                         Object.keys(itemsByMediumSheet).length === 0 ? (
                           <tr>
-                            <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
-                              No medium sheets found in pending orders
+                            <td colSpan={2} className="px-6 py-10 text-center">
+                              <div className="flex flex-col items-center justify-center text-black">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                </svg>
+                                <p className="text-lg font-medium">No medium sheets found</p>
+                                <p className="text-sm text-gray-500 mt-1">There are no medium sheets in pending orders</p>
+                              </div>
                             </td>
                           </tr>
                         ) : (
                           <>
                             {Object.entries(itemsByMediumSheet)
+                              .filter(([sku]) => {
+                                if (!sheetFilter) return true;
+                                const formattedName = formatMediumSheetName(sku).toLowerCase();
+                                return formattedName.includes(sheetFilter.toLowerCase()) || 
+                                       sku.toLowerCase().includes(sheetFilter.toLowerCase());
+                              })
                               .sort(([skuA], [skuB]) => {
                                 // Sort by color first, then by thickness
                                 const partsA = skuA.split('-');
@@ -902,77 +937,141 @@ export default function Manufacturing() {
                                 }
                                 return skuA.localeCompare(skuB);
                               })
-                              .map(([sku, quantity]) => (
+                              .map(([sku, quantity], index) => (
                                 <tr 
                                   key={sku} 
-                                  className={`hover:bg-gray-50 cursor-pointer ${selectedFoamSheet === sku ? 'bg-blue-50' : ''}`}
+                                  className={`transition-colors duration-150 
+                                    ${selectedFoamSheet === sku 
+                                      ? 'bg-blue-50' 
+                                      : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                    } hover:bg-blue-50 cursor-pointer shadow-sm`}
                                   onClick={() => handleMediumSheetClick(sku)}
+                                  tabIndex={0}
+                                  role="button"
+                                  aria-pressed={selectedFoamSheet === sku}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      handleMediumSheetClick(sku);
+                                    }
+                                  }}
                                 >
-                                  <td className="px-4 py-5 text-center font-medium">{formatMediumSheetName(sku)}</td>
-                                  <td className="px-4 py-5 text-center">{quantity}</td>
+                                  <td className="px-6 py-5 text-left">
+                                    <div className="flex items-center">
+                                      <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(sku))}`}></div>
+                                      <span className="text-black text-lg">
+                                        {formatMediumSheetName(sku)}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-5 text-center">
+                                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                      {quantity}
+                                    </span>
+                                  </td>
                                 </tr>
                               ))}
-                           
                           </>
                         )
                       )}
                     </tbody>
                   </table>
-                 
                 </div>
               </div>
             </div>
+          </div>
           
           {/**Medium Sheets Order Details Section */}
-            <div className="flex-1 max-w-2xl">
-              <div className="bg-black/70 rounded-t-lg">
-                <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
-                  {selectedFoamSheet ? `Orders with ${formatMediumSheetName(selectedFoamSheet)}` : 'Please Select Medium Sheet'}
-                </h1>
+          <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
+            <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full flex flex-col">
+              <div className="px-6 py-5  bg-black/90">
+                <h2 className="text-2xl font-bold text-white text-center">
+                  {selectedFoamSheet ? (
+                    <div className="flex items-center justify-center">
+                      <span className="relative">
+                        Orders with <span className="font-semibold relative inline-block">{formatMediumSheetName(selectedFoamSheet)}
+                        </span>
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="relative inline-block">
+                      Select a Medium Sheet
+                    </span>
+                  )}
+                </h2>
               </div>
-              <div className="bg-black/70 border border-gray-200 p-6 h-[calc(91vh-290px)] overflow-y-auto">
+              <div className="flex-1 overflow-auto p-4">
                 {selectedFoamSheet ? (
-                  <div>
-                    
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-white">
-                        <thead className="bg-gray-800/50">
+                  <div className="h-full">
+                    <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
+                      <table className="w-full h-full bg-white/90">
+                        <thead className="bg-[#1d1d1d] sticky top-0 z-10">
                           <tr>
-                            <th className="px-4 py-3 text-left text-lg font-lg text-gray-300">Order ID</th>
-                            <th className="px-4 py-3 text-left text-lg font-lg text-gray-300">Customer</th>
-                            <th className="px-4 py-3 text-center text-lg font-lg text-gray-300">Priority</th>
-                            <th className="px-4 py-3 text-center text-lg font-lg text-gray-300">Quantity</th>
+                            <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
+                            <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer</th>
+                            <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
+                            <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-700/50">
+                        <tbody className="divide-y divide-gray-300">
                           {findOrdersWithMediumSheet(selectedFoamSheet).length === 0 ? (
                             <tr>
-                              <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
-                                No orders found with this medium sheet
+                              <td colSpan={4} className="px-6 py-10 text-center">
+                                <div className="flex flex-col items-center justify-center text-gray-800">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <p className="text-lg font-medium">No orders found</p>
+                                  <p className="text-sm text-gray-500 mt-1">No pending orders contain this medium sheet</p>
+                                </div>
                               </td>
                             </tr>
                           ) : (
-                            findOrdersWithMediumSheet(selectedFoamSheet).map(order => {
+                            findOrdersWithMediumSheet(selectedFoamSheet).map((order, index) => {
                               // Get the maximum priority from order items
                               const items = orderItemsById[order.order_id] || [];
                               const maxPriority = items.length > 0 
                                 ? Math.max(...items.map(item => item.priority || 0)) 
                                 : 0;
                               
+                              
+                              
                               return (
                                 <tr 
                                   key={order.order_id} 
-                                  className="hover:bg-gray-800/30 transition-colors cursor-pointer"
+                                  className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
                                   onClick={() => {
                                     handleOrderClick(order.order_id);
                                     setActiveTab('orders'); // Switch to orders tab to view details
                                   }}
+                                  tabIndex={0}
+                                  role="button"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      handleOrderClick(order.order_id);
+                                      setActiveTab('orders');
+                                    }
+                                  }}
+                                  aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
                                 >
-                                  <td className="px-4 py-3 text-left">{order.order_id}</td>
-                                  <td className="px-4 py-3 text-left">{order.customer_name}</td>
-                                  <td className="px-4 py-3 text-center">{maxPriority}</td>
-                                  <td className="px-4 py-3 text-center">
-                                    {getMediumSheetQuantityInOrder(order.order_id, selectedFoamSheet)}
+                                  <td className="px-6 py-4 text-left">
+                                    <div className="flex items-center">
+                                      <span className=" text-black text-lg">{order.order_id}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 text-left">
+                                    <span className="text-black text-lg">{order.customer_name}</span>
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                    <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>
+                                      {maxPriority}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                      {getMediumSheetQuantityInOrder(order.order_id, selectedFoamSheet)}
+                                    </span>
                                   </td>
                                 </tr>
                               );
@@ -984,9 +1083,17 @@ export default function Manufacturing() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-white text-lg">Select a medium sheet to view related orders</p>
+                    <div className="text-center p-8 max-w-md rounded-xl bg-black/40 border border-white/20">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 mx-auto mb-4 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l-4-4m4 4l4-4" />
+                      </svg>
+                      <h3 className="text-xl font-semibold text-white mb-2">No Medium Sheet Selected</h3>
+                      <p className="text-gray-300 mb-4">Please select a medium sheet from the list to view associated orders</p>
+                      <div className="w-1/2 mx-auto h-1 bg-white/20 rounded"></div>
+                    </div>
                   </div>
                 )}
+              </div>
               </div>
             </div>
           </div>

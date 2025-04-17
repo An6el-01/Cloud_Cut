@@ -28,7 +28,7 @@ const Navbar = () => {
                 className="h-10 w-auto"
                 priority
               />
-              <span className="ml-5 text-4xl font-semibold text-white">
+              <span className="ml-5 text-2xl font-semibold text-white">
                 {getPageTitle()}
               </span>
             </Link>

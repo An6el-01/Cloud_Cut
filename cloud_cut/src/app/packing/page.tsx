@@ -47,6 +47,8 @@ export default function Packing() {
     const [showWarning, setShowWarning] = useState(false);
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'orders' | 'retail'>('orders');
+    const [retailPackFilter, setRetailPackFilter] = useState('');
+    const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);
 
     const orderProgress = useSelector((state: RootState) =>
         orders.reduce((acc, order) => {
@@ -282,6 +284,53 @@ export default function Packing() {
             .finally(() => {
                 setIsRefreshing(false);
             });
+    };
+    //Function to get the items by retail pack
+    const itemsByRetailPack = useSelector((state: RootState) => {
+        return Object.values(orderItemsById).reduce((acc: Record<string, number>, items: OrderItem[]) => {
+            items.forEach(item => {
+                //Check if the item is a retail pack
+                if (item.item_name.includes('Retail Pack') && !item.completed) {
+                    //If the item name exists in the accumulator, increment the the count, otherwise initialize with 1
+                    acc[item.item_name] = (acc[item.item_name] || 0) + 1;
+                }
+            });
+            return acc;
+        }, {});
+    });
+
+    const handleRetailPackClick = (retailPack: string) => {
+        setSelectedRetailPack(retailPack);
+    };
+
+    const getRetailPackColorClass = (retailPackName: string): string => {
+        if (retailPackName.includes('BLACK')) return 'bg-black';
+        if (retailPackName.includes('WHITE')) return 'bg-white';
+        if (retailPackName.includes('GREEN')) return 'bg-green-500';
+        if (retailPackName.includes('RED')) return 'bg-red-500';
+        if (retailPackName.includes('BLUE')) return 'bg-blue-500';
+        if (retailPackName.includes('YELLOW')) return 'bg-yellow-400';
+        if (retailPackName.includes('ORANGE')) return 'bg-orange-500';
+        if (retailPackName.includes('PURPLE')) return 'bg-purple-500';
+        if (retailPackName.includes('PINK')) return 'bg-pink-400';
+        if (retailPackName.includes('GREY')) return 'bg-gray-400';
+        if (retailPackName.includes('TEAL')) return 'bg-teal-500';
+        // Default color if no match
+        return 'bg-gray-400';
+    };
+
+    const findOrdersWithRetailPack = (retailPack: string) => {
+        return orders.filter(order => {
+            const items = orderItemsById[order.order_id] || [];
+            return items.some(item => item.item_name === retailPack && !item.completed);
+        });
+    };
+
+    const getRetailPackQuantityInOrder = (orderId: string, retailPack: string) => {
+        const items = orderItemsById[orderId] || [];
+        return items
+            .filter(item => item.item_name === retailPack && !item.completed)
+            .reduce((sum, item) => sum + item.quantity, 0);
     };
 
     return (
@@ -600,70 +649,200 @@ export default function Packing() {
 
             {/* Retail Packs Tab Active Section*/}
             {activeTab === 'retail' && (
-                <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">  
-                    <div className="flex-1 max-w-5xl">
-                        <div className="bg-gray-800/90 rounded-lg shadow-lg p-6">
-                            <h2 className="text-2xl font-bold text-white mb-6">Retail Packs Management</h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="bg-gray-700/80 rounded-lg p-5">
-                                    <h3 className="text-xl font-semibold text-white mb-4">Available Retail Products</h3>
-                                    <p className="text-gray-300">Manage your retail products inventory and pricing.</p>
-                                    
-                                    <div className="mt-6 space-y-4">
-                                        <div className="bg-gray-600/50 rounded-md p-4 flex justify-between items-center">
-                                            <div>
-                                                <h4 className="font-medium text-white">Standard Retail Pack</h4>
-                                                <p className="text-gray-300 text-sm">SKU: RT-PACK-001</p>
-                                            </div>
-                                            <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-sm">In Stock</span>
+                <div className="container mx-auto pt-6 pb-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
+                {/**Retail Packs Section */}        
+                    <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
+                        <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
+                            <div className="px-6 py-5 bg-black/90">
+                                <h2 className="text-2xl font-bold text-white text-center">Retail Packs</h2>
+                            </div>
+                            <div className="flex-1 overflow-auto p-4">
+                                <div className="h-full">
+                                    <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
+                                        <thead className="bg-[#1d1d1d] sticky top-0 z-10">
+                                            <tr>
+                                                <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Retail Pack</th>
+                                                <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-300">
+                                            {isRefreshing ? (
+                                                //Skeleton loading rows while refreshing
+                                                [...Array(5)].map((_, index) => (
+                                                    <tr key={`skeleton-${index}`} className="animate-pulse">
+                                                        <td className="px-6 py-5">
+                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                                        </td>
+                                                        <td className="px-6 py-5">
+                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                //Render Retail Packs and their quantities
+                                                Object.keys(itemsByRetailPack).length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={2} className="px-6 py-10 text-center">
+                                                            <div className="flex flex-col items-center justify-center text-black">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                                                </svg>
+                                                                <p className="text-lg font-medium">No retail packs found</p>
+                                                                <p className="text-sm text-gray-500 mt-1">There are no retail packs in the orders ready for packing</p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    <>
+                                                        {Object.entries(itemsByRetailPack)
+                                                            .filter(([itemName]) => {
+                                                                if (!retailPackFilter) return true;
+                                                                return itemName.toLowerCase().includes(retailPackFilter.toLowerCase());
+                                                            })
+                                                            .sort(([itemNameA], [itemNameB]) => {
+                                                                // Sort alphabetically by item name
+                                                                return itemNameA.localeCompare(itemNameB);
+                                                            })
+                                                            .map(([itemName, quantity], index) => (
+                                                                <tr 
+                                                                    key={itemName} 
+                                                                    className={`transition-colors duration-150 
+                                                                        ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
+                                                                        hover:bg-blue-50 cursor-pointer shadow-sm`}
+                                                                    onClick={() => handleRetailPackClick(itemName)}
+                                                                >
+                                                                    <td className="px-6 py-5 text-left">
+                                                                        <div className="flex items-center space-x-3">
+                                                                            <span className={`inline-block w-4 h-4 rounded-full ${getRetailPackColorClass(itemName)}`}></span>
+                                                                            <span className="text-black text-lg">
+                                                                                {itemName}
+                                                                            </span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-6 py-5 text-center">
+                                                                        <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                            {quantity}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                    </>
+                                                )
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/*Retail Packs Order Details Section */}
+                    <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
+                        <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full flex flex-col">
+                            <div className="px-6 py-5 bg-black/90">
+                                <h2 className="text-2xl font-bold text-white text-center">
+                                    {selectedRetailPack ? (
+                                        <div className="flex items-center justify-center">
+                                            <span className="relative">
+                                                Orders with <span className="font-semibold relative inline-flex items-center ml-1">
+                                                    <span className={`inline-block w-4 h-4 rounded-full mr-2 ${getRetailPackColorClass(selectedRetailPack)}`}></span>
+                                                    {selectedRetailPack}
+                                                </span>
+                                            </span> 
                                         </div>
-                                        
-                                        <div className="bg-gray-600/50 rounded-md p-4 flex justify-between items-center">
-                                            <div>
-                                                <h4 className="font-medium text-white">Premium Retail Pack</h4>
-                                                <p className="text-gray-300 text-sm">SKU: RT-PACK-002</p>
-                                            </div>
-                                            <span className="bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-sm">Low Stock</span>
-                                        </div>
-                                        
-                                        <div className="bg-gray-600/50 rounded-md p-4 flex justify-between items-center">
-                                            <div>
-                                                <h4 className="font-medium text-white">Bulk Retail Pack</h4>
-                                                <p className="text-gray-300 text-sm">SKU: RT-PACK-003</p>
-                                            </div>
-                                            <span className="bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-sm">Out of Stock</span>
+                                    ) : (
+                                        <span className="relative inline-block">Select a Retail Pack</span>
+                                    )}
+                                </h2>
+                            </div>
+                            <div className="flex-1 overflow-auto p-4">
+                                {selectedRetailPack ? (
+                                    <div className="h-full">
+                                        <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
+                                            <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
+                                                <thead className="bg-[#1d1d1d] sticky top-0 z-10">
+                                                    <tr>
+                                                        <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
+                                                        <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer Name</th>
+                                                        <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
+                                                        <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-300">
+                                                    {findOrdersWithRetailPack(selectedRetailPack).length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={4} className="px-6 py-10 text-center">
+                                                                <div className="flex flex-col items-center justify-center text-gray-800">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                    </svg>
+                                                                    <p className="text-lg font-medium">No orders found</p>
+                                                                    <p className="text-sm text-gray-500 mt-1">No pending packing orders contain this retail pack</p>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        findOrdersWithRetailPack(selectedRetailPack).map((order, index) => {
+                                                            // Get the maximum priority from order items
+                                                            const items = orderItemsById[order.order_id] || [];
+                                                            const maxPriority = items.length > 0
+                                                                ? Math.max(...items.map(item => item.priority || 0))
+                                                                : 0;
+
+                                                            return (
+                                                                <tr 
+                                                                    key={order.order_id}
+                                                                    className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ?
+                                                                    `bg-white` : `bg-gray-50`}`}
+                                                                    onClick={() => {
+                                                                        handleOrderClick(order.order_id);
+                                                                        setActiveTab('orders');
+                                                                    }}
+                                                                    tabIndex={0}
+                                                                    role="button"
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter' || e.key === ''){
+                                                                            e.preventDefault();
+                                                                            handleOrderClick(order.order_id);
+                                                                            setActiveTab('orders');
+                                                                        }
+                                                                    }}
+                                                                    aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
+                                                                >
+                                                                    <td className="px-6 py-4 text-left">
+                                                                        <div className="flex items-center">
+                                                                            <span className="text-black text-lg">{order.order_id}</span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-left">
+                                                                        <span className="text-black text-lg">{order.customer_name}</span>
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-center">
+                                                                        <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>{maxPriority}</span>
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-center">
+                                                                        <span>{getRetailPackQuantityInOrder(order.order_id, selectedRetailPack)}</span>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })
+                                                    )}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
-                                </div>
-                                
-                                <div className="bg-gray-700/80 rounded-lg p-5">
-                                    <h3 className="text-xl font-semibold text-white mb-4">Recent Orders</h3>
-                                    <p className="text-gray-300">Track and manage retail pack orders.</p>
-                                    
-                                    <div className="mt-6 space-y-4">
-                                        <div className="bg-gray-600/50 rounded-md p-4">
-                                            <div className="flex justify-between">
-                                                <h4 className="font-medium text-white">Order #RT-5789</h4>
-                                                <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs">Shipped</span>
-                                            </div>
-                                            <p className="text-gray-300 text-sm mt-1">Customer: John Smith</p>
-                                            <p className="text-gray-400 text-xs mt-2">3 items • Ordered: 15 May 2024</p>
-                                        </div>
-                                        
-                                        <div className="bg-gray-600/50 rounded-md p-4">
-                                            <div className="flex justify-between">
-                                                <h4 className="font-medium text-white">Order #RT-5790</h4>
-                                                <span className="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded text-xs">Processing</span>
-                                            </div>
-                                            <p className="text-gray-300 text-sm mt-1">Customer: Sarah Johnson</p>
-                                            <p className="text-gray-400 text-xs mt-2">1 item • Ordered: 16 May 2024</p>
+                                ) : (
+                                    <div className="flex items-center justify-center h-full">
+                                        <div className="text-center p-8 max-w-md rounded-xl bg-black/40 border border-white/20">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 mx-auto mb-4 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l-4-4m4 4l4-4" />
+                                            </svg>
+                                            <h3 className="text-xl font-semibold text-white mb-2">No Retail Pack Selected</h3>
+                                            <p className="text-gray-300 mb-4">Please select a retail pack from the list to view associated orders</p>
+                                            <div className="w-1/2 mx-auto h-1 bg-white/20 rounded"></div>
                                         </div>
                                     </div>
-                                    
-                                    <button className="mt-6 w-full bg-gray-600 hover:bg-gray-500 text-white py-2 rounded transition-colors">
-                                        View All Orders
-                                    </button>
-                                </div>
+                                )}
                             </div>
                         </div>
                     </div>
