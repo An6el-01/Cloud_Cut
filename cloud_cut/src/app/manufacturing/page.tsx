@@ -23,6 +23,7 @@ import {
 } from "@/redux/slices/ordersSelectors";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
+import { inventoryMap } from '@/utils/inventoryMap';
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -54,12 +55,13 @@ export default function Manufacturing() {
   } | null>(null);
   const [showWarning, setShowWarning] = useState(false);
   const [activeTab, setActiveTab] = useState<'orders' | 'medium'>('orders');
+  const [selectedFoamSheet, setSelectedFoamSheet] = useState<string | null>(null);
 
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
     return items.filter(item => {
       const sku = item.sku_id.toUpperCase();
-      return sku.startsWith('SFI') || sku.startsWith('SFC');
+      return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFS');
     });
   };
 
@@ -70,6 +72,89 @@ export default function Manufacturing() {
       return acc;
     }, {} as Record<string, OrderItem[]>)
   );
+
+  // Track medium sheets by SKU and quantity from displayed orders
+  const itemsByMediumSheet = useSelector((state: RootState) => {
+    return Object.values(orderItemsById).reduce((acc: Record<string, number>, items: OrderItem[]) => {
+      items.forEach(item => {
+        // Medium sheets SKUs start with 'SFC'
+        if (item.sku_id.startsWith('SFS') && !item.completed) {
+          // If this SKU exists in the accumulator, increment the count, otherwise set it to 1
+          acc[item.sku_id] = (acc[item.sku_id] || 0) + 1;
+        }
+      });
+      return acc;
+    }, {});
+  });
+
+  // Format medium sheet SKU to display the actual product name from inventory
+  const formatMediumSheetName = (sku: string): string => {
+    // Check if this SKU exists in our inventory map
+    const productName = inventoryMap.get(sku);
+    
+    if (productName) {
+      return productName;
+    }
+    
+    // Fallback to formatting the SKU if not found in inventory
+    const parts = sku.split('-');
+    if (parts.length >= 3) {
+      const color = parts[1];
+      const thickness = parts[2];
+      return `${color} [${thickness}]`;
+    }
+    
+    // For SFSxxY format (where xx is thickness and Y is color code)
+    if (sku.startsWith('SFS') && sku.length >= 5) {
+      // Extract color code (usually the last character)
+      const colorCode = sku.charAt(sku.length - 1);
+      
+      // Extract thickness (usually numbers between SFC and color code)
+      const thickness = sku.substring(3, sku.length - 1);
+      
+      // Map color codes to color names
+      const colorMap: Record<string, string> = {
+        'K': 'BLACK',
+        'B': 'BLUE',
+        'G': 'GREEN',
+        'O': 'ORANGE',
+        'PK': 'PINK',
+        'M': 'MAUVE',
+        'P': 'PURPLE',
+        'R': 'RED',
+        'T': 'TAN',
+        'Y': 'YELLOW',
+        'E': 'GREY'
+      };
+      
+      const color = colorMap[colorCode] || colorCode;
+      
+      return `${color} [${thickness}mm]`;
+    }
+    
+    return sku; // Return original if no formatting could be applied
+  };
+
+  // Function to find orders that contain a specific medium sheet
+  const findOrdersWithMediumSheet = (sku: string) => {
+    return orders.filter(order => {
+      const items = orderItemsById[order.order_id] || [];
+      return items.some(item => item.sku_id === sku && !item.completed);
+    });
+  };
+
+  // Function to get quantity of a specific medium sheet in an order
+  const getMediumSheetQuantityInOrder = (orderId: string, sku: string) => {
+    const items = orderItemsById[orderId] || [];
+    return items
+      .filter(item => item.sku_id === sku && !item.completed)
+      .reduce((sum, item) => sum + item.quantity, 0);
+  };
+
+  // Function to handle clicking on a medium sheet row
+  const handleMediumSheetClick = (sku: string) => {
+    setSelectedFoamSheet(selectedFoamSheet === sku ? null : sku);
+  };
 
   // Custom order progress selector that only considers filtered items
   const filteredOrderProgress = orders.reduce((acc, order) => {
@@ -758,93 +843,153 @@ export default function Manufacturing() {
         </div>
       )}
       
-      {/* Medium Sheets Tab Active Section */}
+      {/* Medium Sheets Tab Active Section */}      
       {activeTab === 'medium' && (
         <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
+          {/**Medium Sheets Section */}
           <div className="flex-1 max-w-5xl">
-            <div className="bg-gray-800/90 rounded-lg shadow-lg p-6">
-              <h2 className="text-2xl font-bold text-white mb-6">Medium Sheets Inventory</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-gray-700/80 rounded-lg p-5">
-                  <h3 className="text-xl font-semibold text-white mb-4">Available Sheets</h3>
-                  <p className="text-gray-300">Track and manage foam sheet inventory levels</p>
-                  
-                  <div className="mt-6 space-y-4">
-                    <div className="bg-gray-600/50 rounded-md p-4 flex justify-between items-center">
-                      <div>
-                        <h4 className="font-medium text-white">Medium Soft Foam (MS25)</h4>
-                        <p className="text-gray-300 text-sm">25mm Thickness</p>
-                      </div>
-                      <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-sm">In Stock</span>
-                    </div>
-                    
-                    <div className="bg-gray-600/50 rounded-md p-4 flex justify-between items-center">
-                      <div>
-                        <h4 className="font-medium text-white">Medium Firm Foam (MF50)</h4>
-                        <p className="text-gray-300 text-sm">50mm Thickness</p>
-                      </div>
-                      <span className="bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-sm">Low Stock</span>
-                    </div>
-                    
-                    <div className="bg-gray-600/50 rounded-md p-4 flex justify-between items-center">
-                      <div>
-                        <h4 className="font-medium text-white">High Density Foam (HD75)</h4>
-                        <p className="text-gray-300 text-sm">75mm Thickness</p>
-                      </div>
-                      <span className="bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-sm">Out of Stock</span>
-                    </div>
-                  </div>
-                  
-                  <button className="mt-6 w-full bg-gray-600 hover:bg-gray-500 text-white py-2 rounded transition-colors">
-                    Manage Inventory
-                  </button>
-                </div>
-                
-                <div className="bg-gray-700/80 rounded-lg p-5">
-                  <h3 className="text-xl font-semibold text-white mb-4">Sheet Usage Stats</h3>
-                  <p className="text-gray-300">View material consumption and forecasts</p>
-                  
-                  <div className="mt-6 space-y-6">
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-300">MS25 Usage</span>
-                        <span className="text-sm font-medium text-gray-300">65%</span>
-                      </div>
-                      <div className="w-full bg-gray-600 rounded-full h-2.5">
-                        <div className="bg-blue-500 h-2.5 rounded-full" style={{ width: '65%' }}></div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-300">MF50 Usage</span>
-                        <span className="text-sm font-medium text-gray-300">82%</span>
-                      </div>
-                      <div className="w-full bg-gray-600 rounded-full h-2.5">
-                        <div className="bg-yellow-500 h-2.5 rounded-full" style={{ width: '82%' }}></div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-300">HD75 Usage</span>
-                        <span className="text-sm font-medium text-gray-300">95%</span>
-                      </div>
-                      <div className="w-full bg-gray-600 rounded-full h-2.5">
-                        <div className="bg-red-500 h-2.5 rounded-full" style={{ width: '95%' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-6 p-4 bg-gray-600/30 rounded-lg border border-gray-500">
-                    <h4 className="font-medium text-white mb-2">Re-order Recommendation</h4>
-                    <p className="text-sm text-gray-300">Consider ordering HD75 sheets within the next week to avoid stock shortages.</p>
-                  </div>
+            <div className="bg-gray-800/90 rounded-lg shadow-lg p-6 h-[calc(100vh-300px)]">
+              <h2 className="text-2xl font-bold text-white mb-6">Medium Sheets</h2>
+                <div className="flex-1 overflow-y-auto">
+                  <table className="w-full bg-white/90 backdrop-blur-sm border border-[#1d1d1d] table-auto h-[calc(85vh-270px)]">
+                    <thead className="bg-[#1d1d1d]/90 sticky top-0">
+                      <tr>
+                        <th className= "px-4 py-4 text-center text-white text-lg">Foam Sheet</th>
+                        <th className= "px-4 py-4 text-center text-white text-lg">Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {isRefreshing ? (
+                        //Skeleton loading rows while refreshing
+                        [...Array(5)].map((_, index) => (
+                          <tr key={`skeleton-${index}`} className="animate-pulse">
+                            <td className="px-4 py-5">
+                              <div className= "h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                            </td>
+                            <td>
+                              <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        // Render medium sheet items and their quantities
+                        Object.keys(itemsByMediumSheet).length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
+                              No medium sheets found in pending orders
+                            </td>
+                          </tr>
+                        ) : (
+                          <>
+                            {Object.entries(itemsByMediumSheet)
+                              .sort(([skuA], [skuB]) => {
+                                // Sort by color first, then by thickness
+                                const partsA = skuA.split('-');
+                                const partsB = skuB.split('-');
+                                
+                                // Compare colors
+                                if (partsA.length >= 2 && partsB.length >= 2) {
+                                  const colorA = partsA[1];
+                                  const colorB = partsB[1];
+                                  if (colorA !== colorB) return colorA.localeCompare(colorB);
+                                  
+                                  // If colors are the same, compare thickness
+                                  if (partsA.length >= 3 && partsB.length >= 3) {
+                                    const thicknessA = parseInt(partsA[2], 10);
+                                    const thicknessB = parseInt(partsB[2], 10);
+                                    return thicknessA - thicknessB;
+                                  }
+                                }
+                                return skuA.localeCompare(skuB);
+                              })
+                              .map(([sku, quantity]) => (
+                                <tr 
+                                  key={sku} 
+                                  className={`hover:bg-gray-50 cursor-pointer ${selectedFoamSheet === sku ? 'bg-blue-50' : ''}`}
+                                  onClick={() => handleMediumSheetClick(sku)}
+                                >
+                                  <td className="px-4 py-5 text-center font-medium">{formatMediumSheetName(sku)}</td>
+                                  <td className="px-4 py-5 text-center">{quantity}</td>
+                                </tr>
+                              ))}
+                           
+                          </>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                 
                 </div>
               </div>
             </div>
+          
+          {/**Medium Sheets Order Details Section */}
+            <div className="flex-1 max-w-2xl">
+              <div className="bg-black/70 rounded-t-lg">
+                <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
+                  {selectedFoamSheet ? `Orders with ${formatMediumSheetName(selectedFoamSheet)}` : 'Please Select Medium Sheet'}
+                </h1>
+              </div>
+              <div className="bg-black/70 border border-gray-200 p-6 h-[calc(91vh-290px)] overflow-y-auto">
+                {selectedFoamSheet ? (
+                  <div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-white">
+                        <thead className="bg-gray-800/50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-lg font-lg text-gray-300">Order ID</th>
+                            <th className="px-4 py-3 text-left text-lg font-lg text-gray-300">Customer</th>
+                            <th className="px-4 py-3 text-center text-lg font-lg text-gray-300">Priority</th>
+                            <th className="px-4 py-3 text-center text-lg font-lg text-gray-300">Quantity</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-700/50">
+                          {findOrdersWithMediumSheet(selectedFoamSheet).length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                                No orders found with this medium sheet
+                              </td>
+                            </tr>
+                          ) : (
+                            findOrdersWithMediumSheet(selectedFoamSheet).map(order => {
+                              // Get the maximum priority from order items
+                              const items = orderItemsById[order.order_id] || [];
+                              const maxPriority = items.length > 0 
+                                ? Math.max(...items.map(item => item.priority || 0)) 
+                                : 0;
+                              
+                              return (
+                                <tr 
+                                  key={order.order_id} 
+                                  className="hover:bg-gray-800/30 transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    handleOrderClick(order.order_id);
+                                    setActiveTab('orders'); // Switch to orders tab to view details
+                                  }}
+                                >
+                                  <td className="px-4 py-3 text-left">{order.order_id}</td>
+                                  <td className="px-4 py-3 text-left">{order.customer_name}</td>
+                                  <td className="px-4 py-3 text-center">{maxPriority}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {getMediumSheetQuantityInOrder(order.order_id, selectedFoamSheet)}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-white text-lg">Select a medium sheet to view related orders</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
       )}
       
       {/* Confirmation Dialog */}
