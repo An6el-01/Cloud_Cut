@@ -25,6 +25,7 @@ import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
 import { supabase } from "@/utils/supabase";
+import { store } from "@/redux/store";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -80,10 +81,6 @@ export default function Manufacturing() {
     // Get all order items from the state, not just the ones for the current page
     const allOrderItems = Object.values(state.orders.orderItems).flat();
 
-    console.log(
-      'ALL ORDER ITEMS'
-    )
-    console.log(allOrderItems);
     
     return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
       // Medium sheets SKUs start with 'SFS'
@@ -417,11 +414,112 @@ export default function Manufacturing() {
     }
   }, [currentView, orders.length]);
 
-  const handleOrderClick = (orderId: string) => {
-    dispatch(setSelectedOrderId(orderId));
-    setTimeout(() => {
-      selectedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
+  const handleOrderClick = async (orderId: string) => {
+    try {
+      // Set loading state
+      setIsRefreshing(true);
+      
+      // First set the active tab to orders
+      setActiveTab('orders');
+      
+      // Directly fetch the order to verify it exists
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('order_id', orderId)
+        .single();
+        
+      if (orderError) {
+        console.error('Error fetching order:', orderError);
+        setIsRefreshing(false);
+        return;
+      }
+      
+      // Fetch all orders directly from Supabase with the same sorting as the UI
+      const { data: allOrders, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'Pending')
+        .eq('manufactured', false)
+        .eq('packed', false)
+        .order('order_date', { ascending: false });
+        
+      if (error) {
+        console.error('Error fetching all orders:', error);
+        setIsRefreshing(false);
+        return;
+      }
+      
+      // Sort the orders the SAME WAY as they appear in your table
+      const state = store.getState();
+      const sortedOrders = [...(allOrders || [])].sort((a, b) => {
+        // Get items for these orders to determine priority
+        const aItems = state.orders.orderItems[a.order_id as string] || [];
+        const bItems = state.orders.orderItems[b.order_id as string] || [];
+        
+        // Calculate max priority for each order
+        const aMaxPriority = aItems.length > 0 
+            ? Math.max(...aItems.map((item: OrderItem) => item.priority || 0)) 
+            : 0;
+        const bMaxPriority = bItems.length > 0
+            ? Math.max(...bItems.map((item: OrderItem) => item.priority || 0))
+            : 0;
+        
+        // Sort by priority (highest first)
+        return bMaxPriority - aMaxPriority;
+      });
+      
+      // Find the index of our target order in the sorted list
+      const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
+      
+      if (orderIndex === -1) {
+        console.error(`Order ${orderId} not found in sorted list`);
+        setIsRefreshing(false);
+        return;
+      }
+      
+      // Calculate which page it should be on (1-indexed)
+      const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
+      
+      // If we're already on the right page, no need to navigate
+      if (targetPage === currentPage) {
+        // Just select the order and scroll to it
+        dispatch(setSelectedOrderId(orderId));
+        
+        // Scroll to the row
+        setTimeout(() => {
+          if (selectedRowRef.current) {
+            selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 100);
+      } else {
+        // Navigate to the target page
+        await dispatch(fetchOrdersFromSupabase({ 
+          page: targetPage, 
+          perPage: ordersPerPage,
+          manufactured: false,
+          packed: false,
+          status: "Pending",
+          view: 'manufacturing'
+        }));
+        
+        // Set selected order ID after navigation
+        setTimeout(() => {
+          dispatch(setSelectedOrderId(orderId));
+          
+          // Scroll to the selected row
+          setTimeout(() => {
+            if (selectedRowRef.current) {
+              selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          }, 500);
+        }, 200);
+      }
+    } catch (error) {
+      console.error('Error in handleOrderClick:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handlePageChange = (newPage: number) => {

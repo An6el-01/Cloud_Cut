@@ -25,6 +25,7 @@ import {
 import { subscribeToOrders, subscribeToOrderItems, getCurrentUser } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
 import { supabase } from "@/utils/supabase";
+import { store } from "@/redux/store";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -157,12 +158,130 @@ export default function Packing() {
         initialize();
     }, []);
 
-    const handleOrderClick = (orderId: string) => {
-        dispatch(setSelectedOrderId(orderId));
-        setTimeout(() => {
-            selectedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 100);
-    }
+    const handleOrderClick = async (orderId: string) => {
+        
+        try {
+            // Set loading state
+            setIsRefreshing(true);
+            
+            // First set the active tab to orders
+            setActiveTab('orders');
+            
+            // Get current state to check for order items
+            const state = store.getState();
+            
+            // Directly set the selected order so the UI can prepare for it
+            dispatch(setSelectedOrderId(orderId));
+            
+            // Query all packing orders with proper filters to calculate pagination
+            const { data: packingOrders, error } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('status', 'Pending')
+                .eq('manufactured', true)
+                .eq('packed', false);
+                
+            if (error) {
+                console.error('Error fetching packing orders:', error);
+                setIsRefreshing(false);
+                return;
+            }
+                
+            console.log(`Fetched ${packingOrders?.length || 0} total packing orders`);
+            
+            if (!packingOrders || packingOrders.length === 0) {
+                console.error('No packing orders found');
+                setIsRefreshing(false);
+                return;
+            }
+            
+            // Verify the order exists in the fetched orders
+            const orderExists = packingOrders.some(order => order.order_id === orderId);
+            if (!orderExists) {
+                console.error(`Order ${orderId} not found in packing orders`);
+                setIsRefreshing(false);
+                return;
+            }
+            
+            console.log(`Order ${orderId} found in packing orders`);
+            
+            // Sort the orders the SAME WAY as they appear in your table
+            const sortedOrders = [...packingOrders].sort((a, b) => {
+                // Get items for these orders to determine priority
+                const aItems = state.orders.orderItems[a.order_id as string] || [];
+                const bItems = state.orders.orderItems[b.order_id as string] || [];
+                
+                // Calculate max priority for each order
+                const aMaxPriority = aItems.length > 0 
+                    ? Math.max(...aItems.map((item: OrderItem) => item.priority || 0)) 
+                    : 0;
+                const bMaxPriority = bItems.length > 0
+                    ? Math.max(...bItems.map((item: OrderItem) => item.priority || 0))
+                    : 0;
+                
+                // Sort by priority (highest first)
+                return bMaxPriority - aMaxPriority;
+            });
+            
+            
+            // Find the index of our target order in the sorted list
+            const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
+            console.log(`Order ${orderId} is at index ${orderIndex} in the sorted list`);
+            
+            // Calculate which page it should be on (1-indexed)
+            const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
+            console.log(`Target page for order: ${targetPage}`);
+            
+            // If we're already on the right page, no need to navigate
+            if (targetPage === currentPage) {
+                
+                // Scroll to the row
+                setTimeout(() => {
+                    console.log('Attempting to scroll to selected row');
+                    if (selectedRowRef.current) {
+                        selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+                    } else {
+                        console.log('Selected row not found - but we are on the right page');
+                        console.log('Current orders:', orders.map(o => o.order_id).join(', '));
+                    }
+                }, 100);
+            } else {
+                
+                await dispatch(fetchOrdersFromSupabase({
+                    page: targetPage,
+                    perPage: ordersPerPage,
+                    manufactured: true,
+                    packed: false,
+                    status: "Pending",
+                    view: 'packing'
+                }));
+                
+                console.log(`Navigated to page ${targetPage}`);
+                
+                // Set selected order ID again after navigation
+                setTimeout(() => {
+                    console.log(`Re-setting selected order ID to ${orderId} after navigation`);
+                    dispatch(setSelectedOrderId(orderId));
+                    
+                    // Scroll to the selected row
+                    setTimeout(() => {
+                        console.log('Attempting to scroll to selected row after navigation');
+                        if (selectedRowRef.current) {
+                            selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+                            console.log('Scrolled to selected row');
+                        } else {
+                            console.log('Selected row not found after navigation');
+                            console.log('Current orders after navigation:', orders.map(o => o.order_id).join(', '));
+                        }
+                    }, 500);
+                }, 200);
+            }
+        } catch (error) {
+            console.error('Error in handleOrderClick:', error);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= totalPages) {
@@ -257,7 +376,7 @@ export default function Packing() {
         // Log the status after a small delay to allow state to update
         setTimeout(() => {
             // Find the order after state update
-            const updatedOrder = updatedOrders.find((o) => o.order_id === selectedOrder.order_id);
+            const updatedOrder = updatedOrders.find((o: Order) => o.order_id === selectedOrder.order_id);
             console.log(`Order Picking Status: ${updatedOrder?.picking}`);
             console.log(`Order User Picking Status: ${updatedOrder?.user_picking}`);
         }, 1000);
@@ -458,7 +577,7 @@ export default function Packing() {
             // Get the maximum priority from order items
             const items = allOrderItems[order.order_id] || [];
             const maxPriority = items.length > 0
-                ? Math.max(...items.map(item => item.priority || 0))
+                ? Math.max(...items.map((item: OrderItem) => item.priority || 0))
                 : 0;
 
             return (
@@ -880,7 +999,7 @@ export default function Packing() {
                                                                 >
                                                                     <td className="px-6 py-5 text-left">
                                                                         <div className="flex items-center space-x-3">
-                                                                            <span className={`inline-block w-4 h-4 rounded-full ${getRetailPackColorClass(itemName)}`}></span>
+                                                                            <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
                                                                             <span className="text-black text-lg">
                                                                                 {itemName}
                                                                             </span>
@@ -911,8 +1030,8 @@ export default function Packing() {
                                     {selectedRetailPack ? (
                                         <div className="flex items-center justify-center">
                                             <span className="relative">
-                                                Orders with <span className="font-semibold relative inline-flex items-center ml-1">
-                                                    <span className={`inline-block w-4 h-4 rounded-full mr-2 ${getRetailPackColorClass(selectedRetailPack)}`}></span>
+                                                Orders with<span className="font-semibold relative inline-flex items-center">
+                                                    <span className={`inline-block w-4 h-4 rounded-full ${(selectedRetailPack)}`}></span>
                                                     {selectedRetailPack}
                                                 </span>
                                             </span> 
