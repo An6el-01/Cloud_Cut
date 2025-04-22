@@ -340,8 +340,8 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
     
     newState = {
       ...newState,
-      // Update orderItems
-      orderItems: { ...newState.orderItems, ...typedItems },
+      // REPLACE orderItems instead of merging them
+      orderItems: typedItems,
       currentPage: page,
       loading: false,
     };

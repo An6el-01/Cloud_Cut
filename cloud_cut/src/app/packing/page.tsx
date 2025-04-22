@@ -49,6 +49,8 @@ export default function Packing() {
     const [activeTab, setActiveTab] = useState<'orders' | 'retail'>('orders');
     const [retailPackFilter, setRetailPackFilter] = useState('');
     const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);
+    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
+    const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
 
     const orderProgress = useSelector((state: RootState) =>
         orders.reduce((acc, order) => {
@@ -287,14 +289,12 @@ export default function Packing() {
     };
     //Function to get the items by retail pack
     const itemsByRetailPack = useSelector((state: RootState) => {
-        return Object.values(orderItemsById).reduce((acc: Record<string, number>, items: OrderItem[]) => {
-            items.forEach(item => {
-                //Check if the item is a retail pack
-                if (item.item_name.includes('Retail Pack') && !item.completed) {
-                    //If the item name exists in the accumulator, increment the the count, otherwise initialize with 1
-                    acc[item.item_name] = (acc[item.item_name] || 0) + 1;
-                }
-            });
+        const allOrderItems = Object.values(state.orders.orderItems).flat();
+
+        return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
+            if (item.item_name.includes('Retail Pack') && !item.completed) {
+                acc[item.item_name] = (acc[item.item_name] || 0) + 1;
+            }
             return acc;
         }, {});
     });
@@ -319,18 +319,185 @@ export default function Packing() {
         return 'bg-gray-400';
     };
 
-    const findOrdersWithRetailPack = (retailPack: string) => {
-        return orders.filter(order => {
-            const items = orderItemsById[order.order_id] || [];
-            return items.some(item => item.item_name === retailPack && !item.completed);
+    // Get all order items from the state
+    const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
+
+    // Function to find orders with retail pack
+    const findOrdersWithRetailPack = (retailPack: string | null) => {
+        if (!retailPack) return [];
+        
+        // Return cached orders if already fetched
+        if (ordersWithRetailPacks[retailPack]) {
+            return ordersWithRetailPacks[retailPack];
+        }
+        
+        // Find all order IDs that have this retail pack
+        const orderIdsWithRetailPack = new Set<string>();
+        
+        // Check each order's items for the retail pack name
+        Object.entries(allOrderItems).forEach(([orderId, items]) => {
+            if (items.some(item => item.item_name === retailPack && !item.completed)) {
+                orderIdsWithRetailPack.add(orderId);
+            }
         });
+        
+        // Convert Set to Array
+        const orderIdsArray = Array.from(orderIdsWithRetailPack);
+        
+        // Initialize with empty array to avoid undefined
+        if (!ordersWithRetailPacks[retailPack]) {
+            setOrdersWithRetailPacks(prev => ({
+                ...prev,
+                [retailPack]: []
+            }));
+        }
+        
+        // If we have order IDs, fetch them from the database
+        if (orderIdsArray.length > 0) {
+            // Fetch order data from supabase in the background
+            setLoadingRetailPackOrders(true);
+            
+            const fetchOrders = async () => {
+                try {
+                    const { data: fetchedOrders, error } = await supabase
+                        .from('orders')
+                        .select('*')
+                        .in('order_id', orderIdsArray)
+                        .eq('status', 'Pending')
+                        .eq('manufactured', true)
+                        .eq('packed', false);
+                        
+                    if (error) {
+                        console.error('Error fetching orders for retail pack:', error);
+                        return;
+                    }
+                    
+                    console.log(`Fetched ${fetchedOrders?.length || 0} orders for retail pack ${retailPack}`);
+                    
+                    if (fetchedOrders) {
+                        // Type casting to ensure we're setting Order[] type
+                        const typedOrders = fetchedOrders as unknown as Order[];
+                        setOrdersWithRetailPacks(prev => ({
+                            ...prev,
+                            [retailPack]: typedOrders
+                        }));
+                    }
+                } catch (err) {
+                    console.error('Error in findOrdersWithRetailPack:', err);
+                } finally {
+                    setLoadingRetailPackOrders(false);
+                }
+            };
+            
+            fetchOrders();
+        }
+        
+        // Return whatever we currently have (might be empty initially)
+        return ordersWithRetailPacks[retailPack] || [];
     };
 
+    // Function to get quantity of a specific retail pack in an order
     const getRetailPackQuantityInOrder = (orderId: string, retailPack: string) => {
-        const items = orderItemsById[orderId] || [];
+        const items = allOrderItems[orderId] || [];
         return items
             .filter(item => item.item_name === retailPack && !item.completed)
             .reduce((sum, item) => sum + item.quantity, 0);
+    };
+
+    // Function to render the orders with retail pack table content
+    const renderOrdersWithRetailPack = (retailPack: string | null) => {
+        if (!retailPack) {
+            return (
+                <tr>
+                    <td colSpan={4} className="px-6 py-10 text-center">
+                        <div className="flex flex-col items-center justify-center text-gray-800">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p className="text-lg font-medium">No retail pack selected</p>
+                            <p className="text-sm text-gray-500 mt-1">Please select a retail pack to see orders</p>
+                        </div>
+                    </td>
+                </tr>
+            );
+        }
+        
+        if (loadingRetailPackOrders) {
+            return (
+                <tr>
+                    <td colSpan={4} className="px-6 py-10 text-center">
+                        <div className="flex flex-col items-center justify-center text-gray-800">
+                            <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
+                            <p className="text-lg font-medium">Loading orders...</p>
+                            <p className="text-sm text-gray-500 mt-1">Retrieving orders with this retail pack</p>
+                        </div>
+                    </td>
+                </tr>
+            );
+        }
+        
+        const ordersWithPack = findOrdersWithRetailPack(retailPack);
+        
+        if (ordersWithPack.length === 0) {
+            return (
+                <tr>
+                    <td colSpan={4} className="px-6 py-10 text-center">
+                        <div className="flex flex-col items-center justify-center text-gray-800">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p className="text-lg font-medium">No orders found</p>
+                            <p className="text-sm text-gray-500 mt-1">No pending packing orders contain this retail pack</p>
+                        </div>
+                    </td>
+                </tr>
+            );
+        }
+        
+        return ordersWithPack.map((order, index) => {
+            // Get the maximum priority from order items
+            const items = allOrderItems[order.order_id] || [];
+            const maxPriority = items.length > 0
+                ? Math.max(...items.map(item => item.priority || 0))
+                : 0;
+
+            return (
+                <tr 
+                    key={order.order_id}
+                    className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ?
+                    `bg-white` : `bg-gray-50`}`}
+                    onClick={() => {
+                        handleOrderClick(order.order_id);
+                        setActiveTab('orders');
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ''){
+                            e.preventDefault();
+                            handleOrderClick(order.order_id);
+                            setActiveTab('orders');
+                        }
+                    }}
+                    aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
+                >
+                    <td className="px-6 py-4 text-left">
+                        <div className="flex items-center">
+                            <span className="text-black text-lg">{order.order_id}</span>
+                        </div>
+                    </td>
+                    <td className="px-6 py-4 text-left">
+                        <span className="text-black text-lg">{order.customer_name}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                        <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>{maxPriority}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                        <span>{getRetailPackQuantityInOrder(order.order_id, retailPack)}</span>
+                    </td>
+                </tr>
+            );
+        });
     };
 
     return (
@@ -476,7 +643,7 @@ export default function Packing() {
                                                                     order.order_id === selectedOrderId 
                                                                     ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
                                                                     : order.picking
-                                                                      ? "bg-green-200/90 border-l-4 border-green-500 shadow-md"
+                                                                      ? "bg-red-200/90 border-l-4 border-red-500 shadow-md"
                                                                       : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
                                                                 }`}
                                                                 onClick={() => handleOrderClick(order.order_id)}
@@ -699,15 +866,15 @@ export default function Packing() {
                                                                 if (!retailPackFilter) return true;
                                                                 return itemName.toLowerCase().includes(retailPackFilter.toLowerCase());
                                                             })
-                                                            .sort(([itemNameA], [itemNameB]) => {
+                                                            .sort(([itemNameA, quantityA], [itemNameB, quantityB]) => {
                                                                 // Sort alphabetically by item name
-                                                                return itemNameA.localeCompare(itemNameB);
+                                                                return quantityB - quantityA;
                                                             })
                                                             .map(([itemName, quantity], index) => (
                                                                 <tr 
                                                                     key={itemName} 
                                                                     className={`transition-colors duration-150 
-                                                                        ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
+                                                                        ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
                                                                         hover:bg-blue-50 cursor-pointer shadow-sm`}
                                                                     onClick={() => handleRetailPackClick(itemName)}
                                                                 >
@@ -756,93 +923,23 @@ export default function Packing() {
                                 </h2>
                             </div>
                             <div className="flex-1 overflow-auto p-4">
-                                {selectedRetailPack ? (
-                                    <div className="h-full">
-                                        <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
-                                            <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
-                                                <thead className="bg-[#1d1d1d] sticky top-0 z-10">
-                                                    <tr>
-                                                        <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
-                                                        <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer Name</th>
-                                                        <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
-                                                        <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-300">
-                                                    {findOrdersWithRetailPack(selectedRetailPack).length === 0 ? (
-                                                        <tr>
-                                                            <td colSpan={4} className="px-6 py-10 text-center">
-                                                                <div className="flex flex-col items-center justify-center text-gray-800">
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                                    </svg>
-                                                                    <p className="text-lg font-medium">No orders found</p>
-                                                                    <p className="text-sm text-gray-500 mt-1">No pending packing orders contain this retail pack</p>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ) : (
-                                                        findOrdersWithRetailPack(selectedRetailPack).map((order, index) => {
-                                                            // Get the maximum priority from order items
-                                                            const items = orderItemsById[order.order_id] || [];
-                                                            const maxPriority = items.length > 0
-                                                                ? Math.max(...items.map(item => item.priority || 0))
-                                                                : 0;
-
-                                                            return (
-                                                                <tr 
-                                                                    key={order.order_id}
-                                                                    className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ?
-                                                                    `bg-white` : `bg-gray-50`}`}
-                                                                    onClick={() => {
-                                                                        handleOrderClick(order.order_id);
-                                                                        setActiveTab('orders');
-                                                                    }}
-                                                                    tabIndex={0}
-                                                                    role="button"
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter' || e.key === ''){
-                                                                            e.preventDefault();
-                                                                            handleOrderClick(order.order_id);
-                                                                            setActiveTab('orders');
-                                                                        }
-                                                                    }}
-                                                                    aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
-                                                                >
-                                                                    <td className="px-6 py-4 text-left">
-                                                                        <div className="flex items-center">
-                                                                            <span className="text-black text-lg">{order.order_id}</span>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-left">
-                                                                        <span className="text-black text-lg">{order.customer_name}</span>
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-center">
-                                                                        <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>{maxPriority}</span>
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-center">
-                                                                        <span>{getRetailPackQuantityInOrder(order.order_id, selectedRetailPack)}</span>
-                                                                    </td>
-                                                                </tr>
-                                                            );
-                                                        })
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                <div className="h-full">
+                                    <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
+                                        <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
+                                            <thead className="bg-[#1d1d1d] sticky top-0 z-10">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
+                                                    <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer Name</th>
+                                                    <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
+                                                    <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-300">
+                                                {renderOrdersWithRetailPack(selectedRetailPack)}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                ) : (
-                                    <div className="flex items-center justify-center h-full">
-                                        <div className="text-center p-8 max-w-md rounded-xl bg-black/40 border border-white/20">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 mx-auto mb-4 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l-4-4m4 4l4-4" />
-                                            </svg>
-                                            <h3 className="text-xl font-semibold text-white mb-2">No Retail Pack Selected</h3>
-                                            <p className="text-gray-300 mb-4">Please select a retail pack from the list to view associated orders</p>
-                                            <div className="w-1/2 mx-auto h-1 bg-white/20 rounded"></div>
-                                        </div>
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -24,6 +24,7 @@ import {
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
+import { supabase } from "@/utils/supabase";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -74,16 +75,22 @@ export default function Manufacturing() {
     }, {} as Record<string, OrderItem[]>)
   );
 
-  // Track medium sheets by SKU and quantity from displayed orders
+  // Track medium sheets by SKU and quantity from ALL orders, not just displayed ones
   const itemsByMediumSheet = useSelector((state: RootState) => {
-    return Object.values(orderItemsById).reduce((acc: Record<string, number>, items: OrderItem[]) => {
-      items.forEach(item => {
-        // Medium sheets SKUs start with 'SFC'
-        if (item.sku_id.startsWith('SFS') && !item.completed) {
-          // If this SKU exists in the accumulator, increment the count, otherwise set it to 1
-          acc[item.sku_id] = (acc[item.sku_id] || 0) + 1;
-        }
-      });
+    // Get all order items from the state, not just the ones for the current page
+    const allOrderItems = Object.values(state.orders.orderItems).flat();
+
+    console.log(
+      'ALL ORDER ITEMS'
+    )
+    console.log(allOrderItems);
+    
+    return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
+      // Medium sheets SKUs start with 'SFS'
+      if (item.sku_id.startsWith('SFS-') && !item.completed) {
+        // If this SKU exists in the accumulator, increment the count, otherwise set it to 1
+        acc[item.sku_id] = (acc[item.sku_id] || 0) + 1;
+      }
       return acc;
     }, {});
   });
@@ -155,17 +162,89 @@ export default function Manufacturing() {
     return 'bg-gray-400';
   };
 
+  // Get all order items from the state
+  const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
+  
+  // State to track orders with medium sheets
+  const [ordersWithMediumSheets, setOrdersWithMediumSheets] = useState<Record<string, Order[]>>({});
+  const [loadingMediumSheetOrders, setLoadingMediumSheetOrders] = useState(false);
+
   // Function to find orders that contain a specific medium sheet
-  const findOrdersWithMediumSheet = (sku: string) => {
-    return orders.filter(order => {
-      const items = orderItemsById[order.order_id] || [];
-      return items.some(item => item.sku_id === sku && !item.completed);
+  const findOrdersWithMediumSheet = (sku: string | null) => {
+    if (!sku) return [];
+    
+    // Return cached orders if already fetched
+    if (ordersWithMediumSheets[sku]) {
+      return ordersWithMediumSheets[sku];
+    }
+    
+    // Find all order IDs from the order items that have this SKU
+    const orderIdsWithSheet = new Set<string>();
+    
+    // Loop through all order items to find orders with this sheet SKU
+    Object.entries(allOrderItems).forEach(([orderId, items]) => {
+      if (items.some(item => item.sku_id === sku && !item.completed)) {
+        orderIdsWithSheet.add(orderId);
+      }
     });
+    
+    // Convert Set to Array
+    const orderIdsArray = Array.from(orderIdsWithSheet);
+    
+    // Initialize with empty array to avoid undefined
+    if (!ordersWithMediumSheets[sku]) {
+      setOrdersWithMediumSheets(prev => ({
+        ...prev,
+        [sku]: []
+      }));
+    }
+    
+    // If we have order IDs, fetch them from the database
+    if (orderIdsArray.length > 0) {
+      // Fetch order data from supabase in the background
+      setLoadingMediumSheetOrders(true);
+      
+      const fetchOrders = async () => {
+        try {
+          const { data: fetchedOrders, error } = await supabase
+            .from('orders')
+            .select('*')
+            .in('order_id', orderIdsArray)
+            .eq('status', 'Pending')
+            .eq('manufactured', false);
+            
+          if (error) {
+            console.error('Error fetching orders for medium sheet:', error);
+            return;
+          }
+          
+          console.log(`Fetched ${fetchedOrders?.length || 0} orders for medium sheet ${sku}`);
+          
+          if (fetchedOrders) {
+            // Type casting to ensure we're setting Order[] type
+            const typedOrders = fetchedOrders as unknown as Order[];
+            setOrdersWithMediumSheets(prev => ({
+              ...prev,
+              [sku]: typedOrders
+            }));
+          }
+        } catch (err) {
+          console.error('Error in findOrdersWithMediumSheet:', err);
+        } finally {
+          setLoadingMediumSheetOrders(false);
+        }
+      };
+      
+      fetchOrders();
+    }
+    
+    // Return whatever we currently have (might be empty initially)
+    return ordersWithMediumSheets[sku] || [];
   };
 
   // Function to get quantity of a specific medium sheet in an order
   const getMediumSheetQuantityInOrder = (orderId: string, sku: string) => {
-    const items = orderItemsById[orderId] || [];
+    const items = allOrderItems[orderId] || [];
     return items
       .filter(item => item.sku_id === sku && !item.completed)
       .reduce((sum, item) => sum + item.quantity, 0);
@@ -254,6 +333,7 @@ export default function Manufacturing() {
   useEffect(() => {
     // Set the current view first
     dispatch(setCurrentView('manufacturing'));
+    
     
     // Then fetch orders with the manufacturing-specific filters
     dispatch(fetchOrdersFromSupabase({ 
@@ -471,6 +551,105 @@ export default function Manufacturing() {
         setIsExporting(false);
       })
   }
+
+  // Function to render the orders with medium sheet table content
+  const renderOrdersWithMediumSheet = (sku: string | null) => {
+    if (!sku) {
+      return (
+        <tr>
+          <td colSpan={4} className="px-6 py-10 text-center">
+            <div className="flex flex-col items-center justify-center text-gray-800">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-lg font-medium">No medium sheet selected</p>
+              <p className="text-sm text-gray-500 mt-1">Please select a medium sheet to see orders</p>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+    
+    if (loadingMediumSheetOrders) {
+      return (
+        <tr>
+          <td colSpan={4} className="px-6 py-10 text-center">
+            <div className="flex flex-col items-center justify-center text-gray-800">
+              <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
+              <p className="text-lg font-medium">Loading orders...</p>
+              <p className="text-sm text-gray-500 mt-1">Retrieving orders with this medium sheet</p>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+    
+    const ordersWithSheet = findOrdersWithMediumSheet(sku);
+    
+    if (ordersWithSheet.length === 0) {
+      return (
+        <tr>
+          <td colSpan={4} className="px-6 py-10 text-center">
+            <div className="flex flex-col items-center justify-center text-gray-800">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-lg font-medium">No orders found</p>
+              <p className="text-sm text-gray-500 mt-1">No pending orders contain this medium sheet</p>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+    
+    return ordersWithSheet.map((order, index) => {
+      // Get the maximum priority from order items
+      const items = allOrderItems[order.order_id] || [];
+      const maxPriority = items.length > 0 
+        ? Math.max(...items.map(item => item.priority || 0)) 
+        : 0;
+      
+      return (
+        <tr 
+          key={order.order_id} 
+          className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+          onClick={() => {
+            handleOrderClick(order.order_id);
+            setActiveTab('orders'); // Switch to orders tab to view details
+          }}
+          tabIndex={0}
+          role="button"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleOrderClick(order.order_id);
+              setActiveTab('orders');
+            }
+          }}
+          aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
+        >
+          <td className="px-6 py-4 text-left">
+            <div className="flex items-center">
+              <span className=" text-black text-lg">{order.order_id}</span>
+            </div>
+          </td>
+          <td className="px-6 py-4 text-left">
+            <span className="text-black text-lg">{order.customer_name}</span>
+          </td>
+          <td className="px-6 py-4 text-center">
+            <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>
+              {maxPriority}
+            </span>
+          </td>
+          <td className="px-6 py-4 text-center">
+            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+              {getMediumSheetQuantityInOrder(order.order_id, sku)}
+            </span>
+          </td>
+        </tr>
+      );
+    });
+  };
 
   return (
     <div className="min-h-screen">
@@ -917,25 +1096,9 @@ export default function Manufacturing() {
                                 return formattedName.includes(sheetFilter.toLowerCase()) || 
                                        sku.toLowerCase().includes(sheetFilter.toLowerCase());
                               })
-                              .sort(([skuA], [skuB]) => {
-                                // Sort by color first, then by thickness
-                                const partsA = skuA.split('-');
-                                const partsB = skuB.split('-');
-                                
-                                // Compare colors
-                                if (partsA.length >= 2 && partsB.length >= 2) {
-                                  const colorA = partsA[1];
-                                  const colorB = partsB[1];
-                                  if (colorA !== colorB) return colorA.localeCompare(colorB);
-                                  
-                                  // If colors are the same, compare thickness
-                                  if (partsA.length >= 3 && partsB.length >= 3) {
-                                    const thicknessA = parseInt(partsA[2], 10);
-                                    const thicknessB = parseInt(partsB[2], 10);
-                                    return thicknessA - thicknessB;
-                                  }
-                                }
-                                return skuA.localeCompare(skuB);
+                              .sort(([skuA, quantityA], [skuB, quantityB]) => {
+                                // Sort by quantity in descending order
+                                return quantityB - quantityA;
                               })
                               .map(([sku, quantity], index) => (
                                 <tr 
@@ -1001,102 +1164,27 @@ export default function Manufacturing() {
                 </h2>
               </div>
               <div className="flex-1 overflow-auto p-4">
-                {selectedFoamSheet ? (
-                  <div className="h-full">
-                    <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
-                      <table className="w-full h-full bg-white/90">
-                        <thead className="bg-[#1d1d1d] sticky top-0 z-10">
-                          <tr>
-                            <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
-                            <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer</th>
-                            <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
-                            <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-300">
-                          {findOrdersWithMediumSheet(selectedFoamSheet).length === 0 ? (
-                            <tr>
-                              <td colSpan={4} className="px-6 py-10 text-center">
-                                <div className="flex flex-col items-center justify-center text-gray-800">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  <p className="text-lg font-medium">No orders found</p>
-                                  <p className="text-sm text-gray-500 mt-1">No pending orders contain this medium sheet</p>
-                                </div>
-                              </td>
-                            </tr>
-                          ) : (
-                            findOrdersWithMediumSheet(selectedFoamSheet).map((order, index) => {
-                              // Get the maximum priority from order items
-                              const items = orderItemsById[order.order_id] || [];
-                              const maxPriority = items.length > 0 
-                                ? Math.max(...items.map(item => item.priority || 0)) 
-                                : 0;
-                              
-                              
-                              
-                              return (
-                                <tr 
-                                  key={order.order_id} 
-                                  className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
-                                  onClick={() => {
-                                    handleOrderClick(order.order_id);
-                                    setActiveTab('orders'); // Switch to orders tab to view details
-                                  }}
-                                  tabIndex={0}
-                                  role="button"
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
-                                      handleOrderClick(order.order_id);
-                                      setActiveTab('orders');
-                                    }
-                                  }}
-                                  aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
-                                >
-                                  <td className="px-6 py-4 text-left">
-                                    <div className="flex items-center">
-                                      <span className=" text-black text-lg">{order.order_id}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4 text-left">
-                                    <span className="text-black text-lg">{order.customer_name}</span>
-                                  </td>
-                                  <td className="px-6 py-4 text-center">
-                                    <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>
-                                      {maxPriority}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 text-center">
-                                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                                      {getMediumSheetQuantityInOrder(order.order_id, selectedFoamSheet)}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                <div className="h-full">
+                  <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
+                    <table className="w-full h-full bg-white/90">
+                      <thead className="bg-[#1d1d1d] sticky top-0 z-10">
+                        <tr>
+                          <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
+                          <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-300">
+                        {renderOrdersWithMediumSheet(selectedFoamSheet)}
+                      </tbody>
+                    </table>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center p-8 max-w-md rounded-xl bg-black/40 border border-white/20">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 mx-auto mb-4 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l-4-4m4 4l4-4" />
-                      </svg>
-                      <h3 className="text-xl font-semibold text-white mb-2">No Medium Sheet Selected</h3>
-                      <p className="text-gray-300 mb-4">Please select a medium sheet from the list to view associated orders</p>
-                      <div className="w-1/2 mx-auto h-1 bg-white/20 rounded"></div>
-                    </div>
-                  </div>
-                )}
-              </div>
+                </div>
               </div>
             </div>
           </div>
+        </div>
       )}
       
       {/* Confirmation Dialog */}

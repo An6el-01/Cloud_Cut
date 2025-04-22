@@ -550,19 +550,12 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
 
     console.log(`Applied pagination: showing orders ${startIndex+1} to ${Math.min(endIndex, sortedOrders.length)} of ${sortedOrders.length}`);
 
-    // Create a map of order items for just the paginated orders
-    const paginatedOrderIds = paginatedOrders.map(o => o.order_id);
-    const paginatedOrderItemsMap = paginatedOrderIds.reduce<Record<string, OrderItem[]>>((acc, orderId) => {
-      const typedOrderId = orderId as string;
-      if (allOrderItemsMap[typedOrderId]) {
-        acc[typedOrderId] = allOrderItemsMap[typedOrderId];
-      }
-      return acc;
-    }, {});
+    // Return ALL order items instead of just the ones for the paginated orders
+    console.log(`Returning all ${Object.keys(allOrderItemsMap).length} order items with ${Object.values(allOrderItemsMap).flat().length} total items`);
 
     return { 
       orders: paginatedOrders, 
-      orderItems: paginatedOrderItemsMap, 
+      orderItems: allOrderItemsMap,  // Return ALL order items instead of just paginated ones
       total: sortedOrders.length, 
       page, 
       view 
