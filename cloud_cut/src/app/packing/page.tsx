@@ -52,6 +52,8 @@ export default function Packing() {
     const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);
     const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
+    const [retailPackPage, setRetailPackPage] = useState(1);
+    const retailPacksPerPage = 12;
 
     const orderProgress = useSelector((state: RootState) =>
         orders.reduce((acc, order) => {
@@ -573,13 +575,23 @@ export default function Packing() {
             );
         }
         
-        return ordersWithPack.map((order, index) => {
-            // Get the maximum priority from order items
+        // Create an array with orders and their priorities
+        const ordersWithPriorities = ordersWithPack.map(order => {
             const items = allOrderItems[order.order_id] || [];
             const maxPriority = items.length > 0
                 ? Math.max(...items.map((item: OrderItem) => item.priority || 0))
                 : 0;
-
+            
+            return {
+                ...order,
+                maxPriority
+            };
+        });
+        
+        // Sort the orders by priority in descending order
+        ordersWithPriorities.sort((a, b) => b.maxPriority - a.maxPriority);
+        
+        return ordersWithPriorities.map((order, index) => {
             return (
                 <tr 
                     key={order.order_id}
@@ -609,7 +621,7 @@ export default function Packing() {
                         <span className="text-black text-lg">{order.customer_name}</span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>{maxPriority}</span>
+                        <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>{order.maxPriority}</span>
                     </td>
                     <td className="px-6 py-4 text-center">
                         <span>{getRetailPackQuantityInOrder(order.order_id, retailPack)}</span>
@@ -617,6 +629,13 @@ export default function Packing() {
                 </tr>
             );
         });
+    };
+
+    // Add a function to handle retail pack page changes
+    const handleRetailPackPageChange = (newPage: number) => {
+        if (newPage >= 1) {
+            setRetailPackPage(newPage);
+        }
     };
 
     return (
@@ -935,20 +954,30 @@ export default function Packing() {
 
             {/* Retail Packs Tab Active Section*/}
             {activeTab === 'retail' && (
-                <div className="container mx-auto pt-6 pb-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
+                <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
                 {/**Retail Packs Section */}        
-                    <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
-                        <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
-                            <div className="px-6 py-5 bg-black/90">
-                                <h2 className="text-2xl font-bold text-white text-center">Retail Packs</h2>
-                            </div>
-                            <div className="flex-1 overflow-auto p-4">
-                                <div className="h-full">
-                                    <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
-                                        <thead className="bg-[#1d1d1d] sticky top-0 z-10">
+                    <div className="flex-1 max-w-3xl">
+                        <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
+                            <h1 className="text-2xl font-bold text-white">Retail Packs</h1>
+                        </div>
+                        <div className="overflow-x-auto bg-white h-[calc(91vh-270px)] flex flex-col">
+                            {loading ? (
+                                <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
+                                    <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
+                                    <p className="text-gray-700 font-medium">Loading Retail Packs...</p>
+                                </div>
+                            ) : error ? (
+                                <div className="text-center py-4">
+                                    <p className="text-red-500">{error}</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex-1 overflow-y-auto">
+                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
+                                        <thead className="bg-gray-100/90 sticky top-0">
                                             <tr>
-                                                <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Retail Pack</th>
-                                                <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
+                                                <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
+                                                <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-300">
@@ -989,6 +1018,8 @@ export default function Packing() {
                                                                 // Sort alphabetically by item name
                                                                 return quantityB - quantityA;
                                                             })
+                                                            // Apply pagination
+                                                            .slice((retailPackPage - 1) * retailPacksPerPage, retailPackPage * retailPacksPerPage)
                                                             .map(([itemName, quantity], index) => (
                                                                 <tr 
                                                                     key={itemName} 
@@ -1017,8 +1048,43 @@ export default function Packing() {
                                             )}
                                         </tbody>
                                     </table>
-                                </div>
-                            </div>
+                                    </div>
+                                    {/**Pagination Controls */}
+                                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
+                                        <div className="text-sm text-gray-600">
+                                            {Object.keys(itemsByRetailPack).filter(name => {
+                                                if (!retailPackFilter) return true;
+                                                return name.toLowerCase().includes(retailPackFilter.toLowerCase());
+                                            }).length} retail packs found
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleRetailPackPageChange(retailPackPage - 1)}
+                                                disabled={retailPackPage === 1}
+                                                className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Previous
+                                            </button>
+                                            <span>
+                                                Page {retailPackPage} of {Math.max(1, Math.ceil(Object.keys(itemsByRetailPack).filter(name => {
+                                                    if (!retailPackFilter) return true;
+                                                    return name.toLowerCase().includes(retailPackFilter.toLowerCase());
+                                                }).length / retailPacksPerPage))}
+                                            </span>
+                                            <button
+                                                onClick={() => handleRetailPackPageChange(retailPackPage + 1)}
+                                                disabled={retailPackPage >= Math.ceil(Object.keys(itemsByRetailPack).filter(name => {
+                                                    if (!retailPackFilter) return true;
+                                                    return name.toLowerCase().includes(retailPackFilter.toLowerCase());
+                                                }).length / retailPacksPerPage)}
+                                                className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Next
+                                            </button>
+                                        </div>
+                                    </div>
+                                </>
+                            )}     
                         </div>
                     </div>
 

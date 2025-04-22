@@ -59,6 +59,8 @@ export default function Manufacturing() {
   const [activeTab, setActiveTab] = useState<'orders' | 'medium'>('orders');
   const [selectedFoamSheet, setSelectedFoamSheet] = useState<string | null>(null);
   const [sheetFilter, setSheetFilter] = useState('');
+  const [mediumSheetPage, setMediumSheetPage] = useState(1);
+  const mediumSheetsPerPage = 7;
 
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
@@ -650,6 +652,11 @@ export default function Manufacturing() {
       })
   }
 
+  const handleMediumSheetPageChange = (newPage: number) => {
+    if (newPage >= 1) {
+      setMediumSheetPage(newPage);
+    }
+  };
   // Function to render the orders with medium sheet table content
   const renderOrdersWithMediumSheet = (sku: string | null) => {
     if (!sku) {
@@ -700,13 +707,23 @@ export default function Manufacturing() {
       );
     }
     
-    return ordersWithSheet.map((order, index) => {
-      // Get the maximum priority from order items
+    // Calculate priorities for each order for sorting
+    const ordersWithPriorities = ordersWithSheet.map(order => {
       const items = allOrderItems[order.order_id] || [];
       const maxPriority = items.length > 0 
         ? Math.max(...items.map(item => item.priority || 0)) 
         : 0;
       
+      return {
+        ...order,
+        maxPriority
+      };
+    });
+    
+    // Sort orders by priority (highest first)
+    const sortedOrders = ordersWithPriorities.sort((a, b) => b.maxPriority - a.maxPriority);
+    
+    return sortedOrders.map((order, index) => {
       return (
         <tr 
           key={order.order_id} 
@@ -736,7 +753,7 @@ export default function Manufacturing() {
           </td>
           <td className="px-6 py-4 text-center">
             <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>
-              {maxPriority}
+              {order.maxPriority}
             </span>
           </td>
           <td className="px-6 py-4 text-center">
@@ -1144,34 +1161,47 @@ export default function Manufacturing() {
       {activeTab === 'medium' && (
         <div className="container mx-auto pt-6 pb-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
           {/**Medium Sheets Section */}
-          <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
-            <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden h-full flex flex-col">
-              <div className="px-6 py-5 bg-black/90">
+          <div className="flex-1 max-w-3xl">
+            <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <h2 className="text-2xl font-bold text-white text-center">Medium Sheets</h2>
               </div>
-              <div className="flex-1 overflow-auto p-4">                
-                <div className="h-full">
-                  <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
-                    <thead className="bg-[#1d1d1d] sticky top-0 z-10">
-                      <tr>
-                        <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Foam Sheet</th>
-                        <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-300">
-                      {isRefreshing ? (
-                        //Skeleton loading rows while refreshing
-                        [...Array(5)].map((_, index) => (
-                          <tr key={`skeleton-${index}`} className="animate-pulse">
-                            <td className="px-6 py-5">
-                              <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
-                            </td>
-                            <td>
-                              <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
-                            </td>
+            </div>
+
+              <div className="overflow-x-auto bg-white h-[calc(92vh-270px)] flex flex-col">
+                {loading ? (
+                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
+                    <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
+                    <p className="text-gray-700 font-medium">Loading Medium Sheets...</p>
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-4">
+                    <p className="text-red-500">{error}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex-1 overflow-y-auto">
+                      <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
+                        <thead className="bg-gray-100/90 sticky top-0 ">
+                          <tr>
+                            <th className="px-6 py-4 text-left text-lg font-semibold text-black">Foam Sheet</th>
+                            <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
                           </tr>
-                        ))
-                      ) : (
+                        </thead>
+                        <tbody className="divide-y divide-gray-300">
+                          {isRefreshing ? (
+                            //Skeleton loading rows while refreshing
+                            [...Array(5)].map((_, index) => (
+                              <tr key={`skeleton-${index}`} className="animate-pulse">
+                                <td className="px-6 py-5">
+                                  <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                </td>
+                                <td>
+                                  <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
                         // Render medium sheet items and their quantities
                         Object.keys(itemsByMediumSheet).length === 0 ? (
                           <tr>
@@ -1187,59 +1217,101 @@ export default function Manufacturing() {
                           </tr>
                         ) : (
                           <>
-                            {Object.entries(itemsByMediumSheet)
-                              .filter(([sku]) => {
-                                if (!sheetFilter) return true;
-                                const formattedName = formatMediumSheetName(sku).toLowerCase();
-                                return formattedName.includes(sheetFilter.toLowerCase()) || 
-                                       sku.toLowerCase().includes(sheetFilter.toLowerCase());
-                              })
-                              .sort(([skuA, quantityA], [skuB, quantityB]) => {
-                                // Sort by quantity in descending order
-                                return quantityB - quantityA;
-                              })
-                              .map(([sku, quantity], index) => (
-                                <tr 
-                                  key={sku} 
-                                  className={`transition-colors duration-150 
-                                    ${selectedFoamSheet === sku 
-                                      ? 'bg-blue-50' 
-                                      : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                                    } hover:bg-blue-50 cursor-pointer shadow-sm`}
-                                  onClick={() => handleMediumSheetClick(sku)}
-                                  tabIndex={0}
-                                  role="button"
-                                  aria-pressed={selectedFoamSheet === sku}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
-                                      handleMediumSheetClick(sku);
-                                    }
-                                  }}
-                                >
-                                  <td className="px-6 py-5 text-left">
-                                    <div className="flex items-center">
-                                      <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(sku))}`}></div>
-                                      <span className="text-black text-lg">
-                                        {formatMediumSheetName(sku)}
+                              {Object.entries(itemsByMediumSheet)
+                                .filter(([sku]) => {
+                                  if (!sheetFilter) return true;
+                                  const formattedName = formatMediumSheetName(sku).toLowerCase();
+                                  return formattedName.includes(sheetFilter.toLowerCase()) || 
+                                        sku.toLowerCase().includes(sheetFilter.toLowerCase());
+                                })
+                                .sort(([skuA, quantityA], [skuB, quantityB]) => {
+                                  // Sort by quantity in descending order
+                                  return quantityB - quantityA;
+                                })
+                                // Apply pagination to medium sheets
+                                .slice(
+                                  (mediumSheetPage - 1) * mediumSheetsPerPage,
+                                  mediumSheetPage * mediumSheetsPerPage
+                                )
+                                .map(([sku, quantity], index) => (
+                                  <tr 
+                                    key={sku} 
+                                    className={`transition-colors duration-150 
+                                      ${selectedFoamSheet === sku 
+                                        ? 'bg-blue-50' 
+                                        : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                      } hover:bg-blue-50 cursor-pointer shadow-sm`}
+                                    onClick={() => handleMediumSheetClick(sku)}
+                                    tabIndex={0}
+                                    role="button"
+                                    aria-pressed={selectedFoamSheet === sku}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        handleMediumSheetClick(sku);
+                                      }
+                                    }}
+                                  >
+                                    <td className="px-6 py-5 text-left">
+                                      <div className="flex items-center">
+                                        <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(sku))}`}></div>
+                                        <span className="text-black text-lg">
+                                          {formatMediumSheetName(sku)}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-5 text-center">
+                                      <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                        {quantity}
                                       </span>
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-5 text-center">
-                                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                                      {quantity}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                          </>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </>
+                          )
+                        )}
+                      </tbody>
+                      </table>
+                  </div>
+                  {/*Pagination controls*/}
+                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
+                      <div className="text-sm text-gray-600">
+                        {Object.keys(itemsByMediumSheet).filter(sku => {
+                          if (!sheetFilter) return true;
+                          return formatMediumSheetName(sku).toLowerCase().includes(sheetFilter.toLowerCase());
+                        }).length} medium sheets found
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleMediumSheetPageChange(mediumSheetPage - 1)}
+                          disabled={mediumSheetPage === 1}
+                          className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <span>
+                          Page {mediumSheetPage} of {Math.max(1, Math.ceil(Object.keys(itemsByMediumSheet).filter(sku => {
+                            if (!sheetFilter) return true;
+                            return formatMediumSheetName(sku).toLowerCase().includes(sheetFilter.toLowerCase());
+                          }).length / mediumSheetsPerPage))}
+                        </span>
+                        <button
+                          onClick={() => handleMediumSheetPageChange(mediumSheetPage + 1)}
+                          disabled={mediumSheetPage >= Math.ceil(Object.keys(itemsByMediumSheet).filter(sku => {
+                            if (!sheetFilter) return true;
+                            return formatMediumSheetName(sku).toLowerCase().includes(sheetFilter.toLowerCase());
+                          }).length / mediumSheetsPerPage)}
+                          className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                  
+                )}                
+               
               </div>
-            </div>
           </div>
           
           {/**Medium Sheets Order Details Section */}
