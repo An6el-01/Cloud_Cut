@@ -61,6 +61,8 @@ export default function Manufacturing() {
   const [sheetFilter, setSheetFilter] = useState('');
   const [mediumSheetPage, setMediumSheetPage] = useState(1);
   const mediumSheetsPerPage = 7;
+  const [pendingManufacturedOrders, setPendingManufacturedOrders] = useState<Set<string>>(new Set());
+  const [checkedOrders, setCheckedOrders] = useState<Set<string>>(new Set());
 
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
@@ -82,7 +84,6 @@ export default function Manufacturing() {
   const itemsByMediumSheet = useSelector((state: RootState) => {
     // Get all order items from the state, not just the ones for the current page
     const allOrderItems = Object.values(state.orders.orderItems).flat();
-
     
     return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
       // Medium sheets SKUs start with 'SFS'
@@ -98,7 +99,6 @@ export default function Manufacturing() {
   const formatMediumSheetName = (sku: string): string => {
     // Check if this SKU exists in our inventory map
     const productName = inventoryMap.get(sku);
-    
     if (productName) {
       return productName;
     }
@@ -115,7 +115,6 @@ export default function Manufacturing() {
     if (sku.startsWith('SFS') && sku.length >= 5) {
       // Extract color code (usually the last character)
       const colorCode = sku.charAt(sku.length - 1);
-      
       // Extract thickness (usually numbers between SFC and color code)
       const thickness = sku.substring(3, sku.length - 1);
       
@@ -135,10 +134,8 @@ export default function Manufacturing() {
       };
       
       const color = colorMap[colorCode] || colorCode;
-      
       return `${color} [${thickness}mm]`;
     }
-    
     return sku; // Return original if no formatting could be applied
   };
 
@@ -333,10 +330,9 @@ export default function Manufacturing() {
     // Set the current view first
     dispatch(setCurrentView('manufacturing'));
     
-    
-    // Then fetch orders with the manufacturing-specific filters
-    dispatch(fetchOrdersFromSupabase({ 
-      page: currentPage, 
+    // Fetch orders for the current page
+    dispatch(fetchOrdersFromSupabase({
+      page: currentPage,
       perPage: ordersPerPage,
       manufactured: false,
       packed: false,
@@ -344,22 +340,29 @@ export default function Manufacturing() {
       view: 'manufacturing'
     }));
 
+    // Subscribe to real-time order updates
     const ordersSubscription = subscribeToOrders((payload) => {
-      if (payload.eventType === "INSERT" && 
-          payload.new.status === "Pending" && 
-          !payload.new.manufactured && 
-          !payload.new.packed) {
-        dispatch({ type: "orders/addOrder", payload: payload.new });
-      } else if (payload.eventType === "UPDATE") {
-        if (payload.new.status === "Pending" && 
-            !payload.new.manufactured && 
-            !payload.new.packed) {
-          dispatch({ type: "orders/updateOrder", payload: payload.new });
-        } else {
-          dispatch({ type: "orders/removeOrder", payload: payload.new });
+      if (payload.eventType === "UPDATE") {
+        // Handle order update
+        if (payload.new.manufactured !== payload.old.manufactured) {
+          // If manufactured status changed, refresh orders
+          dispatch(fetchOrdersFromSupabase({
+            page: currentPage,
+            perPage: ordersPerPage,
+            manufactured: false,
+            packed: false,
+            status: "Pending",
+            view: 'manufacturing'
+          }));
+
+          // If we're in the medium sheets tab, refresh the view
+          if (activeTab === 'medium' && selectedFoamSheet) {
+            // Force refresh by temporarily clearing and resetting
+            const currentSheet = selectedFoamSheet;
+            setSelectedFoamSheet(null);
+            setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
+          }
         }
-      } else if (payload.eventType === "DELETE") {
-        dispatch({ type: "orders/removeOrder", payload: payload.old });
       }
     });
 
@@ -377,6 +380,21 @@ export default function Manufacturing() {
               completed: payload.new.completed,
             })
           );
+          
+          // If we're in the medium sheets tab and this change affects our current view, 
+          // refresh the medium sheet view
+          if (activeTab === 'medium' && selectedFoamSheet && 
+              payload.new.sku_id === selectedFoamSheet) {
+            // Force refresh the list of orders with this medium sheet
+            setOrdersWithMediumSheets(prev => {
+              const newState = { ...prev };
+              // Remove the cached data to force a refetch
+              if (selectedFoamSheet in newState) {
+                delete newState[selectedFoamSheet];
+              }
+              return newState;
+            });
+          }
         }
       } else if (payload.eventType === "DELETE") {
         dispatch({ type: "orders/removeOrderItem", payload: payload.old });
@@ -416,6 +434,7 @@ export default function Manufacturing() {
     }
   }, [currentView, orders.length]);
 
+  // Function to handle clicking on an order row in the 'Orders With' section
   const handleOrderClick = async (orderId: string) => {
     try {
       // Set loading state
@@ -537,6 +556,7 @@ export default function Manufacturing() {
     }
   };
 
+  // Function to handle toggling an item in an order as completed.
   const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
     // If marking as incomplete, just do it directly
     if (!completed) {
@@ -572,7 +592,9 @@ export default function Manufacturing() {
     // Close the confirmation dialog
     setShowConfirmDialog(false);
     
-    // If there's a pending item to complete
+    // Add this order to pending manufactured orders for UI feedback
+    setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
+    
     if (pendingItemToComplete) {
       // Mark the item as completed
       dispatch(updateItemCompleted(pendingItemToComplete));
@@ -589,6 +611,8 @@ export default function Manufacturing() {
         // to ensure the Supabase update completes
         setTimeout(() => {
           console.log(`Refreshing orders after marking ${orderId} as manufactured`);
+          
+          // Refresh orders data
           dispatch(fetchOrdersFromSupabase({ 
             page: currentPage, 
             perPage: ordersPerPage,
@@ -601,12 +625,32 @@ export default function Manufacturing() {
             setIsRefreshing(false);
             // Clear the pending item
             setPendingItemToComplete(null);
+            // Remove this order from pending manufactured orders
+            setPendingManufacturedOrders(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(orderId);
+              return newSet;
+            });
+            
+            // Refresh medium sheets
+            if (activeTab === 'medium' && selectedFoamSheet) {
+              // Force refresh of medium sheets data by temporarily clearing and then resetting selectedFoamSheet
+              const currentSheet = selectedFoamSheet;
+              setSelectedFoamSheet(null);
+              setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
+            }
           });
         }, 2000); // Increased delay to ensure Supabase update completes
       } catch (error) {
         console.error("Error marking order as manufactured:", error);
         setIsRefreshing(false);
         setPendingItemToComplete(null);
+        // Remove this order from pending manufactured orders on error
+        setPendingManufacturedOrders(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(orderId);
+          return newSet;
+        });
       }
     }
   };
@@ -657,12 +701,13 @@ export default function Manufacturing() {
       setMediumSheetPage(newPage);
     }
   };
+
   // Function to render the orders with medium sheet table content
   const renderOrdersWithMediumSheet = (sku: string | null) => {
     if (!sku) {
       return (
         <tr>
-          <td colSpan={4} className="px-6 py-10 text-center">
+          <td colSpan={5} className="px-6 py-10 text-center">
             <div className="flex flex-col items-center justify-center text-gray-800">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -678,7 +723,7 @@ export default function Manufacturing() {
     if (loadingMediumSheetOrders) {
       return (
         <tr>
-          <td colSpan={4} className="px-6 py-10 text-center">
+          <td colSpan={5} className="px-6 py-10 text-center">
             <div className="flex flex-col items-center justify-center text-gray-800">
               <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
               <p className="text-lg font-medium">Loading orders...</p>
@@ -694,7 +739,7 @@ export default function Manufacturing() {
     if (ordersWithSheet.length === 0) {
       return (
         <tr>
-          <td colSpan={4} className="px-6 py-10 text-center">
+          <td colSpan={5} className="px-6 py-10 text-center">
             <div className="flex flex-col items-center justify-center text-gray-800">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -724,6 +769,13 @@ export default function Manufacturing() {
     const sortedOrders = ordersWithPriorities.sort((a, b) => b.maxPriority - a.maxPriority);
     
     return sortedOrders.map((order, index) => {
+      // Get all items for this order with the current sku
+      const orderItems = allOrderItems[order.order_id] || [];
+      const skuItems = orderItems.filter(item => item.sku_id === sku && !item.completed);
+      
+      // Count how many items need to be marked as completed
+      const itemsToComplete = skuItems.length;
+      
       return (
         <tr 
           key={order.order_id} 
@@ -743,23 +795,134 @@ export default function Manufacturing() {
           }}
           aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
         >
-          <td className="px-6 py-4 text-left">
+          <td className="px-4 py-4 text-left">
             <div className="flex items-center">
               <span className=" text-black text-lg">{order.order_id}</span>
             </div>
           </td>
-          <td className="px-6 py-4 text-left">
+          <td className="px-4 py-4 text-center">
             <span className="text-black text-lg">{order.customer_name}</span>
           </td>
-          <td className="px-6 py-4 text-center">
+          <td className="px-4 py-4 text-center">
             <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>
               {order.maxPriority}
             </span>
           </td>
-          <td className="px-6 py-4 text-center">
+          <td className="px-4 py-4 text-center">
             <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
               {getMediumSheetQuantityInOrder(order.order_id, sku)}
             </span>
+          </td>
+          <td className="px-4 py-4 text-center">
+            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={skuItems.length > 0 && skuItems.every(item => item.completed)}
+                  onChange={(e) => {
+                    // If unchecking, remove from local state
+                    if (!e.target.checked) {
+                      setCheckedOrders(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(order.order_id);
+                        return newSet;
+                      });
+                      
+                      // Mark all relevant items for this SKU as not completed
+                      skuItems.forEach(item => {
+                        dispatch(updateItemCompleted({
+                          orderId: order.order_id,
+                          itemId: item.id,
+                          completed: false
+                        }));
+                      });
+                      return;
+                    }
+                    
+                    // Add to visual state for immediate feedback
+                    setCheckedOrders(prev => new Set(prev).add(order.order_id));
+                    
+                    // Get all items for this SKU that need to be marked completed
+                    const allOrderSkuItems = orderItems.filter(item => item.sku_id === sku);
+                    
+                    // Check if this would complete all manufacturing items in the order
+                    const relevantItems = orderItems.filter(item => 
+                      (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFS')) && !item.completed
+                    );
+                    
+                    const remainingItems = relevantItems.filter(item => 
+                      !allOrderSkuItems.some(skuItem => skuItem.id === item.id)
+                    );
+                    
+                    // If no remaining items after marking these as completed, show confirmation
+                    if (remainingItems.length === 0) {
+                      // This would complete all manufacturing items
+                      setSelectedOrderId(order.order_id);
+                      
+                      // Store the first item to complete after confirmation
+                      if (skuItems.length > 0) {
+                        setPendingItemToComplete({
+                          orderId: order.order_id,
+                          itemId: skuItems[0].id,
+                          completed: true
+                        });
+                      }
+                      
+                      // Show confirmation dialog
+                      setShowConfirmDialog(true);
+                    } else {
+                      // Not the last items, mark relevant items as completed
+                      skuItems.forEach(item => {
+                        dispatch(updateItemCompleted({
+                          orderId: order.order_id,
+                          itemId: item.id,
+                          completed: true
+                        }));
+                      });
+                      
+                      // Check if all orders with this medium sheet will be completed
+                      const ordersWithSheet = findOrdersWithMediumSheet(sku);
+                      const hasOtherOrdersWithSheet = ordersWithSheet.some(o => 
+                        o.order_id !== order.order_id && 
+                        allOrderItems[o.order_id]?.some(item => 
+                          item.sku_id === sku && !item.completed
+                        )
+                      );
+                      
+                      // If this was the last order with this medium sheet, reset the selectedFoamSheet
+                      if (!hasOtherOrdersWithSheet) {
+                        setTimeout(() => {
+                          setSelectedFoamSheet(null);
+                        }, 800); // Delay slightly to allow animation to complete
+                      }
+                      
+                      // Refresh orders and medium sheets data
+                      setTimeout(() => {
+                        // Refresh the orders list
+                        dispatch(fetchOrdersFromSupabase({ 
+                          page: currentPage, 
+                          perPage: ordersPerPage,
+                          manufactured: false,
+                          packed: false,
+                          status: "Pending",
+                          view: 'manufacturing'
+                        }));
+                      }, 500);
+                    }
+                  }}
+                  className="sr-only peer"
+                  aria-label={`Mark all items for order ${order.order_id} as completed`}
+                />
+                <div className="w-5 h-5 border-2 border-gray-400 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                  {skuItems.length > 0 && skuItems.every(item => item.completed) && 
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                      <path d="m9 12 2 2 4-4"/>
+                    </svg>
+                  }
+                </div>
+              </label>
+            </div>
           </td>
         </tr>
       );
@@ -1097,7 +1260,7 @@ export default function Manufacturing() {
                                         checked={item.completed}
                                         onChange={(e) =>
                                           handleToggleCompleted(
-                                            selectedOrder.order_id,
+                                            selectedOrder?.order_id || '',
                                             item.id,
                                             e.target.checked
                                           )
@@ -1185,7 +1348,7 @@ export default function Manufacturing() {
                         <thead className="bg-gray-100/90 sticky top-0 ">
                           <tr>
                             <th className="px-6 py-4 text-left text-lg font-semibold text-black">Foam Sheet</th>
-                            <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
+                            <th className="px-6 py-4 text-center text-lg font-semibold text-black">Qty</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-300">
@@ -1316,7 +1479,7 @@ export default function Manufacturing() {
           
           {/**Medium Sheets Order Details Section */}
           <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
-            <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full flex flex-col">
+            <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full w-full flex flex-col">
               <div className="px-6 py-5  bg-black/90">
                 <h2 className="text-2xl font-bold text-white text-center">
                   {selectedFoamSheet ? (
@@ -1339,10 +1502,11 @@ export default function Manufacturing() {
                     <table className="w-full h-full bg-white/90">
                       <thead className="bg-[#1d1d1d] sticky top-0 z-10">
                         <tr>
-                          <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
-                          <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
+                          <th className="px-4 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
+                          <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Customer</th>
+                          <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
+                          <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Qty</th>
+                          <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Completed</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-300">

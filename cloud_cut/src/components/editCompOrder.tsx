@@ -522,7 +522,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                             </div>
                             
                             {/* Email Field */}
-                    <div>
+                            <div>
                                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                     Email
                                 </label>
@@ -538,7 +538,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                             </div>
                             
                             {/* Country Field */}
-                        <div>
+                            <div>
                                 <label htmlFor="country" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                     Country
                                 </label>
@@ -586,7 +586,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                         </thead>
                                         <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
                                             {orderItems.map((item, index) => (
-                                                <tr key={item.id} className={item.isEditing ? "bg-blue-50 dark:bg-blue-900/20" : ""}>
+                                                <tr key={item.order_id} className={item.isEditing ? "bg-blue-50 dark:bg-blue-900/20" : ""}>
                                                     <td className="px-4 py-3 ">
                                                         {item.isEditing ? (
                                                             <input
