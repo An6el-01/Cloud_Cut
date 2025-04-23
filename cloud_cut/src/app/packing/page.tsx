@@ -26,7 +26,7 @@ import { subscribeToOrders, subscribeToOrderItems, getCurrentUser } from "@/util
 import { OrderItem, Order } from "@/types/redux";
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
-
+import * as Sentry from "@sentry/nextjs";
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
 
@@ -161,133 +161,141 @@ export default function Packing() {
     }, []);
 
     const handleOrderClick = async (orderId: string) => {
-        
-        try {
-            // Set loading state
-            setIsRefreshing(true);
-            
-            // First set the active tab to orders
-            setActiveTab('orders');
-            
-            // Get current state to check for order items
-            const state = store.getState();
-            
-            // Directly set the selected order so the UI can prepare for it
-            dispatch(setSelectedOrderId(orderId));
-            
-            // Query all packing orders with proper filters to calculate pagination
-            const { data: packingOrders, error } = await supabase
-                .from('orders')
-                .select('*')
-                .eq('status', 'Pending')
-                .eq('manufactured', true)
-                .eq('packed', false);
+        Sentry.startSpan({
+            name: 'handleOrderClick-Packing',
+            op: 'ui.interaction.function'
+        }, async () => {
+            try {
+                // Set loading state
+                setIsRefreshing(true);
                 
-            if (error) {
-                console.error('Error fetching packing orders:', error);
-                setIsRefreshing(false);
-                return;
-            }
+                // First set the active tab to orders
+                setActiveTab('orders');
                 
-            console.log(`Fetched ${packingOrders?.length || 0} total packing orders`);
-            
-            if (!packingOrders || packingOrders.length === 0) {
-                console.error('No packing orders found');
-                setIsRefreshing(false);
-                return;
-            }
-            
-            // Verify the order exists in the fetched orders
-            const orderExists = packingOrders.some(order => order.order_id === orderId);
-            if (!orderExists) {
-                console.error(`Order ${orderId} not found in packing orders`);
-                setIsRefreshing(false);
-                return;
-            }
-            
-            console.log(`Order ${orderId} found in packing orders`);
-            
-            // Sort the orders the SAME WAY as they appear in your table
-            const sortedOrders = [...packingOrders].sort((a, b) => {
-                // Get items for these orders to determine priority
-                const aItems = state.orders.orderItems[a.order_id as string] || [];
-                const bItems = state.orders.orderItems[b.order_id as string] || [];
+                // Get current state to check for order items
+                const state = store.getState();
                 
-                // Calculate max priority for each order
-                const aMaxPriority = aItems.length > 0 
-                    ? Math.max(...aItems.map((item: OrderItem) => item.priority || 0)) 
-                    : 0;
-                const bMaxPriority = bItems.length > 0
-                    ? Math.max(...bItems.map((item: OrderItem) => item.priority || 0))
-                    : 0;
+                // Directly set the selected order so the UI can prepare for it
+                dispatch(setSelectedOrderId(orderId));
                 
-                // Sort by priority (highest first)
-                return bMaxPriority - aMaxPriority;
-            });
-            
-            
-            // Find the index of our target order in the sorted list
-            const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
-            console.log(`Order ${orderId} is at index ${orderIndex} in the sorted list`);
-            
-            // Calculate which page it should be on (1-indexed)
-            const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
-            console.log(`Target page for order: ${targetPage}`);
-            
-            // If we're already on the right page, no need to navigate
-            if (targetPage === currentPage) {
-                
-                // Scroll to the row
-                setTimeout(() => {
-                    console.log('Attempting to scroll to selected row');
-                    if (selectedRowRef.current) {
-                        selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-                    } else {
-                        console.log('Selected row not found - but we are on the right page');
-                        console.log('Current orders:', orders.map(o => o.order_id).join(', '));
-                    }
-                }, 100);
-            } else {
-                
-                await dispatch(fetchOrdersFromSupabase({
-                    page: targetPage,
-                    perPage: ordersPerPage,
-                    manufactured: true,
-                    packed: false,
-                    status: "Pending",
-                    view: 'packing'
-                }));
-                
-                console.log(`Navigated to page ${targetPage}`);
-                
-                // Set selected order ID again after navigation
-                setTimeout(() => {
-                    console.log(`Re-setting selected order ID to ${orderId} after navigation`);
-                    dispatch(setSelectedOrderId(orderId));
+                // Query all packing orders with proper filters to calculate pagination
+                const { data: packingOrders, error } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .eq('status', 'Pending')
+                    .eq('manufactured', true)
+                    .eq('packed', false);
                     
-                    // Scroll to the selected row
+                if (error) {
+                    console.error('Error fetching packing orders:', error);
+                    setIsRefreshing(false);
+                    return;
+                }
+                    
+                console.log(`Fetched ${packingOrders?.length || 0} total packing orders`);
+                
+                if (!packingOrders || packingOrders.length === 0) {
+                    console.error('No packing orders found');
+                    setIsRefreshing(false);
+                    return;
+                }
+                
+                // Verify the order exists in the fetched orders
+                const orderExists = packingOrders.some(order => order.order_id === orderId);
+                if (!orderExists) {
+                    console.error(`Order ${orderId} not found in packing orders`);
+                    setIsRefreshing(false);
+                    return;
+                }
+                
+                console.log(`Order ${orderId} found in packing orders`);
+                
+                // Sort the orders the SAME WAY as they appear in your table
+                const sortedOrders = [...packingOrders].sort((a, b) => {
+                    // Get items for these orders to determine priority
+                    const aItems = state.orders.orderItems[a.order_id as string] || [];
+                    const bItems = state.orders.orderItems[b.order_id as string] || [];
+                    
+                    // Calculate max priority for each order
+                    const aMaxPriority = aItems.length > 0 
+                        ? Math.max(...aItems.map((item: OrderItem) => item.priority || 0)) 
+                        : 0;
+                    const bMaxPriority = bItems.length > 0
+                        ? Math.max(...bItems.map((item: OrderItem) => item.priority || 0))
+                        : 0;
+                    
+                    // Sort by priority (highest first)
+                    return bMaxPriority - aMaxPriority;
+                });
+                
+                
+                // Find the index of our target order in the sorted list
+                const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
+                console.log(`Order ${orderId} is at index ${orderIndex} in the sorted list`);
+                
+                // Calculate which page it should be on (1-indexed)
+                const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
+                console.log(`Target page for order: ${targetPage}`);
+                
+                // If we're already on the right page, no need to navigate
+                if (targetPage === currentPage) {
+                    
+                    // Scroll to the row
                     setTimeout(() => {
-                        console.log('Attempting to scroll to selected row after navigation');
+                        console.log('Attempting to scroll to selected row');
                         if (selectedRowRef.current) {
                             selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-                            console.log('Scrolled to selected row');
                         } else {
-                            console.log('Selected row not found after navigation');
-                            console.log('Current orders after navigation:', orders.map(o => o.order_id).join(', '));
+                            console.log('Selected row not found - but we are on the right page');
+                            console.log('Current orders:', orders.map(o => o.order_id).join(', '));
                         }
-                    }, 500);
-                }, 200);
+                    }, 100);
+                } else {
+                    
+                    await dispatch(fetchOrdersFromSupabase({
+                        page: targetPage,
+                        perPage: ordersPerPage,
+                        manufactured: true,
+                        packed: false,
+                        status: "Pending",
+                        view: 'packing'
+                    }));
+                    
+                    console.log(`Navigated to page ${targetPage}`);
+                    
+                    // Set selected order ID again after navigation
+                    setTimeout(() => {
+                        console.log(`Re-setting selected order ID to ${orderId} after navigation`);
+                        dispatch(setSelectedOrderId(orderId));
+                        
+                        // Scroll to the selected row
+                        setTimeout(() => {
+                            console.log('Attempting to scroll to selected row after navigation');
+                            if (selectedRowRef.current) {
+                                selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+                                console.log('Scrolled to selected row');
+                            } else {
+                                console.log('Selected row not found after navigation');
+                                console.log('Current orders after navigation:', orders.map(o => o.order_id).join(', '));
+                            }
+                        }, 500);
+                    }, 200);
+                }
+            } catch (error) {
+                console.error('Error in handleOrderClick:', error);
+            } finally {
+                setIsRefreshing(false);
             }
-        } catch (error) {
-            console.error('Error in handleOrderClick:', error);
-        } finally {
-            setIsRefreshing(false);
-        }
+        });
     };
 
     const handlePageChange = (newPage: number) => {
-        if (newPage >= 1 && newPage <= totalPages) {
-            dispatch(fetchOrdersFromSupabase({
+        Sentry.startSpan({
+            name: 'handlePageChange-Packing',
+            op: 'ui.navigation'
+        }, async () => {
+            if (newPage >= 1 && newPage <= totalPages) {
+                dispatch(fetchOrdersFromSupabase({
                 page: newPage,
                 perPage: ordersPerPage,
                 manufactured: true,
@@ -296,100 +304,121 @@ export default function Packing() {
                 view: 'packing'
             }));
         }
-    };
+    });
+};
 
 
     const handleMarkCompleted = (orderId: string) => {
-        // Close the confirmation dialog
-        setShowOrderFinishedDialog(false);
+        Sentry.startSpan({
+            name: 'handleMarkCompleted-Packing',
+            op: 'ui.interaction.function'
+        }, async () => {
 
-        console.log(`Marking order ${orderId} as completed`);
-        // Show loading state
-        setIsRefreshing(true);
+         // Close the confirmation dialog
+         setShowOrderFinishedDialog(false);
 
-        // If there's a pending item to complete
-        if (pendingItemToComplete) {
-            // Mark the item as completed
-            dispatch(updateItemCompleted(pendingItemToComplete));
-
-            // Update the order status in Redux
-            dispatch(updateOrderStatus({
-                orderId,
-                status: "Completed"
-            }));
-
-            // Clear the pending item
-            setPendingItemToComplete(null);
-        }
-
-        // Refresh the orders list to reflect the changes (now the order should be gone)
-        console.log(`Refreshing orders after marking ${orderId} as completed`);
-        
-        // Add a short delay to ensure database operations have completed
-        setTimeout(() => {
-            dispatch(fetchOrdersFromSupabase({
-                page: currentPage,
-                perPage: ordersPerPage,
-                manufactured: true,
-                packed: false,
-                status: "Pending",
-                view: 'packing'
-            }))
-            .finally(() => {
-                setIsRefreshing(false);
-            });
-        }, 1000);
+         console.log(`Marking order ${orderId} as completed`);
+         // Show loading state
+         setIsRefreshing(true);
+ 
+         // If there's a pending item to complete
+         if (pendingItemToComplete) {
+             // Mark the item as completed
+             dispatch(updateItemCompleted(pendingItemToComplete));
+ 
+             // Update the order status in Redux
+             dispatch(updateOrderStatus({
+                 orderId,
+                 status: "Completed"
+             }));
+ 
+             // Clear the pending item
+             setPendingItemToComplete(null);
+         }
+ 
+         // Refresh the orders list to reflect the changes (now the order should be gone)
+         console.log(`Refreshing orders after marking ${orderId} as completed`);
+         
+         // Add a short delay to ensure database operations have completed
+         setTimeout(() => {
+             dispatch(fetchOrdersFromSupabase({
+                 page: currentPage,
+                 perPage: ordersPerPage,
+                 manufactured: true,
+                 packed: false,
+                 status: "Pending",
+                 view: 'packing'
+             }))
+             .finally(() => {
+                 setIsRefreshing(false);
+             });
+         }, 1000);
+        });       
     };
 
     // Function to handle cancellation of the confirmation dialog
     const handleCancelOrderFinished = () => {
-        // Close the dialog
-        setShowOrderFinishedDialog(false);
-        // Clear the pending item
-        setPendingItemToComplete(null);
+        Sentry.startSpan({
+            name: 'handleCancelOrderFinished-Packing',
+            op: 'ui.interaction.function'
+        }, async () => {
+            // Close the dialog
+            setShowOrderFinishedDialog(false);
+            // Clear the pending item
+            setPendingItemToComplete(null);
+        });
     };
 
     // Function to handle the "" button click
     const handleStartPackingClick = () => {
-        if (!selectedOrder) return;
-        
-        // Debug log to see the value of currentUserName
-        console.log('Current user name before dispatch:', currentUserName);
-        
-        // Set the order status to "Picking"
-        dispatch(updateOrderPickingStatus({
-            orderId: selectedOrder.order_id,
-            picking: true,
-            user_picking: currentUserName || 'N/A',
-        }));
-        
-        // Also manually update the local state for immediate UI feedback
-        const updatedOrders = orders.map(order => {
-            if (order.order_id === selectedOrder.order_id) {
-                return {
-                    ...order,
-                    picking: true,
-                    user_picking: currentUserName || 'N/A'
-                };
-            }
-            return order;
-        });
-        
-        // Log the status after a small delay to allow state to update
-        setTimeout(() => {
-            // Find the order after state update
-            const updatedOrder = updatedOrders.find((o: Order) => o.order_id === selectedOrder.order_id);
-            console.log(`Order Picking Status: ${updatedOrder?.picking}`);
-            console.log(`Order User Picking Status: ${updatedOrder?.user_picking}`);
-        }, 1000);
-        
-        // Show the OrderFinished dialog
-        setShowOrderFinishedDialog(true);
+        Sentry.startSpan({
+            name: 'handleStartPackingClick-Packing',
+            op: 'ui.interaction.function'
+        }, async () => {
+            if (!selectedOrder) return;
+            
+            // Debug log to see the value of currentUserName
+            console.log('Current user name before dispatch:', currentUserName);
+            
+            // Set the order status to "Picking"
+            dispatch(updateOrderPickingStatus({
+                orderId: selectedOrder.order_id,
+                picking: true,
+                user_picking: currentUserName || 'N/A',
+            }));
+            
+            // Also manually update the local state for immediate UI feedback
+            const updatedOrders = orders.map(order => {
+                if (order.order_id === selectedOrder.order_id) {
+                    return {
+                        ...order,
+                        picking: true,
+                        user_picking: currentUserName || 'N/A'
+                    };
+                }
+                return order;
+            });
+            
+            // Log the status after a small delay to allow state to update
+            setTimeout(() => {
+                // Find the order after state update
+                const updatedOrder = updatedOrders.find((o: Order) => o.order_id === selectedOrder.order_id);
+                console.log(`Order Picking Status: ${updatedOrder?.picking}`);
+                console.log(`Order User Picking Status: ${updatedOrder?.user_picking}`);
+            }, 1000);
+            
+            // Show the OrderFinished dialog
+            setShowOrderFinishedDialog(true);
+        });        
     };
 
     const handleRefresh = () => {
-        setIsRefreshing(true);
-        dispatch(syncOrders())
+        Sentry.startSpan({
+            name: 'handleRefresh-Packing',
+            op: 'ui.interaction.function'
+        }, async () => {
+            setIsRefreshing(true);
+            dispatch(syncOrders())
             .then(() => {
                 //Fetch the first page of completed orders after sync
                 dispatch(fetchOrdersFromSupabase({
@@ -407,6 +436,7 @@ export default function Packing() {
             .finally(() => {
                 setIsRefreshing(false);
             });
+        });
     };
     //Function to get the items by retail pack
     const itemsByRetailPack = useSelector((state: RootState) => {
@@ -597,9 +627,17 @@ export default function Packing() {
                     key={order.order_id}
                     className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ?
                     `bg-white` : `bg-gray-50`}`}
-                    onClick={() => {
-                        handleOrderClick(order.order_id);
-                        setActiveTab('orders');
+                    // onClick={() => {
+                    //     handleOrderClick(order.order_id);
+                    //     setActiveTab('orders');
+                    // }}
+                    onClick={async () => {
+                        await Sentry.startSpan({
+                            name: 'handleOrderRowClick-packing',
+                        }, async () => {
+                            handleOrderClick(order.order_id);
+                            setActiveTab('orders');
+                        })
                     }}
                     tabIndex={0}
                     role="button"
@@ -1002,7 +1040,7 @@ export default function Packing() {
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                                                                 </svg>
-                                                                <p className="text-lg font-medium">No retail packs found</p>
+                                                                <p className="text-lg font-medium">No retail packs in pending orders</p>
                                                                 <p className="text-sm text-gray-500 mt-1">There are no retail packs in the orders ready for packing</p>
                                                             </div>
                                                         </td>

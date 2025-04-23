@@ -26,6 +26,7 @@ import { OrderItem, Order } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
+import * as Sentry from "@sentry/nextjs";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -88,8 +89,8 @@ export default function Manufacturing() {
     return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
       // Medium sheets SKUs start with 'SFS'
       if (item.sku_id.startsWith('SFS-') && !item.completed) {
-        // If this SKU exists in the accumulator, increment the count, otherwise set it to 1
-        acc[item.sku_id] = (acc[item.sku_id] || 0) + 1;
+        // Add the item quantity to the total for this SKU
+        acc[item.sku_id] = (acc[item.sku_id] || 0) + item.quantity;
       }
       return acc;
     }, {});
@@ -167,6 +168,14 @@ export default function Manufacturing() {
 
   // Function to find orders that contain a specific medium sheet
   const findOrdersWithMediumSheet = (sku: string | null) => {
+    // Use separate tracking span instead of wrapping with return
+    Sentry.startSpan({
+      name: 'findOrdersWithMediumSheet',
+      op: 'data.query'
+    }, async () => {
+      // Just track without changing return type
+    });
+    
     if (!sku) return [];
     
     // Return cached orders if already fetched
@@ -268,62 +277,67 @@ export default function Manufacturing() {
 
   // Function to automatically mark orders with no manufacturing items as manufactured
   const autoMarkOrdersWithNoManufacturingItems = async () => {
-    console.log("Checking for orders with no manufacturing items...");
-    
-    // Make sure orders and their items are fully loaded
-    if (loading || isRefreshing) {
-      console.log("Orders are still loading, skipping auto-mark process");
-      return;
-    }
-    
-    // First, handle orders with no items at all
-    const ordersWithNoItems = orders.filter(order => {
-      const items = orderItemsById[order.order_id] || [];
-      return items.length === 0;
-    });
-    
-    // Then handle orders with items but none that need manufacturing
-    const ordersWithNonManufacturingItems = orders.filter(order => {
-      const items = orderItemsById[order.order_id] || [];
-      // Only process orders that have items but none require manufacturing
-      const filteredItems = filterItemsBySku(items);
-      return items.length > 0 && filteredItems.length === 0;
-    });
-    
-    // Combine both lists
-    const ordersToProcess = [...ordersWithNoItems, ...ordersWithNonManufacturingItems];
-    
-    if (ordersToProcess.length > 0) {
-      console.log(`Found ${ordersToProcess.length} orders to auto-process (${ordersWithNoItems.length} with no items, ${ordersWithNonManufacturingItems.length} with no manufacturing items)`);
+    return Sentry.startSpan({
+      name: 'autoMarkOrdersWithNoManufacturingItems',
+      op: 'automated.process'
+    }, async () => {
+      console.log("Checking for orders with no manufacturing items...");
       
-      // Process each order sequentially
-      for (const order of ordersToProcess) {
-        try {
-          console.log(`Auto-marking order ${order.order_id} as manufactured`);
-          await dispatch(updateOrderManufacturedStatus({ 
-            orderId: order.order_id, 
-            manufactured: true 
-          }));
-          // Wait a short time between orders to prevent overwhelming the database
-          await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (error) {
-          console.error(`Error auto-marking order ${order.order_id} as manufactured:`, error);
-        }
+      // Make sure orders and their items are fully loaded
+      if (loading || isRefreshing) {
+        console.log("Orders are still loading, skipping auto-mark process");
+        return;
       }
       
-      // Refresh the orders list after processing all orders
-      console.log("Refreshing order list after auto-marking orders");
-      dispatch(fetchOrdersFromSupabase({ 
-        page: currentPage, 
-        perPage: ordersPerPage,
-        manufactured: false,
-        packed: false,
-        status: "Pending",
-        view: 'manufacturing'
-      }));
-    } else {
-      console.log("No orders found that need auto-processing");
-    }
+      // First, handle orders with no items at all
+      const ordersWithNoItems = orders.filter(order => {
+        const items = orderItemsById[order.order_id] || [];
+        return items.length === 0;
+      });
+      
+      // Then handle orders with items but none that need manufacturing
+      const ordersWithNonManufacturingItems = orders.filter(order => {
+        const items = orderItemsById[order.order_id] || [];
+        // Only process orders that have items but none require manufacturing
+        const filteredItems = filterItemsBySku(items);
+        return items.length > 0 && filteredItems.length === 0;
+      });
+      
+      // Combine both lists
+      const ordersToProcess = [...ordersWithNoItems, ...ordersWithNonManufacturingItems];
+      
+      if (ordersToProcess.length > 0) {
+        console.log(`Found ${ordersToProcess.length} orders to auto-process (${ordersWithNoItems.length} with no items, ${ordersWithNonManufacturingItems.length} with no manufacturing items)`);
+        
+        // Process each order sequentially
+        for (const order of ordersToProcess) {
+          try {
+            console.log(`Auto-marking order ${order.order_id} as manufactured`);
+            await dispatch(updateOrderManufacturedStatus({ 
+              orderId: order.order_id, 
+              manufactured: true 
+            }));
+            // Wait a short time between orders to prevent overwhelming the database
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error) {
+            console.error(`Error auto-marking order ${order.order_id} as manufactured:`, error);
+          }
+        }
+        
+        // Refresh the orders list after processing all orders
+        console.log("Refreshing order list after auto-marking orders");
+        dispatch(fetchOrdersFromSupabase({ 
+          page: currentPage, 
+          perPage: ordersPerPage,
+          manufactured: false,
+          packed: false,
+          status: "Pending",
+          view: 'manufacturing'
+        }));
+      } else {
+        console.log("No orders found that need auto-processing");
+      }
+    });
   };
 
   useEffect(() => {
@@ -558,101 +572,111 @@ export default function Manufacturing() {
 
   // Function to handle toggling an item in an order as completed.
   const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
-    // If marking as incomplete, just do it directly
-    if (!completed) {
-      dispatch(updateItemCompleted({ orderId, itemId, completed }));
-      return;
-    }
+    return Sentry.startSpan({
+      name: 'handleToggleCompleted-Manufacturing',
+      op: 'ui.interaction.function'
+    }, async () => {
+      // If marking as incomplete, just do it directly
+      if (!completed) {
+        dispatch(updateItemCompleted({ orderId, itemId, completed }));
+        return;
+      }
 
-    // Get the relevant items (those with SKUs starting with SFI or SFC)
-    const relevantItems = filterItemsBySku(selectedOrderItems);
-    
-    // Count how many items are already completed
-    const completedItems = relevantItems.filter(item => 
-      item.completed || item.id === itemId // Count the current item if it's being marked as completed
-    );
-    
-    // Check if this is the last item to complete
-    if (completedItems.length === relevantItems.length && completed) {
-      // Store the pending item completion details
-      setPendingItemToComplete({
-        orderId,
-        itemId,
-        completed
-      });
-      // Show confirmation dialog
-      setShowConfirmDialog(true);
-    } else {
-      // Not the last item, just mark it as completed
-      dispatch(updateItemCompleted({ orderId, itemId, completed }));
-    }
+      // Get the relevant items (those with SKUs starting with SFI or SFC)
+      const relevantItems = filterItemsBySku(selectedOrderItems);
+      
+      // Count how many items are already completed
+      const completedItems = relevantItems.filter(item => 
+        item.completed || item.id === itemId // Count the current item if it's being marked as completed
+      );
+      
+      // Check if this is the last item to complete
+      if (completedItems.length === relevantItems.length && completed) {
+        // Store the pending item completion details
+        setPendingItemToComplete({
+          orderId,
+          itemId,
+          completed
+        });
+        // Show confirmation dialog
+        setShowConfirmDialog(true);
+      } else {
+        // Not the last item, just mark it as completed
+        dispatch(updateItemCompleted({ orderId, itemId, completed }));
+      }
+    });
   };
 
   const handleMarkManufactured = (orderId: string) => {
-    // Close the confirmation dialog
-    setShowConfirmDialog(false);
-    
-    // Add this order to pending manufactured orders for UI feedback
-    setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
-    
-    if (pendingItemToComplete) {
-      // Mark the item as completed
-      dispatch(updateItemCompleted(pendingItemToComplete));
+    return Sentry.startSpan({
+      name: 'handleMarkManufactured',
+      op: 'business.function'
+    }, async () => {
+      // Close the confirmation dialog
+      setShowConfirmDialog(false);
       
-      console.log(`Marking order ${orderId} as manufactured`);
-      // Show loading state
-      setIsRefreshing(true);
+      // Add this order to pending manufactured orders for UI feedback
+      setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
       
-      // Update the manufactured status in Redux and Supabase
-      try {
-        dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
+      if (pendingItemToComplete) {
+        // Mark the item as completed
+        dispatch(updateItemCompleted(pendingItemToComplete));
         
-        // Refresh the orders list to remove the manufactured order after a delay
-        // to ensure the Supabase update completes
-        setTimeout(() => {
-          console.log(`Refreshing orders after marking ${orderId} as manufactured`);
+        console.log(`Marking order ${orderId} as manufactured`);
+        // Show loading state
+        setIsRefreshing(true);
+        
+        // Update the manufactured status in Redux and Supabase
+        try {
+          dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
           
-          // Refresh orders data
-          dispatch(fetchOrdersFromSupabase({ 
-            page: currentPage, 
-            perPage: ordersPerPage,
-            manufactured: false,
-            packed: false,
-            status: "Pending",
-            view: 'manufacturing'
-          }))
-          .finally(() => {
-            setIsRefreshing(false);
-            // Clear the pending item
-            setPendingItemToComplete(null);
-            // Remove this order from pending manufactured orders
-            setPendingManufacturedOrders(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(orderId);
-              return newSet;
-            });
+          // Refresh the orders list to remove the manufactured order after a delay
+          // to ensure the Supabase update completes
+          setTimeout(() => {
+            console.log(`Refreshing orders after marking ${orderId} as manufactured`);
             
-            // Refresh medium sheets
-            if (activeTab === 'medium' && selectedFoamSheet) {
-              // Force refresh of medium sheets data by temporarily clearing and then resetting selectedFoamSheet
-              const currentSheet = selectedFoamSheet;
-              setSelectedFoamSheet(null);
-              setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
-            }
+            // Refresh orders data
+            dispatch(fetchOrdersFromSupabase({ 
+              page: currentPage, 
+              perPage: ordersPerPage,
+              manufactured: false,
+              packed: false,
+              status: "Pending",
+              view: 'manufacturing'
+            }))
+            .finally(() => {
+              setIsRefreshing(false);
+              // Clear the pending item
+              setPendingItemToComplete(null);
+              // Remove this order from pending manufactured orders
+              setPendingManufacturedOrders(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(orderId);
+                return newSet;
+              });
+              
+              // Refresh medium sheets
+              if (activeTab === 'medium' && selectedFoamSheet) {
+                // Force refresh of medium sheets data by temporarily clearing and then resetting selectedFoamSheet
+                const currentSheet = selectedFoamSheet;
+                setSelectedFoamSheet(null);
+                setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
+              }
+            });
+          }, 2000); // Increased delay to ensure Supabase update completes
+        } catch (error) {
+          console.error("Error marking order as manufactured:", error);
+          setIsRefreshing(false);
+          setPendingItemToComplete(null);
+          // Remove this order from pending manufactured orders on error
+          setPendingManufacturedOrders(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(orderId);
+            return newSet;
           });
-        }, 2000); // Increased delay to ensure Supabase update completes
-      } catch (error) {
-        console.error("Error marking order as manufactured:", error);
-        setIsRefreshing(false);
-        setPendingItemToComplete(null);
-        // Remove this order from pending manufactured orders on error
-        setPendingManufacturedOrders(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(orderId);
-          return newSet;
-        });
+        }
       }
-    }
+    });
   };
 
   // Function to handle cancellation of the confirmation dialog
@@ -780,9 +804,13 @@ export default function Manufacturing() {
         <tr 
           key={order.order_id} 
           className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
-          onClick={() => {
-            handleOrderClick(order.order_id);
-            setActiveTab('orders'); // Switch to orders tab to view details
+          onClick={async () => {
+            await Sentry.startSpan({
+              name: 'handleOrderClick-MediumSheets',
+            }, async () => {
+              handleOrderClick(order.order_id);
+              setActiveTab('orders'); // Switch to orders tab to view details
+            });
           }}
           tabIndex={0}
           role="button"
@@ -819,96 +847,101 @@ export default function Manufacturing() {
                 <input
                   type="checkbox"
                   checked={skuItems.length > 0 && skuItems.every(item => item.completed)}
-                  onChange={(e) => {
-                    // If unchecking, remove from local state
-                    if (!e.target.checked) {
-                      setCheckedOrders(prev => {
-                        const newSet = new Set(prev);
-                        newSet.delete(order.order_id);
-                        return newSet;
-                      });
-                      
-                      // Mark all relevant items for this SKU as not completed
-                      skuItems.forEach(item => {
-                        dispatch(updateItemCompleted({
-                          orderId: order.order_id,
-                          itemId: item.id,
-                          completed: false
-                        }));
-                      });
-                      return;
-                    }
-                    
-                    // Add to visual state for immediate feedback
-                    setCheckedOrders(prev => new Set(prev).add(order.order_id));
-                    
-                    // Get all items for this SKU that need to be marked completed
-                    const allOrderSkuItems = orderItems.filter(item => item.sku_id === sku);
-                    
-                    // Check if this would complete all manufacturing items in the order
-                    const relevantItems = orderItems.filter(item => 
-                      (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFS')) && !item.completed
-                    );
-                    
-                    const remainingItems = relevantItems.filter(item => 
-                      !allOrderSkuItems.some(skuItem => skuItem.id === item.id)
-                    );
-                    
-                    // If no remaining items after marking these as completed, show confirmation
-                    if (remainingItems.length === 0) {
-                      // This would complete all manufacturing items
-                      setSelectedOrderId(order.order_id);
-                      
-                      // Store the first item to complete after confirmation
-                      if (skuItems.length > 0) {
-                        setPendingItemToComplete({
-                          orderId: order.order_id,
-                          itemId: skuItems[0].id,
-                          completed: true
+                  onChange={async (e) => {
+                    await Sentry.startSpan({
+                      name: 'ToggleItemCompletion-MediumSheets',
+                      op: 'ui.interaction.checkbox'
+                    }, async () => {
+                      // If unchecking, remove from local state
+                      if (!e.target.checked) {
+                        setCheckedOrders(prev => {
+                          const newSet = new Set(prev);
+                          newSet.delete(order.order_id);
+                          return newSet;
                         });
+                        
+                        // Mark all relevant items for this SKU as not completed
+                        skuItems.forEach(item => {
+                          dispatch(updateItemCompleted({
+                            orderId: order.order_id,
+                            itemId: item.id,
+                            completed: false
+                          }));
+                        });
+                        return;
                       }
                       
-                      // Show confirmation dialog
-                      setShowConfirmDialog(true);
-                    } else {
-                      // Not the last items, mark relevant items as completed
-                      skuItems.forEach(item => {
-                        dispatch(updateItemCompleted({
-                          orderId: order.order_id,
-                          itemId: item.id,
-                          completed: true
-                        }));
-                      });
+                      // Add to visual state for immediate feedback
+                      setCheckedOrders(prev => new Set(prev).add(order.order_id));
                       
-                      // Check if all orders with this medium sheet will be completed
-                      const ordersWithSheet = findOrdersWithMediumSheet(sku);
-                      const hasOtherOrdersWithSheet = ordersWithSheet.some(o => 
-                        o.order_id !== order.order_id && 
-                        allOrderItems[o.order_id]?.some(item => 
-                          item.sku_id === sku && !item.completed
-                        )
+                      // Get all items for this SKU that need to be marked completed
+                      const allOrderSkuItems = orderItems.filter(item => item.sku_id === sku);
+                      
+                      // Check if this would complete all manufacturing items in the order
+                      const relevantItems = orderItems.filter(item => 
+                        (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFS')) && !item.completed
                       );
                       
-                      // If this was the last order with this medium sheet, reset the selectedFoamSheet
-                      if (!hasOtherOrdersWithSheet) {
-                        setTimeout(() => {
-                          setSelectedFoamSheet(null);
-                        }, 800); // Delay slightly to allow animation to complete
-                      }
+                      const remainingItems = relevantItems.filter(item => 
+                        !allOrderSkuItems.some(skuItem => skuItem.id === item.id)
+                      );
                       
-                      // Refresh orders and medium sheets data
-                      setTimeout(() => {
-                        // Refresh the orders list
-                        dispatch(fetchOrdersFromSupabase({ 
-                          page: currentPage, 
-                          perPage: ordersPerPage,
-                          manufactured: false,
-                          packed: false,
-                          status: "Pending",
-                          view: 'manufacturing'
-                        }));
-                      }, 500);
-                    }
+                      // If no remaining items after marking these as completed, show confirmation
+                      if (remainingItems.length === 0) {
+                        // This would complete all manufacturing items
+                        setSelectedOrderId(order.order_id);
+                        
+                        // Store the first item to complete after confirmation
+                        if (skuItems.length > 0) {
+                          setPendingItemToComplete({
+                            orderId: order.order_id,
+                            itemId: skuItems[0].id,
+                            completed: true
+                          });
+                        }
+                        
+                        // Show confirmation dialog
+                        setShowConfirmDialog(true);
+                      } else {
+                        // Not the last items, mark relevant items as completed
+                        skuItems.forEach(item => {
+                          dispatch(updateItemCompleted({
+                            orderId: order.order_id,
+                            itemId: item.id,
+                            completed: true
+                          }));
+                        });
+                        
+                        // Check if all orders with this medium sheet will be completed
+                        const ordersWithSheet = findOrdersWithMediumSheet(sku);
+                        const hasOtherOrdersWithSheet = ordersWithSheet.some(o => 
+                          o.order_id !== order.order_id && 
+                          allOrderItems[o.order_id]?.some(item => 
+                            item.sku_id === sku && !item.completed
+                          )
+                        );
+                        
+                        // If this was the last order with this medium sheet, reset the selectedFoamSheet
+                        if (!hasOtherOrdersWithSheet) {
+                          setTimeout(() => {
+                            setSelectedFoamSheet(null);
+                          }, 800); // Delay slightly to allow animation to complete
+                        }
+                        
+                        // Refresh orders and medium sheets data
+                        setTimeout(() => {
+                          // Refresh the orders list
+                          dispatch(fetchOrdersFromSupabase({ 
+                            page: currentPage, 
+                            perPage: ordersPerPage,
+                            manufactured: false,
+                            packed: false,
+                            status: "Pending",
+                            view: 'manufacturing'
+                          }));
+                        }, 500);
+                      }
+                    });
                   }}
                   className="sr-only peer"
                   aria-label={`Mark all items for order ${order.order_id} as completed`}
@@ -929,6 +962,8 @@ export default function Manufacturing() {
     });
   };
 
+
+
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -942,7 +977,13 @@ export default function Manufacturing() {
             
             {/* Orders Queue Tab */}
             <button 
-              onClick={() => setActiveTab('orders')}
+              onClick={async () => {
+                await Sentry.startSpan({
+                  name: 'setActiveTab-Orders',
+                }, async () => {
+                  setActiveTab('orders');
+                });
+              }}
               className="relative rounded-full font-medium transition-all duration-300 z-10 flex-1 py-2 px-3"
             >
               <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${
@@ -957,7 +998,13 @@ export default function Manufacturing() {
             
             {/* Medium Sheets Tab */}
             <button 
-              onClick={() => setActiveTab('medium')}
+            onClick={async () => {
+              await Sentry.startSpan({
+                name: 'setActiveTab-MediumSheets',
+              }, async () => {
+                setActiveTab('medium');
+              });
+            } }
               className="relative rounded-full font-medium transition-all duration-300 z-10 flex-1 py-2 px-3"
             >
               <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${
@@ -985,7 +1032,11 @@ export default function Manufacturing() {
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-4">
                     <button
-                      onClick={handleRefresh}
+                      onClick={async () =>  Sentry.startSpan({
+                        name: 'handleRefresh-Orders',
+                      }, async () => {
+                        handleRefresh();
+                      })}
                       className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
                       disabled={isRefreshing}
                       aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
@@ -1001,7 +1052,11 @@ export default function Manufacturing() {
                       <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
                     </button>
                     <button
-                      onClick={handleExportCSV}
+                      onClick={async () =>  Sentry.startSpan({
+                        name: 'handleExportCSV-Orders',
+                      }, async () => {
+                        handleExportCSV();
+                      })}
                       className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
                       disabled={isExporting || orders.length === 0}
                       aria-label={isExporting ? "Exporting orders..." : "Export orders to CSV"}
@@ -1030,7 +1085,13 @@ export default function Manufacturing() {
                 <div className="text-center py-4">
                   <p className="text-red-500">{error}</p>
                   <button
-                    onClick={handleRefresh}
+                    onClick={async () => {
+                      await Sentry.startSpan({
+                        name: 'handleRefresh-Orders2',
+                      }, async () => {
+                        handleRefresh();
+                      })
+                    }}
                     className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                   >
                     Retry
@@ -1091,7 +1152,13 @@ export default function Manufacturing() {
                                     ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
                                     : "hover:bg-gray-100/90 hover:border-l-4 hover:border-gray-300"
                                 }`}
-                                onClick={() => handleOrderClick(order.order_id)}
+                                onClick={async () => {
+                                  await Sentry.startSpan({
+                                    name: 'handleRowOrderClick-Manufacturing',
+                                  }, async () => {
+                                    handleOrderClick(order.order_id);
+                                  })
+                                }}
                               >
                                 <td className="px-4 py-2 text-black">{order.order_id}</td>
                                 <td className="px-4 py-2 text-black">{order.customer_name}</td>
@@ -1126,7 +1193,13 @@ export default function Manufacturing() {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handlePageChange(currentPage - 1)}
+                        onClick={async () => {
+                          await Sentry.startSpan({
+                            name: 'manufacturingPageChange-Previous',
+                          }, async () => {
+                            handlePageChange(currentPage - 1);
+                          })
+                        }}
                         disabled={currentPage === 1}
                         className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -1136,7 +1209,13 @@ export default function Manufacturing() {
                         Page {currentPage} of {totalPages}
                       </span>
                       <button
-                        onClick={() => handlePageChange(currentPage + 1)}
+                        onClick={async () => {
+                          await Sentry.startSpan({
+                            name: 'manufacturingPageChange-Next',
+                          }, async () => {
+                            handlePageChange(currentPage + 1);
+                          })
+                        }}
                         disabled={currentPage === totalPages}
                         className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -1258,13 +1337,18 @@ export default function Manufacturing() {
                                       <input
                                         type="checkbox"
                                         checked={item.completed}
-                                        onChange={(e) =>
-                                          handleToggleCompleted(
-                                            selectedOrder?.order_id || '',
-                                            item.id,
-                                            e.target.checked
-                                          )
-                                        }
+                                        onChange={async (e) => {
+                                          await Sentry.startSpan({
+                                            name: 'ToggleItemCompletion-OrderDetails-Manufacturing',
+                                            op: 'ui.interaction.checkbox'
+                                          }, async () => {
+                                            handleToggleCompleted(
+                                              selectedOrder?.order_id || '',
+                                              item.id,
+                                              e.target.checked
+                                            );
+                                          });
+                                        }}
                                         className="sr-only peer"
                                         aria-label={`Mark ${item.item_name} as ${item.completed ? 'incomplete' : 'complete'}`}
                                       />
@@ -1373,8 +1457,8 @@ export default function Manufacturing() {
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                                 </svg>
-                                <p className="text-lg font-medium">No medium sheets found</p>
-                                <p className="text-sm text-gray-500 mt-1">There are no medium sheets in pending orders</p>
+                                <p className="text-lg font-medium">No medium sheets found in pending orders.</p>
+                                <p className="text-sm text-gray-500 mt-1">Orders manufactured today: </p>
                               </div>
                             </td>
                           </tr>
@@ -1404,7 +1488,13 @@ export default function Manufacturing() {
                                         ? 'bg-blue-50' 
                                         : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                                       } hover:bg-blue-50 cursor-pointer shadow-sm`}
-                                    onClick={() => handleMediumSheetClick(sku)}
+                                    onClick={async () => {
+                                      await Sentry.startSpan({
+                                        name: 'handleRowClick-MediumSheets',
+                                      }, async () => {
+                                        handleMediumSheetClick(sku);
+                                      })
+                                    }}
                                     tabIndex={0}
                                     role="button"
                                     aria-pressed={selectedFoamSheet === sku}
@@ -1446,7 +1536,13 @@ export default function Manufacturing() {
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => handleMediumSheetPageChange(mediumSheetPage - 1)}
+                          onClick={async () => {
+                            await Sentry.startSpan({
+                              name: 'MediumSheetPageChange-Previous',
+                            }, async () => {
+                              handleMediumSheetPageChange(mediumSheetPage - 1);
+                            })
+                          }}
                           disabled={mediumSheetPage === 1}
                           className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -1459,7 +1555,13 @@ export default function Manufacturing() {
                           }).length / mediumSheetsPerPage))}
                         </span>
                         <button
-                          onClick={() => handleMediumSheetPageChange(mediumSheetPage + 1)}
+                          onClick={async () => {
+                            await Sentry.startSpan({
+                              name: 'MediumSheetPageChange-Next',
+                            }, async () => {
+                              handleMediumSheetPageChange(mediumSheetPage + 1);
+                            })
+                          }}
                           disabled={mediumSheetPage >= Math.ceil(Object.keys(itemsByMediumSheet).filter(sku => {
                             if (!sheetFilter) return true;
                             return formatMediumSheetName(sku).toLowerCase().includes(sheetFilter.toLowerCase());

@@ -12,7 +12,7 @@ import OrderItemsOverlay from '@/components/OrderItemsOverlay';
 import { Order, OrderItem } from '@/types/redux';
 import { createPortal } from 'react-dom';
 import EditCompOrder from '@/components/editCompOrder';
-
+import * as Sentry from '@sentry/nextjs';
 import { fetchArchivedOrders } from '@/redux/thunks/ordersThunks';
 
 // Define types used by the dropdown component
@@ -115,7 +115,13 @@ const SortDropdown = ({
                 id="sort-menu-button"
                 aria-expanded={isOpen}
                 aria-haspopup="true"
-                onClick={toggleDropdown}
+                onClick={async () => {
+                    await Sentry.startSpan({
+                        name: 'toggleSortDropdown-admin',
+                    }, async () => {
+                        toggleDropdown();
+                    })
+                }}
             >
                 {sortConfig.field === 'order_id' ? 'Sort: Order ID' : 
                 sortConfig.field === 'order_date' ? 'Sort: Date' : 'Sort: Customer'}
@@ -153,7 +159,13 @@ const SortDropdown = ({
                             className={`${sortConfig.field === 'order_id' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full px-4 py-2 text-sm hover:bg-gray-100`}
                             role="menuitem"
                             tabIndex={-1}
-                            onClick={() => handleOptionClick('order_id')}
+                            onClick={async () => {
+                                await Sentry.startSpan({
+                                    name: 'handleSortDropDownOptionClick-admin-order_id',
+                                }, async () => {
+                                    handleOptionClick('order_id');
+                                })
+                            }}
                         >
                             Order ID
                             {sortConfig.field === 'order_id' && (
@@ -166,7 +178,13 @@ const SortDropdown = ({
                             className={`${sortConfig.field === 'order_date' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full px-4 py-2 text-sm hover:bg-gray-100`}
                             role="menuitem"
                             tabIndex={-1}
-                            onClick={() => handleOptionClick('order_date')}
+                            onClick={async () => {
+                                await Sentry.startSpan({
+                                    name: 'handleSortDropDownOptionClick-admin-order_date',
+                                }, async () => {
+                                    handleOptionClick('order_date');
+                                })
+                            }}
                         >
                             Date Received
                             {sortConfig.field === 'order_date' && (
@@ -179,7 +197,13 @@ const SortDropdown = ({
                             className={`${sortConfig.field === 'customer_name' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full px-4 py-2 text-sm hover:bg-gray-100`}
                             role="menuitem"
                             tabIndex={-1}
-                            onClick={() => handleOptionClick('customer_name')}
+                            onClick={async () => {
+                                await Sentry.startSpan({
+                                    name: 'handleSortDropDownOptionClick-admin-customer_name',
+                                }, async () => {
+                                    handleOptionClick('customer_name');
+                                })
+                            }}
                         >
                             Customer Name
                             {sortConfig.field === 'customer_name' && (
@@ -238,32 +262,37 @@ export default function Admin() {
 
     // Filter and sort orders when dependencies change
     useEffect(() => {
-        if (!archivedOrders) return;
+        Sentry.startSpan({
+            name: 'filterAndSortOrdersUseEffect-Admin',
+            op: 'data.processing'
+        }, async () => {
+            if (!archivedOrders) return;
 
-        let result = [...archivedOrders];
+            let result = [...archivedOrders];
 
-        // Apply search filter
-        if (searchTerm) {
-            const lowerSearchTerm = searchTerm.toLowerCase();
-            result = result.filter(
-                (order) =>
-                    order.order_id.toLowerCase().includes(lowerSearchTerm) ||
-                    order.customer_name.toLowerCase().includes(lowerSearchTerm)
-            );
-        }
-
-        // Apply sorting
-        result.sort((a, b) => {
-            if (a[sortConfig.field] < b[sortConfig.field]) {
-                return sortConfig.direction === 'asc' ? -1 : 1;
+            // Apply search filter
+            if (searchTerm) {
+                const lowerSearchTerm = searchTerm.toLowerCase();
+                result = result.filter(
+                    (order) =>
+                        order.order_id.toLowerCase().includes(lowerSearchTerm) ||
+                        order.customer_name.toLowerCase().includes(lowerSearchTerm)
+                );
             }
-            if (a[sortConfig.field] > b[sortConfig.field]) {
-                return sortConfig.direction === 'asc' ? 1 : -1;
-            }
-            return 0;
+
+            // Apply sorting
+            result.sort((a, b) => {
+                if (a[sortConfig.field] < b[sortConfig.field]) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (a[sortConfig.field] > b[sortConfig.field]) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+
+            setFilteredOrders(result);
         });
-
-        setFilteredOrders(result);
     }, [archivedOrders, searchTerm, sortConfig]);
 
     // Set up real-time updates for archived orders
@@ -297,62 +326,97 @@ export default function Admin() {
     
     // Filter orders based on search term
     const filterOrders = () => {
-        if (!searchTerm.trim()) {
-            setFilteredOrders(archivedOrders);
-            return;
-        }
-        
-        const term = searchTerm.toLowerCase().trim();
-        const filtered = archivedOrders.filter(order => 
-            order.order_id.toLowerCase().includes(term) || 
-            order.customer_name.toLowerCase().includes(term)
-        );
-        
-        setFilteredOrders(filtered);
-        // Reset to first page when search changes
-        setCurrentPage(1);
+        Sentry.startSpan({
+            name: 'filterOrders-Admin',
+            op: 'data.search'
+        }, async () => {
+            if (!searchTerm.trim()) {
+                setFilteredOrders(archivedOrders);
+                return;
+            }
+            
+            const term = searchTerm.toLowerCase().trim();
+            const filtered = archivedOrders.filter(order => 
+                order.order_id.toLowerCase().includes(term) || 
+                order.customer_name.toLowerCase().includes(term)
+            );
+            
+            setFilteredOrders(filtered);
+            // Reset to first page when search changes
+            setCurrentPage(1);
+        });
     };
     
     // Clear search
     const handleClearSearch = () => {
-        setSearchTerm("");
+        return Sentry.startSpan({
+            name: 'handleClearSearch-Admin',
+            op: 'ui.interaction.search'
+        }, async () => {
+            setSearchTerm("");
+        });
     };
 
     const handleOrderClick = (orderId: string) => {
-        dispatch(setSelectedOrderId(orderId));
-        setShowOrderItems(true);
-        setTimeout(() => {
-            selectedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 100);
+        return Sentry.startSpan({
+            name: 'handleOrderClick-Admin',
+            op: 'ui.interaction.function'
+        }, async () => {
+            dispatch(setSelectedOrderId(orderId));
+            setShowOrderItems(true);
+            setTimeout(() => {
+                selectedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 100);
+        });
     };
     
     // Handle page change
     const handlePageChange = (pageNumber: number) => {
-        if (pageNumber >= 1 && pageNumber <= totalPages) {
-            setCurrentPage(pageNumber);
-            window.scrollTo(0, 0);
-        }
+        return Sentry.startSpan({
+            name: 'handlePageChange-Admin',
+            op: 'ui.navigation'
+        }, async () => {
+            if (pageNumber >= 1 && pageNumber <= totalPages) {
+                setCurrentPage(pageNumber);
+                window.scrollTo(0, 0);
+            }
+        });
     };
 
     const handleRefresh = () => {
-        setIsRefreshing(true);
-        dispatch(fetchArchivedOrders())
-            .finally(() => {
-                setIsRefreshing(false);
-            });
+        return Sentry.startSpan({
+            name: 'handleRefresh-Admin',
+            op: 'data.refresh'
+        }, async () => {
+            setIsRefreshing(true);
+            dispatch(fetchArchivedOrders())
+                .finally(() => {
+                    setIsRefreshing(false);
+                });
+        });
     };
 
     // Request a sort by field
     const handleSortChange = useCallback((field: SortField) => {
-        // If clicking the same field, toggle direction
-        const direction = sortConfig.field === field && sortConfig.direction === 'desc' ? 'asc' : 'desc';
-        setSortConfig({ field, direction });
+        return Sentry.startSpan({
+            name: 'handleSortChange-Admin',
+            op: 'ui.interaction.sorting'
+        }, async () => {
+            // If clicking the same field, toggle direction
+            const direction = sortConfig.field === field && sortConfig.direction === 'desc' ? 'asc' : 'desc';
+            setSortConfig({ field, direction });
+        });
     }, [sortConfig]);
     
     // Handle edit button click
     const handleEditClick = (order: Order, e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent triggering the row click
-        setEditingOrder(order);
+        return Sentry.startSpan({
+            name: 'handleEditClick-Admin',
+            op: 'ui.interaction.edit'
+        }, async () => {
+            e.stopPropagation(); // Prevent triggering the row click
+            setEditingOrder(order);
+        });
     };
     
 
@@ -370,7 +434,7 @@ export default function Admin() {
                     <OrderItemsOverlay
                         orderId={selectedOrderId}
                         onClose={() => setShowOrderItems(false)}
-                        items={archivedOrderItems[selectedOrderId] || []}
+                        items={archivedOrderItems[selectedOrderId!] || []}
                     />
                 )}
                 {/* Left Section: Orders Table */}
@@ -405,7 +469,13 @@ export default function Admin() {
                                         </div>
                                         {searchTerm && (
                                             <button
-                                                onClick={handleClearSearch}
+                                                onClick={async () => {
+                                                    await Sentry.startSpan({
+                                                        name: 'handleClearSearch-admin',
+                                                    }, async () => {
+                                                        handleClearSearch();
+                                                    })
+                                                }}
                                                 className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                                 aria-label="Clear search"
                                             >
@@ -428,7 +498,13 @@ export default function Admin() {
                                     
                                     {/* Refresh button */}
                                     <button
-                                        onClick={handleRefresh}
+                                        onClick={async () => {
+                                            await Sentry.startSpan({
+                                                name: 'handleRefresh-admin',
+                                            }, async () => {
+                                                handleRefresh();
+                                            })
+                                        }}
                                         className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
                                         disabled={isRefreshing}
                                         aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
@@ -467,7 +543,13 @@ export default function Admin() {
                                     <p className="text-red-600 font-medium mb-2">Error loading orders</p>
                                     <p className="text-gray-600 mb-4">{error}</p>
                                     <button
-                                        onClick={handleRefresh}
+                                        onClick={async () => {
+                                            await Sentry.startSpan({
+                                                name: 'handleRefresh-admin',
+                                            }, async () => {
+                                                handleRefresh();
+                                            })
+                                        }}
                                         className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
                                     >
                                         Retry
@@ -491,7 +573,13 @@ export default function Admin() {
                                             <p className="text-black font-medium mb-1">No matching orders found</p>
                                             <p className="text-gray-500 text-sm">Try a different search term or clear the search</p>
                                             <button 
-                                                onClick={handleClearSearch}
+                                                onClick={async () => {
+                                                    await Sentry.startSpan({
+                                                        name: 'handleClearSearch-admin',
+                                                    }, async () => {
+                                                        handleClearSearch();
+                                                    })
+                                                }}
                                                 className="mt-4 px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
                                             >
                                                 Clear Search
@@ -556,7 +644,13 @@ export default function Admin() {
                                                               ? "bg-blue-100/90 border-l-4 border-blue-500 shadow-md" 
                                                               : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
                                                         }`}
-                                                        onClick={() => handleOrderClick(order.order_id)}
+                                                        onClick={async () => {
+                                                            await Sentry.startSpan({
+                                                                name: 'handleOrderRowClick-admin',
+                                                            }, async () => {
+                                                                handleOrderClick(order.order_id);
+                                                            })
+                                                        }}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Enter' || e.key === ' ') {
                                                                 e.preventDefault();
@@ -575,9 +669,13 @@ export default function Admin() {
                                                         <td className="px-4 py-2">
                                                             <button 
                                                                 className="text-blue-600 hover:text-blue-800 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded px-2 py-1 transition-colors"
-                                                                onClick={(e) => {
+                                                                onClick={async (e) => {
                                                                     e.stopPropagation();
-                                                                    handleOrderClick(order.order_id);
+                                                                    await Sentry.startSpan({
+                                                                        name: 'handleViewItemsButtonClick-admin',
+                                                                    }, async () => {
+                                                                        handleOrderClick(order.order_id);
+                                                                    })
                                                                 }}
                                                                 aria-label={`View items for order ${order.order_id}`}
                                                             >
@@ -587,7 +685,14 @@ export default function Admin() {
                                                         <td className="px-4 py-2 text-black">
                                                             <button
                                                                 className="p-1 text-blue-600 hover:text-blue-800 focus:outline-none"
-                                                                onClick={(e) => handleEditClick(order, e)}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    await Sentry.startSpan({
+                                                                        name: 'handleEditButtonClick-admin',
+                                                                    }, async () => {
+                                                                        handleEditClick(order, e);
+                                                                    })
+                                                                }}
                                                                 aria-label={`Edit order ${order.order_id}`}
                                                             >
                                                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -630,7 +735,13 @@ export default function Admin() {
                                     </div>
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => handlePageChange(currentPage - 1)}
+                                            onClick={async () => {
+                                                await Sentry.startSpan({
+                                                    name: 'handlePageChange-Previous-admin',
+                                                }, async () => {
+                                                    handlePageChange(currentPage - 1);
+                                                })
+                                            }}
                                             disabled={currentPage === 1}
                                             className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 transition-colors"
                                             aria-label="Previous page"
@@ -657,7 +768,13 @@ export default function Admin() {
                                             <span>of {totalPages}</span>
                                         </div>
                                         <button
-                                            onClick={() => handlePageChange(currentPage + 1)}
+                                            onClick={async () => {
+                                                await Sentry.startSpan({
+                                                    name: 'handlePageChange-Next-admin',
+                                                }, async () => {
+                                                    handlePageChange(currentPage + 1);
+                                                })
+                                            }}
                                             disabled={currentPage === totalPages}
                                             className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 transition-colors"
                                             aria-label="Next page"
@@ -696,7 +813,7 @@ export default function Admin() {
             {/* Edit Order Dialog */}
             {editingOrder && (
                 <EditCompOrder
-                    order={editingOrder}
+                    order={editingOrder as Order}
                     onClose={() => setEditingOrder(null)}
                     onSave={() => dispatch(fetchArchivedOrders())}
                 />

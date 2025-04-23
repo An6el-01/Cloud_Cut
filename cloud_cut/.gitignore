@@ -67,3 +67,17 @@ Thumbs.db
 
 # Local Netlify folder
 .netlify
+
+# Sentry Config File
+.env.sentry-build-plugin
+.sentryclirc
+.sentry
+.sentry-native
+
+# Sentry directories
+.sentry-source-maps/
+.next/sentry/
+
+# Sentry release files
+sentry-release-version.txt
+sentry-release-name.txt
