@@ -1423,7 +1423,9 @@ export default function Manufacturing() {
                   </div>
                 ) : error ? (
                   <div className="text-center py-4">
-                    <p className="text-red-500">{error}</p>
+                    <p className="text-lg font-medium">Oops! Something went wrong</p>
+                    <p className="text-red-500">Error: {error}</p>
+                    <p className="text-gray-500">Please try refreshing the orders in the manufacturing queue. If the issue persists, contact support.</p>
                   </div>
                 ) : (
                   <>
@@ -1457,8 +1459,9 @@ export default function Manufacturing() {
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                                 </svg>
-                                <p className="text-lg font-medium">No medium sheets found in pending orders.</p>
-                                <p className="text-sm text-gray-500 mt-1">Orders manufactured today: </p>
+                                <p className="text-lg font-semibold">Great Work! All Medium Sheets Completed!</p>
+                                <p className="text-gray-700 mt-1">No medium sheets left to manufacture.</p>
+                                {/* <p className="text-sm text-gray-500 mt-12">Medium sheets manufactured today: </p> */}
                               </div>
                             </td>
                           </tr>
@@ -1614,6 +1617,11 @@ export default function Manufacturing() {
                       <tbody className="divide-y divide-gray-300">
                         {renderOrdersWithMediumSheet(selectedFoamSheet)}
                       </tbody>
+                      <tfoot>
+                        <tr>
+                          
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>

@@ -13,14 +13,17 @@ interface EditCompOrderProps {
 // Add a new interface for the edited item
 interface EditedItem extends OrderItem {
     isEditing: boolean;
+    modified: boolean;
 }
 
 // Type guard for OrderItem
 function isOrderItem(item: unknown): item is OrderItem {
     if (!item || typeof item !== 'object') return false;
+    
     const i = item as Record<string, unknown>;
-    return (
-        typeof i.id === 'string' &&
+    
+    const isValid = (
+        (typeof i.id === 'number') &&
         typeof i.order_id === 'string' &&
         typeof i.sku_id === 'string' &&
         typeof i.item_name === 'string' &&
@@ -32,6 +35,8 @@ function isOrderItem(item: unknown): item is OrderItem {
         typeof i.created_at === 'string' &&
         typeof i.updated_at === 'string'
     );
+    
+    return isValid;
 }
 
 // Type guard for SKU item
@@ -69,7 +74,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
         try {
             // Try to fetch from active orders first
             const { data: activeItems, error: activeError } = await supabase
-                .from('archived_order_items')
+                .from('order_items')
                 .select('*')
                 .eq('order_id', order.order_id);
 
@@ -78,10 +83,11 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
             }
 
             if (activeItems && activeItems.length > 0) {
-                // If active items found, use them
                 const validItems = activeItems.filter(isOrderItem);
+                
                 const editableItems = validItems.map(item => ({
                     isEditing: false,
+                    modified: false,
                     id: item.id,
                     order_id: item.order_id,
                     sku_id: item.sku_id,
@@ -94,6 +100,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                     created_at: item.created_at,
                     updated_at: item.updated_at
                 })) as EditedItem[];
+                
                 setOrderItems(editableItems);
             } else {
                 // If no active items, try archived items
@@ -109,8 +116,10 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
 
                 if (archivedItems && archivedItems.length > 0) {
                     const validItems = archivedItems.filter(isOrderItem);
+                    
                     const editableItems = validItems.map(item => ({
                         isEditing: false,
+                        modified: false,
                         id: item.id,
                         order_id: item.order_id,
                         sku_id: item.sku_id,
@@ -123,6 +132,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                         created_at: item.created_at,
                         updated_at: item.updated_at
                     })) as EditedItem[];
+                    
                     setOrderItems(editableItems);
                 } else {
                     // No items found in either table
@@ -183,7 +193,8 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
             if (updatedItems[index]) {
                 updatedItems[index] = {
                     ...updatedItems[index],
-                    [field]: value
+                    [field]: value,
+                    modified: true
                 };
             }
             return updatedItems;
@@ -216,14 +227,6 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                 updated_at: new Date().toISOString()
             };
             
-            // const wasCompleted = order.status === 'Completed';
-            // const isPending = updatedOrder.status === 'Pending';
-            
-            // if (wasCompleted && isPending) {
-            //     await handleCompletedToPending(updatedOrder);
-            // } else {
-            //     await handleRegularUpdate(updatedOrder);
-            // }
             await handleRegularUpdate(updatedOrder);
             
             onSave(updatedOrder);
@@ -240,32 +243,6 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
             setIsLoading(false);
         }
     };
-
-    // // Handle transition from Completed to Pending
-    // const handleCompletedToPending = async (updatedOrder: Order) => {
-    //     const { data: archivedItems, error: fetchItemsError } = await supabase
-    //         .from('archived_order_items')
-    //         .select('*')
-    //         .eq('order_id', updatedOrder.order_id);
-        
-    //     if (fetchItemsError) {
-    //         throw new Error(`Failed to fetch archived items: ${fetchItemsError.message}`);
-    //     }
-
-    //     const hasFoamInserts = archivedItems?.some(item => 
-    //         item.sku_id?.startsWith('SFI') || item.sku_id?.startsWith('SFC')
-    //     ) || false;
-
-    //     const orderForInsertion = {
-    //         ...updatedOrder,
-    //         items_completed: 0,
-    //         manufactured: !hasFoamInserts,
-    //         packed: false,
-    //         created_at: new Date().toISOString()
-    //     };
-
-    //     await moveOrderFromArchivedToActive(orderForInsertion, archivedItems || []);
-    // };
 
     // Handle regular order update
     const handleRegularUpdate = async (updatedOrder: Order) => {
@@ -296,55 +273,6 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
         await updateOrderAndItems(orderData, table, itemsTable);
     };
 
-    // Move order from archived to active tables
-    // const moveOrderFromArchivedToActive = async (orderForInsertion: Order, archivedItems: OrderItem[]) => {
-    //     try {
-    //         await supabase
-    //             .from('archived_order_items')
-    //             .delete()
-    //             .eq('order_id', orderForInsertion.order_id);
-
-    //         await supabase
-    //             .from('archived_orders')
-    //             .delete()
-    //             .eq('order_id', orderForInsertion.order_id);
-            
-    //         const orderData = { ...orderForInsertion } as unknown as Record<string, unknown>;
-    //         const { error: insertError } = await supabase
-    //             .from('orders')
-    //             .insert([orderData]);
-
-    //         if (insertError) {
-    //             throw new Error(`Failed to insert order: ${insertError.message}`);
-    //         }
-
-    //         if (archivedItems.length > 0) {
-    //             const itemsToInsert = archivedItems.map(item => ({
-    //                 ...item,
-    //                 completed: false,
-    //                 created_at: new Date().toISOString(),
-    //                 updated_at: new Date().toISOString()
-    //             })) as unknown as Record<string, unknown>[];
-                
-    //             const { error: itemsError } = await supabase
-    //                 .from('order_items')
-    //                 .insert(itemsToInsert);
-
-    //             if (itemsError) {
-    //                 throw new Error(`Failed to insert items: ${itemsError.message}`);
-    //             }
-    //         }
-    //     } catch (error) {
-    //         // Cleanup on failure
-    //         await supabase
-    //             .from('orders')
-    //             .delete()
-    //             .eq('order_id', orderForInsertion.order_id);
-            
-    //         throw error;
-    //     }
-    // };
-
     // Update order and its items
     const updateOrderAndItems = async (updatedOrder: Record<string, unknown>, table: string, itemsTable: string) => {
         // Update the order
@@ -357,12 +285,12 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
             throw new Error(`Failed to update order in ${table}: ${updateError.message}`);
         }
 
-        // Update the items
-        const itemsToUpdate = orderItems.filter(item => item.isEditing);
+        // Update the items that have been modified
+        const itemsToUpdate = orderItems.filter(item => item.modified);
         
         for (const item of itemsToUpdate) {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { isEditing, ...cleanItem } = item;
+            const { isEditing, modified, ...cleanItem } = item;
             const itemData = { ...cleanItem, updated_at: new Date().toISOString() } as unknown as Record<string, unknown>;
             
             // Try to update in primary items table first
@@ -413,20 +341,20 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                         <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                 </button>
-
+                {/**Title */}
                 <h2
                     id="overlay-title"
                     className="text-xl font-bold text-gray-900 dark:text-white mb-4"
                 >
                     Edit Order - {editedOrder.order_id}
                 </h2>
-
+                {/**View in Despatch Cloud button */}
                 <div className="mb-6 flex items-center space-x-2 border-b border-gray-200 dark:border-gray-700 pb-4">
                     <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
                     <a 
-                        href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${editedOrder.id}`}
+                        href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${editedOrder.order_id}`}
                         target="_blank"
                         rel="noopener noreferrer" 
                         className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
@@ -434,7 +362,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                         View in Despatch Cloud
                     </a>
                 </div>
-
+                
                 {isLoading ? (
                     <div className="text-center py-8">
                         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900 dark:border-gray-300 mx-auto"/>
@@ -576,10 +504,10 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                         <thead className="bg-gray-50 dark:bg-gray-800">
                                             <tr>
-                                                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Item Name</th>
-                                                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">SKU</th>
+                                                <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Item Name</th>
+                                                <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">SKU</th>
                                                 <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Quantity</th>
-                                                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Foam Sheet</th>
+                                                <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Foam Sheet</th>
                                                 <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Completed</th>
                                                 <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                                             </tr>
@@ -593,7 +521,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                                                 type="text"
                                                                 value={item.item_name}
                                                                 onChange={(e) => handleItemChange(index, 'item_name', e.target.value)}
-                                                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-200"
+                                                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 text-black dark:text-white"
                                                             />
                                                         ) : (
                                                             <div className="text-sm text-gray-900 dark:text-gray-200">{item.item_name}</div>
@@ -605,7 +533,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                                                 type="text"
                                                                 value={item.sku_id}
                                                                 onChange={(e) => handleItemChange(index, 'sku_id', e.target.value)}
-                                                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-200"
+                                                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 text-black dark:text-white"
                                                             />
                                                         ) : (
                                                             <div className="text-sm text-gray-900 dark:text-gray-200">{item.sku_id}</div>
@@ -618,7 +546,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                                                 min="1"
                                                                 value={item.quantity}
                                                                 onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
-                                                                className="w-16 px-2 py-1 text-sm text-center border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-200"
+                                                                className="w-16 px-2 py-1 text-sm text-center border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 text-black dark:text-white"
                                                             />
                                                         ) : (
                                                             <div className="text-sm text-gray-900 dark:text-gray-200">{item.quantity}</div>
@@ -630,7 +558,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                                                 type="text"
                                                                 value={item.foamsheet || ''}
                                                                 onChange={(e) => handleItemChange(index, 'foamsheet', e.target.value)}
-                                                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-gray-200"
+                                                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 text-black dark:text-white"
                                                             />
                                                         ) : (
                                                             <div className="text-sm text-gray-900 dark:text-gray-200">{item.foamsheet || 'N/A'}</div>

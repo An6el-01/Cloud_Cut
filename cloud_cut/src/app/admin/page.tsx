@@ -6,12 +6,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import Image from 'next/image';
 import { setSelectedOrderId } from "@/redux/slices/ordersSlice";
-import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
+import { subscribeToOrders, subscribeToOrderItems, supabase } from "@/utils/supabase";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import OrderItemsOverlay from '@/components/OrderItemsOverlay';
 import { Order, OrderItem } from '@/types/redux';
 import { createPortal } from 'react-dom';
 import EditCompOrder from '@/components/editCompOrder';
+import DeleteCompletedOrder from '@/components/DeleteCompletedOrder';
 import * as Sentry from '@sentry/nextjs';
 import { fetchArchivedOrders } from '@/redux/thunks/ordersThunks';
 
@@ -220,9 +221,6 @@ const SortDropdown = ({
     );
 };
 
-// Add type guard at the top of the file
-
-
 export default function Admin() {
     const dispatch = useDispatch<AppDispatch>();
     const { archivedOrders, archivedOrderItems } = useSelector((state: RootState) => state.orders);
@@ -234,6 +232,10 @@ export default function Admin() {
     
     // New state to track editing state
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+    
+    // Delete order state
+    const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -369,6 +371,17 @@ export default function Admin() {
             }, 100);
         });
     };
+
+        // Handle edit button click
+    const handleEditClick = (order: Order, e: React.MouseEvent) => {
+        return Sentry.startSpan({
+            name: 'handleEditClick-Admin',
+            op: 'ui.interaction.edit'
+        }, async () => {
+            e.stopPropagation(); // Prevent triggering the row click
+            setEditingOrder(order);
+        });
+    };
     
     // Handle page change
     const handlePageChange = (pageNumber: number) => {
@@ -384,16 +397,67 @@ export default function Admin() {
     };
 
     const handleRefresh = () => {
-        return Sentry.startSpan({
+        Sentry.startSpan({
             name: 'handleRefresh-Admin',
-            op: 'data.refresh'
+            op: 'ui.interaction.function'
         }, async () => {
             setIsRefreshing(true);
             dispatch(fetchArchivedOrders())
-                .finally(() => {
-                    setIsRefreshing(false);
-                });
+            .finally(() => {
+                setIsRefreshing(false);
+            });
         });
+    };
+
+    // Open delete confirmation dialog
+    const handleDeleteClick = (orderId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setOrderToDelete(orderId);
+        setShowDeleteDialog(true);
+    };
+
+    // Handle delete confirmation
+    const handleConfirmDelete = async (orderId: string) => {
+        try {
+            // First, delete items from archived_order_items
+            const { error: itemsError } = await supabase
+                .from('archived_order_items')
+                .delete()
+                .eq('order_id', orderId);
+
+            if (itemsError) {
+                console.error('Error deleting order items:', itemsError);
+                throw new Error(`Failed to delete order items: ${itemsError.message}`);
+            }
+
+            // Then, delete the order from archived_orders
+            const { error: orderError } = await supabase
+                .from('archived_orders')
+                .delete()
+                .eq('order_id', orderId);
+
+            if (orderError) {
+                console.error('Error deleting order:', orderError);
+                throw new Error(`Failed to delete order: ${orderError.message}`);
+            }
+
+            // Refresh the orders list
+            dispatch(fetchArchivedOrders());
+            
+            // Close the dialog
+            setShowDeleteDialog(false);
+            setOrderToDelete(null);
+            
+            // Clear selected order if it's the one being deleted
+            if (selectedOrderId === orderId) {
+                dispatch(setSelectedOrderId(null));
+            }
+        } catch (err) {
+            console.error('Error in handleConfirmDelete:', err);
+            // Close the dialog even if there's an error
+            setShowDeleteDialog(false);
+            setOrderToDelete(null);
+        }
     };
 
     // Request a sort by field
@@ -408,16 +472,7 @@ export default function Admin() {
         });
     }, [sortConfig]);
     
-    // Handle edit button click
-    const handleEditClick = (order: Order, e: React.MouseEvent) => {
-        return Sentry.startSpan({
-            name: 'handleEditClick-Admin',
-            op: 'ui.interaction.edit'
-        }, async () => {
-            e.stopPropagation(); // Prevent triggering the row click
-            setEditingOrder(order);
-        });
-    };
+
     
 
     return (
@@ -540,8 +595,8 @@ export default function Admin() {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                     </div>
-                                    <p className="text-red-600 font-medium mb-2">Error loading orders</p>
-                                    <p className="text-gray-600 mb-4">{error}</p>
+                                    <p className="text-red-600 font-medium mb-2">Error loading completed orders: {error}</p>
+                                    <p className="text-gray-600 mb-4">Please try refreshing the orders in the completed orders table. If the issue persists, contact support.</p>
                                     <button
                                         onClick={async () => {
                                             await Sentry.startSpan({
@@ -705,7 +760,11 @@ export default function Admin() {
                                                                 className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    // Add delete functionality here
+                                                                    Sentry.startSpan({
+                                                                        name: 'handleDeleteButtonClick-admin',
+                                                                    }, async () => {
+                                                                        handleDeleteClick(order.order_id, e);
+                                                                    });
                                                                 }}
                                                                 aria-label={`Delete order ${order.order_id}`}
                                                             >
@@ -816,6 +875,16 @@ export default function Admin() {
                     order={editingOrder as Order}
                     onClose={() => setEditingOrder(null)}
                     onSave={() => dispatch(fetchArchivedOrders())}
+                />
+            )}
+
+            {/* Delete Confirmation Dialog */}
+            {showDeleteDialog && orderToDelete && (
+                <DeleteCompletedOrder
+                    isOpen={showDeleteDialog}
+                    orderId={orderToDelete}
+                    onClose={() => setShowDeleteDialog(false)}
+                    onConfirm={handleConfirmDelete}
                 />
             )}
         </div>
