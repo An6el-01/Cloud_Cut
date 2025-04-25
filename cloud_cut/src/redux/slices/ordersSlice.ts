@@ -312,21 +312,24 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
       error: null,
     };
   } else if (fetchOrdersFromSupabase.fulfilled.match(action)) {
-    const { orders: rawOrders, orderItems: rawItems, total, page, view } = action.payload;
+    const { orders: rawOrders, paginatedOrders: rawPaginatedOrders, orderItems: rawItems, total, page, view } = action.payload;
     const typedOrders = rawOrders as unknown as Order[];
+    const typedPaginatedOrders = rawPaginatedOrders as unknown as Order[];
     const typedItems = rawItems as unknown as Record<string, OrderItem[]>;
     
     // Update state based on view
     if (view === 'manufacturing') {
       newState = {
         ...newState,
-        manufacturingOrders: typedOrders,
+        allOrders: typedOrders, // Store ALL orders
+        manufacturingOrders: typedPaginatedOrders, // Store paginated orders for UI display
         totalManufacturingOrders: total,
       };
     } else if (view === 'packing') {
       newState = {
         ...newState,
-        packingOrders: typedOrders,
+        allOrders: typedOrders, // Store ALL orders
+        packingOrders: typedPaginatedOrders, // Store paginated orders for UI display
         totalPackingOrders: total,
       };
     } else {
@@ -340,7 +343,7 @@ const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction
     
     newState = {
       ...newState,
-      // REPLACE orderItems instead of merging them
+      // REPLACE orderItems with complete set of items for all orders
       orderItems: typedItems,
       currentPage: page,
       loading: false,

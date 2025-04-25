@@ -543,19 +543,18 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       b.calculatedPriority - a.calculatedPriority
     );
 
-    // Now apply pagination to the sorted orders
+    // We still calculate pagination info for the UI, but store ALL orders in state
     const startIndex = (page - 1) * perPage;
     const endIndex = startIndex + perPage;
     const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
 
-    console.log(`Applied pagination: showing orders ${startIndex+1} to ${Math.min(endIndex, sortedOrders.length)} of ${sortedOrders.length}`);
-
-    // Return ALL order items instead of just the ones for the paginated orders
+    console.log(`Calculated pagination info: showing orders ${startIndex+1} to ${Math.min(endIndex, sortedOrders.length)} of ${sortedOrders.length} for UI display`);
     console.log(`Returning all ${Object.keys(allOrderItemsMap).length} order items with ${Object.values(allOrderItemsMap).flat().length} total items`);
 
     return { 
-      orders: paginatedOrders, 
-      orderItems: allOrderItemsMap,  // Return ALL order items instead of just paginated ones
+      orders: sortedOrders, // Return ALL orders instead of just paginated ones 
+      paginatedOrders, // Also include paginated orders for the UI
+      orderItems: allOrderItemsMap,
       total: sortedOrders.length, 
       page, 
       view 

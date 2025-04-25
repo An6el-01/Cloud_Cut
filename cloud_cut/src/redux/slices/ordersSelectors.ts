@@ -82,29 +82,15 @@ export const selectOrderItemsById = (orderId: string) =>
 
 export const selectOrderProgress = (orderId: string) =>
   createSelector([selectOrdersState], orders => {
-    // First check in manufacturing orders
-    let order = orders.manufacturingOrders.find((o) => o.order_id === orderId);
+    // First check in all orders
+    const allItems = orders.orderItems[orderId] || [];
     
-    // If not found, check in packing orders
-    if (!order) {
-      order = orders.packingOrders.find((o) => o.order_id === orderId);
-    }
-
-    // If still not found, check in picking orders
-    if (!order) {
-      order = orders.pickingOrders.find((o) => o.order_id === orderId);
+    if (allItems.length > 0) {
+      const completedCount = allItems.filter(item => item.completed).length;
+      return `${completedCount}/${allItems.length}`;
     }
     
-    // If still not found, check in allOrders
-    if (!order) {
-      order = orders.allOrders.find((o) => o.order_id === orderId);
-    }
-    
-    // Handle the order properties regardless of whether calculatedPriority exists
-    if (order) {
-      return `${order.items_completed}/${order.total_items}`;
-    }
-    
+    // If no items found, return 'N/A'
     return 'N/A';
   });
 

@@ -64,6 +64,11 @@ export default function Manufacturing() {
   const mediumSheetsPerPage = 7;
   const [pendingManufacturedOrders, setPendingManufacturedOrders] = useState<Set<string>>(new Set());
   const [checkedOrders, setCheckedOrders] = useState<Set<string>>(new Set());
+  const [allMediumSheetOrdersChecked, setAllMediumSheetOrdersChecked] = useState(false);
+  const [orderIdsToPacking, setOrderIdsToPacking] = useState<string[]>([]);
+  const [orderIdsToMarkCompleted, setOrderIdsToMarkCompleted] = useState<string[]>([]);
+  // Add a new state to track the current progress value for the confirmation dialog
+  const [currentOrderProgress, setCurrentOrderProgress] = useState<string | undefined>(undefined);
 
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
@@ -257,7 +262,31 @@ export default function Manufacturing() {
 
   // Function to handle clicking on a medium sheet row
   const handleMediumSheetClick = (sku: string) => {
-    setSelectedFoamSheet(selectedFoamSheet === sku ? null : sku);
+    // Toggle selection: if clicking the same sheet, deselect it; otherwise select the new sheet
+    const newSelectedSheet = selectedFoamSheet === sku ? null : sku;
+    setSelectedFoamSheet(newSelectedSheet);
+    
+    // Reset any checkboxes and processing states
+    setAllMediumSheetOrdersChecked(false);
+    setCheckedOrders(new Set());
+    
+    if (newSelectedSheet) {
+      // If a sheet was selected (not deselected), force a refresh of the orders data
+      setLoadingMediumSheetOrders(true);
+      
+      // Clear any cached orders data for this sheet to force a fresh fetch
+      setOrdersWithMediumSheets(prev => {
+        const newState = { ...prev };
+        // Remove the cached data to force a refetch
+        if (newSelectedSheet in newState) {
+          delete newState[newSelectedSheet];
+        }
+        return newState;
+      });
+      
+      // Immediately call findOrdersWithMediumSheet to trigger a fresh fetch
+      findOrdersWithMediumSheet(newSelectedSheet);
+    }
   };
 
   // Custom order progress selector that only considers filtered items
@@ -582,7 +611,7 @@ export default function Manufacturing() {
         return;
       }
 
-      // Get the relevant items (those with SKUs starting with SFI or SFC)
+      // Get the relevant items (those with SKUs starting with SFI, SFC, or SFS)
       const relevantItems = filterItemsBySku(selectedOrderItems);
       
       // Count how many items are already completed
@@ -592,12 +621,39 @@ export default function Manufacturing() {
       
       // Check if this is the last item to complete
       if (completedItems.length === relevantItems.length && completed) {
-        // Store the pending item completion details
+        console.log("Manufacturing: Last item completion detected, setting up dialog", {
+          orderId,
+          itemId,
+          relevantItems: relevantItems.length,
+          completedItems: completedItems.length
+        });
+        
+        // Store the pending item to complete
         setPendingItemToComplete({
           orderId,
           itemId,
           completed
         });
+        
+        // Calculate fresh progress for this order
+        const freshProgress = calculateOrderProgress(orderId);
+        console.log("Manufacturing: Calculated fresh progress:", freshProgress);
+        setCurrentOrderProgress(freshProgress);
+        
+        // Set the arrays directly without resetting first
+        const orderIdsForPacking: string[] = [orderId];
+        const orderIdsForCompleted: string[] = [];
+        
+        // Update state with these arrays
+        setOrderIdsToPacking(orderIdsForPacking);
+        setOrderIdsToMarkCompleted(orderIdsForCompleted);
+        
+        // Log the updated order arrays state before showing dialog
+        console.log("Manufacturing: Current order arrays state before showing dialog:", {
+          orderIdsToPacking: orderIdsForPacking,
+          orderIdsToMarkCompleted: orderIdsForCompleted
+        });
+        
         // Show confirmation dialog
         setShowConfirmDialog(true);
       } else {
@@ -607,33 +663,69 @@ export default function Manufacturing() {
     });
   };
 
-  const handleMarkManufactured = (orderId: string) => {
+  const handleMarkManufactured = (packingOrderIds: string[], markCompletedOrderIds: string[]) => {
     return Sentry.startSpan({
       name: 'handleMarkManufactured',
       op: 'business.function'
     }, async () => {
+      console.log("Manufacturing: handleMarkManufactured called with:", {
+        packingOrderIds,
+        markCompletedOrderIds,
+        orderIdsToPacking,
+        orderIdsToMarkCompleted
+      });
+      
       // Close the confirmation dialog
       setShowConfirmDialog(false);
       
-      // Add this order to pending manufactured orders for UI feedback
-      setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
+      // Reset the orderIds arrays immediately
+      setOrderIdsToPacking([]);
+      setOrderIdsToMarkCompleted([]);
       
-      if (pendingItemToComplete) {
-        // Mark the item as completed
-        dispatch(updateItemCompleted(pendingItemToComplete));
+      console.log("Manufacturing: Dialog closed, beginning order processing");
+      
+      // Process orders that should be marked as manufactured (ready for packing)
+      for (const orderId of packingOrderIds) {
+        // Add this order to pending manufactured orders for UI feedback
+        setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
         
-        console.log(`Marking order ${orderId} as manufactured`);
+        console.log(`Manufacturing: Marking order ${orderId} as manufactured`);
         // Show loading state
         setIsRefreshing(true);
         
-        // Update the manufactured status in Redux and Supabase
         try {
+          // Update the manufactured status in Redux and Supabase
           dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
-          
-          // Refresh the orders list to remove the manufactured order after a delay
-          // to ensure the Supabase update completes
+        } catch (error) {
+          console.error("Error marking order as manufactured:", error);
+        }
+      }
+      
+      // Process orders where only specific items should be marked as completed
+      for (const orderId of markCompletedOrderIds) {
+        // Find the items with the current medium sheet SKU
+        const orderItems = allOrderItems[orderId] || [];
+        const mediumSheetItems = orderItems.filter(item => 
+          item.sku_id === selectedFoamSheet && !item.completed
+        );
+        
+        // Mark each medium sheet item as completed
+        for (const item of mediumSheetItems) {
+          try {
+            dispatch(updateItemCompleted({ 
+              orderId, 
+              itemId: item.id, 
+              completed: true 
+            }));
+          } catch (error) {
+            console.error(`Error marking item ${item.id} as completed:`, error);
+          }
+        }
+      }
+      
+      // Refresh the orders list after a delay to ensure updates complete
           setTimeout(() => {
-            console.log(`Refreshing orders after marking ${orderId} as manufactured`);
+        console.log(`Refreshing orders after processing`);
             
             // Refresh orders data
             dispatch(fetchOrdersFromSupabase({ 
@@ -646,45 +738,22 @@ export default function Manufacturing() {
             }))
             .finally(() => {
               setIsRefreshing(false);
-              // Clear the pending item
+          // Clear pending states
               setPendingItemToComplete(null);
-              // Remove this order from pending manufactured orders
-              setPendingManufacturedOrders(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(orderId);
-                return newSet;
-              });
-              
-              // Refresh medium sheets
+          setPendingManufacturedOrders(new Set());
+          setCheckedOrders(new Set());
+          setAllMediumSheetOrdersChecked(false);
+          
+          // Refresh medium sheets view if active
               if (activeTab === 'medium' && selectedFoamSheet) {
-                // Force refresh of medium sheets data by temporarily clearing and then resetting selectedFoamSheet
+            // Force refresh by temporarily clearing and resetting the selected foam sheet
                 const currentSheet = selectedFoamSheet;
                 setSelectedFoamSheet(null);
                 setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
               }
             });
-          }, 2000); // Increased delay to ensure Supabase update completes
-        } catch (error) {
-          console.error("Error marking order as manufactured:", error);
-          setIsRefreshing(false);
-          setPendingItemToComplete(null);
-          // Remove this order from pending manufactured orders on error
-          setPendingManufacturedOrders(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(orderId);
-            return newSet;
-          });
-        }
-      }
+      }, 2000);
     });
-  };
-
-  // Function to handle cancellation of the confirmation dialog
-  const handleCancelConfirm = () => {
-    // Close the dialog
-    setShowConfirmDialog(false);
-    // Clear the pending item
-    setPendingItemToComplete(null);
   };
 
   const handleRefresh = () => {
@@ -846,7 +915,7 @@ export default function Manufacturing() {
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={skuItems.length > 0 && skuItems.every(item => item.completed)}
+                  checked={checkedOrders.has(order.order_id)}
                   onChange={async (e) => {
                     await Sentry.startSpan({
                       name: 'ToggleItemCompletion-MediumSheets',
@@ -886,12 +955,17 @@ export default function Manufacturing() {
                         !allOrderSkuItems.some(skuItem => skuItem.id === item.id)
                       );
                       
-                      // If no remaining items after marking these as completed, show confirmation
-                      if (remainingItems.length === 0) {
-                        // This would complete all manufacturing items
+                      // Determine if this order would be ready for packing or just mark completed
+                      const readyForPacking = remainingItems.length === 0;
+                      
+                      // Reset the array states to avoid conflicts with batch processing
+                      setOrderIdsToPacking([]);
+                      setOrderIdsToMarkCompleted([]);
+                      
+                      // Set the orderId for individual processing
                         setSelectedOrderId(order.order_id);
                         
-                        // Store the first item to complete after confirmation
+                      // Store the pending item info for the single order case
                         if (skuItems.length > 0) {
                           setPendingItemToComplete({
                             orderId: order.order_id,
@@ -900,59 +974,31 @@ export default function Manufacturing() {
                           });
                         }
                         
-                        // Show confirmation dialog
-                        setShowConfirmDialog(true);
+                      // Calculate fresh progress for this order
+                      const freshProgress = calculateOrderProgress(order.order_id);
+                      setCurrentOrderProgress(freshProgress);
+                      
+                      // Prepare the appropriate arrays based on whether this order is ready for packing
+                      if (readyForPacking) {
+                        setOrderIdsToPacking([order.order_id]);
                       } else {
-                        // Not the last items, mark relevant items as completed
-                        skuItems.forEach(item => {
-                          dispatch(updateItemCompleted({
-                            orderId: order.order_id,
-                            itemId: item.id,
-                            completed: true
-                          }));
-                        });
-                        
-                        // Check if all orders with this medium sheet will be completed
-                        const ordersWithSheet = findOrdersWithMediumSheet(sku);
-                        const hasOtherOrdersWithSheet = ordersWithSheet.some(o => 
-                          o.order_id !== order.order_id && 
-                          allOrderItems[o.order_id]?.some(item => 
-                            item.sku_id === sku && !item.completed
-                          )
-                        );
-                        
-                        // If this was the last order with this medium sheet, reset the selectedFoamSheet
-                        if (!hasOtherOrdersWithSheet) {
-                          setTimeout(() => {
-                            setSelectedFoamSheet(null);
-                          }, 800); // Delay slightly to allow animation to complete
-                        }
-                        
-                        // Refresh orders and medium sheets data
-                        setTimeout(() => {
-                          // Refresh the orders list
-                          dispatch(fetchOrdersFromSupabase({ 
-                            page: currentPage, 
-                            perPage: ordersPerPage,
-                            manufactured: false,
-                            packed: false,
-                            status: "Pending",
-                            view: 'manufacturing'
-                          }));
-                        }, 500);
+                        setOrderIdsToMarkCompleted([order.order_id]);
                       }
+                      
+                      // Show the confirmation dialog for the single order
+                      setShowConfirmDialog(true);
                     });
                   }}
                   className="sr-only peer"
                   aria-label={`Mark all items for order ${order.order_id} as completed`}
                 />
                 <div className="w-5 h-5 border-2 border-gray-400 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                  {skuItems.length > 0 && skuItems.every(item => item.completed) && 
+                  {checkedOrders.has(order.order_id) && (
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
                       <path d="m9 12 2 2 4-4"/>
                     </svg>
-                  }
+                  )}
                 </div>
               </label>
             </div>
@@ -962,7 +1008,162 @@ export default function Manufacturing() {
     });
   };
 
+  // Function to mark all orders with the selected medium sheet as manufactured
+  const markAllMediumSheetOrdersAsManufactured = () => {
+    Sentry.startSpan({
+      name: 'markAllMediumSheetOrdersAsManufactured',
+    }, async () => {
+    console.log('markAllMediumSheetOrdersAsManufactured');
+      if (selectedFoamSheet) {
+        // Toggle the main checkbox state
+        const newCheckedState = !allMediumSheetOrdersChecked;
+        setAllMediumSheetOrdersChecked(newCheckedState);
+        
+        // Get all orders with the selected medium sheet
+        const ordersWithSheet = findOrdersWithMediumSheet(selectedFoamSheet);
+        
+        // Create a new Set for checked orders
+        const newCheckedOrders = new Set(checkedOrders);
+        
+        // If toggling to checked state, add all orders to the checked set
+        // If toggling to unchecked state, remove all orders from the checked set
+        ordersWithSheet.forEach(order => {
+          if (newCheckedState) {
+            newCheckedOrders.add(order.order_id);
+          } else {
+            newCheckedOrders.delete(order.order_id);
+          }
+        });
+        
+        // Update the checked orders state
+        setCheckedOrders(newCheckedOrders);
+        
+        // If we're checking the main checkbox, process all orders for manufacturing actions
+        if (newCheckedState) {
+          // Arrays to store order IDs based on their status
+          const orderIdsForPacking: string[] = [];
+          const orderIdsForMarkCompleted: string[] = [];
+          
+          // Process each order with this medium sheet
+          for (const order of ordersWithSheet) {
+            // Get all items for this order
+            const orderItems = allOrderItems[order.order_id] || [];
+            
+            // Get all manufacturing items (items with SKU starting with SFI, SFC, or SFS)
+            const manufacturingItems = orderItems.filter(item => 
+              (item.sku_id.startsWith('SFI') || 
+               item.sku_id.startsWith('SFC') || 
+               item.sku_id.startsWith('SFS')) && 
+              !item.completed
+            );
+            
+            // Get items with the current medium sheet SKU
+            const mediumSheetItems = orderItems.filter(item => 
+              item.sku_id === selectedFoamSheet && !item.completed
+            );
+            
+            // Case A: The medium sheet is the ONLY item in the order that needs manufacturing
+            const isOnlyManufacturingItem = manufacturingItems.length === mediumSheetItems.length;
+            
+            // Case B: The medium sheet is the LAST item left to be manufactured
+            const isLastManufacturingItem = 
+              manufacturingItems.every(item => 
+                mediumSheetItems.some(mediumItem => mediumItem.id === item.id)
+              );
+            
+            // If either case is true, add to packing array, otherwise add to mark completed
+            if (isOnlyManufacturingItem || isLastManufacturingItem) {
+              orderIdsForPacking.push(order.order_id);
+            } else {
+              orderIdsForMarkCompleted.push(order.order_id);
+            }
+          }
+          
+          // Store the arrays in state and show the confirmation dialog
+          setOrderIdsToPacking(orderIdsForPacking);
+          setOrderIdsToMarkCompleted(orderIdsForMarkCompleted);
+          
+          // Log the results
+          console.log('Manufacturing: Batch Order Processing:', { 
+            orderIdsForPacking,
+            orderIdsForMarkCompleted,
+            totalOrders: orderIdsForPacking.length + orderIdsForMarkCompleted.length
+          });
+          
+          // Show the confirmation dialog if we have any orders to process
+          if (orderIdsForPacking.length > 0 || orderIdsForMarkCompleted.length > 0) {
+            // For batch processing, we don't need a specific progress value
+            console.log("Manufacturing: Setting up batch processing confirmation dialog");
+            setCurrentOrderProgress(undefined);
+            
+            // Log the state just before showing the dialog
+            setTimeout(() => {
+              console.log("Manufacturing: State just before showing batch dialog:", {
+                orderIdsToPacking, 
+                orderIdsToMarkCompleted,
+                currentOrderProgress: undefined,
+                showConfirmDialog: false // Will be set to true next
+              });
+            }, 0);
+            
+            setShowConfirmDialog(true);
+            
+            // Log that we've triggered the dialog
+            console.log("Manufacturing: Batch confirmation dialog triggered");
+          }
+        }
+      }
+    });
+  }
 
+  // Add a useEffect to refresh orders data when selectedFoamSheet changes
+  useEffect(() => {
+    if (selectedFoamSheet && activeTab === 'medium') {
+      // Force refresh of orders with this medium sheet
+      setLoadingMediumSheetOrders(true);
+      
+      // Call findOrdersWithMediumSheet to trigger a fresh fetch
+      const ordersWithSheet = findOrdersWithMediumSheet(selectedFoamSheet);
+      
+      // If we already have data, we're done loading
+      if (ordersWithSheet.length > 0) {
+        setLoadingMediumSheetOrders(false);
+      }
+    }
+  }, [selectedFoamSheet, activeTab]);
+
+  // Add a function to calculate the latest progress for an order
+  const calculateOrderProgress = (orderId: string): string => {
+    // Get all items for this order from the global allOrderItems
+    const items = allOrderItems[orderId] || [];
+    const filteredItems = filterItemsBySku(items);
+    
+    if (filteredItems.length === 0) {
+      return "N/A";
+    } else {
+      const completedCount = filteredItems.filter(item => item.completed).length;
+      return `${completedCount}/${filteredItems.length}`;
+    }
+  };
+
+  // Fetch orders when the component mounts or when page changes
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        await dispatch(fetchOrdersFromSupabase({
+          page: currentPage,
+          perPage: ordersPerPage,
+          manufactured: false,
+          status: "Pending",
+          view: "manufacturing"
+        }));
+      } catch (error) {
+        console.error('Error fetching orders:', error);
+      }
+    };
+
+    fetchOrders();
+  }, [dispatch, currentPage, ordersPerPage]);
 
   return (
     <div className="min-h-screen">
@@ -1003,6 +1204,20 @@ export default function Manufacturing() {
                 name: 'setActiveTab-MediumSheets',
               }, async () => {
                 setActiveTab('medium');
+                // If there's a selected foam sheet, refresh its orders
+                if (selectedFoamSheet) {
+                  setLoadingMediumSheetOrders(true);
+                  // Clear cache to force refresh
+                  setOrdersWithMediumSheets(prev => {
+                    const newState = { ...prev };
+                    if (selectedFoamSheet in newState) {
+                      delete newState[selectedFoamSheet];
+                    }
+                    return newState;
+                  });
+                  // Trigger refresh by calling findOrdersWithMediumSheet
+                  findOrdersWithMediumSheet(selectedFoamSheet);
+                }
               });
             } }
               className="relative rounded-full font-medium transition-all duration-300 z-10 flex-1 py-2 px-3"
@@ -1404,7 +1619,7 @@ export default function Manufacturing() {
         </div>
       )}
       
-      {/* Medium Sheets Tab Active Section */}      
+      {/* Medium Sheets Tab Active Section */}
       {activeTab === 'medium' && (
         <div className="container mx-auto pt-6 pb-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
           {/**Medium Sheets Section */}
@@ -1611,7 +1826,31 @@ export default function Manufacturing() {
                           <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Customer</th>
                           <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
                           <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Qty</th>
-                          <th className="px-4 py-4 text-center text-lg font-semibold text-gray-200">Completed</th>
+                          <th className="px-4 py-4 text-center">
+                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                              <label className={`relative inline-flex items-center ${selectedFoamSheet ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={allMediumSheetOrdersChecked}
+                                  onChange={() => {
+                                    markAllMediumSheetOrdersAsManufactured();
+                                  }}
+                                  className="sr-only peer"
+                                  aria-label="Mark all medium sheet orders as manufactured"
+                                  aria-disabled={!selectedFoamSheet}
+                                  disabled={!selectedFoamSheet}
+                                />
+                                <div className="w-5 h-5 border-2 border-gray-200 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                  {allMediumSheetOrdersChecked && (
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                                    <path d="m9 12 2 2 4-4"/>
+                                  </svg>
+                                  )}
+                                </div>
+                              </label>
+                            </div>
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-300">
@@ -1632,12 +1871,42 @@ export default function Manufacturing() {
       )}
       
       {/* Confirmation Dialog */}
-      {showConfirmDialog && selectedOrder && (
+      {showConfirmDialog && (
         <ManuConfirm
           isOpen={showConfirmDialog}
-          onClose={handleCancelConfirm}
-          onConfirm={() => handleMarkManufactured(selectedOrder.order_id)}
-          orderId={selectedOrder.order_id}
+          onClose={() => {
+            console.log("Manufacturing: ManuConfirm onClose triggered, current dialog state:", {
+              orderIdsToPacking,
+              orderIdsToMarkCompleted,
+              currentOrderProgress,
+              pendingItemToComplete
+            });
+            setShowConfirmDialog(false);
+            // Clear any pending item state
+            setPendingItemToComplete(null);
+            // Reset all checkbox states
+            setAllMediumSheetOrdersChecked(false);
+            setCheckedOrders(new Set());
+            // Reset progress
+            setCurrentOrderProgress(undefined);
+            // Reset order arrays
+            setOrderIdsToPacking([]);
+            setOrderIdsToMarkCompleted([]);
+            
+            // Log state after resetting
+            console.log("Manufacturing: State after dialog close:", {
+              showConfirmDialog: false,
+              pendingItemToComplete: null,
+              orderIdsToPacking: [],
+              orderIdsToMarkCompleted: [],
+              currentOrderProgress: undefined
+            });
+          }}
+          onConfirm={handleMarkManufactured}
+          orderId={selectedOrderId}
+          orderIdsToPacking={orderIdsToPacking}
+          orderIdsToMarkCompleted={orderIdsToMarkCompleted}
+          orderProgress={currentOrderProgress}
         />
       )}
     </div>
