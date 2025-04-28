@@ -29,6 +29,43 @@ export default function Team() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const router = useRouter();
 
+  // Add useEffect to clear success message after 10 seconds
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess(null);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
+
+  // Add useEffect to clear error message after 10 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const profilesPerPage = 7;
+  
+  // Calculate pagination values
+  const indexOfLastProfile = currentPage * profilesPerPage;
+  const indexOfFirstProfile = indexOfLastProfile - profilesPerPage;
+  const currentProfiles = profiles.slice(indexOfFirstProfile, indexOfLastProfile);
+  const totalPages = Math.ceil(profiles.length / profilesPerPage);
+
+  // Handle page change
+  const handlePageChange = (pageNumber: number) => {
+    if (pageNumber >= 1 && pageNumber <= totalPages) {
+      setCurrentPage(pageNumber);
+    }
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -334,7 +371,7 @@ export default function Team() {
           </div>
           <div className="overflow-x-auto bg-white rounded-b-lg shadow-lg">
             <table className="w-full border border-gray-200">
-              <thead className="bg-gray-100">
+              <thead className="bg-gray-100 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-4 text-center text-black text-md font-semibold">Name</th>
                   <th className="px-12 py-4 text-center text-black text-md font-semibold">Email</th>
@@ -343,43 +380,121 @@ export default function Team() {
                   <th className="px-6 py-4 text-center text-black text-md font-semibold">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {profiles.map((profile) => (
-                  <tr key={profile.id} className="hover:bg-gray-50 text-center transition-colors">
-                    <td className="px-6 py-4 text-black">{profile.name}</td>
-                    <td className="px-12 py-4 text-black">{profile.email}</td>
-                    <td className="px-12 py-4 text-black">{profile.phone}</td>
-                    <td className="px-12 py-4 text-black">{profile.role}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex justify-center space-x-4">
-                        <button 
-                          onClick={() => handleEdit(profile)}
-                          className="p-2 text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 rounded-lg transition-colors"
-                        >
-                          <Image
-                            src="/editPencil.png"
-                            alt=""
-                            width={20}
-                            height={20}
-                          />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(profile.id)}
-                          className="p-2 text-gray-600 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 rounded-lg transition-colors"
-                        >
-                          <Image
-                            src="/binClosed.png"
-                            alt=""
-                            width={20}
-                            height={20}
-                          />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
             </table>
+            <div className="h-[calc(80vh-370px)] overflow-y-auto">
+              <table className="w-full border border-gray-200">
+                <tbody className="divide-y divide-gray-200">
+                  {isLoading ? (
+                    // Skeleton loading rows
+                    [...Array(7)].map((_, index) => (
+                      <tr key={`skeleton-${index}`} className="animate-pulse" aria-hidden="true">
+                        <td className="px-6 py-4">
+                          <div className="h-4 bg-gray-200 rounded w-24 mx-auto"></div>
+                        </td>
+                        <td className="px-12 py-4">
+                          <div className="h-4 bg-gray-200 rounded w-32 mx-auto"></div>
+                        </td>
+                        <td className="px-12 py-4">
+                          <div className="h-4 bg-gray-200 rounded w-24 mx-auto"></div>
+                        </td>
+                        <td className="px-12 py-4">
+                          <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-center space-x-4">
+                            <div className="h-8 w-8 bg-gray-200 rounded"></div>
+                            <div className="h-8 w-8 bg-gray-200 rounded"></div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    currentProfiles.map((profile) => (
+                      <tr key={profile.id} className="hover:bg-gray-50 text-center transition-colors">
+                        <td className="px-6 py-4 text-black">{profile.name}</td>
+                        <td className="px-12 py-4 text-black">{profile.email}</td>
+                        <td className="px-12 py-4 text-black">{profile.phone}</td>
+                        <td className="px-12 py-4 text-black">{profile.role}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-center space-x-4">
+                            <button 
+                              onClick={() => handleEdit(profile)}
+                              className="p-2 text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 rounded-lg transition-colors"
+                            >
+                              <Image
+                                src="/editPencil.png"
+                                alt=""
+                                width={20}
+                                height={20}
+                              />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(profile.id)}
+                              className="p-2 text-gray-600 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 rounded-lg transition-colors"
+                            >
+                              <Image
+                                src="/binClosed.png"
+                                alt=""
+                                width={20}
+                                height={20}
+                              />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* Pagination controls */}
+            {profiles.length > 0 && (
+              <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 border-t border-gray-200">
+                <div className="text-sm text-gray-600 mb-3 sm:mb-0">
+                  Showing <span className="font-medium">{indexOfFirstProfile + 1}</span> to{" "}
+                  <span className="font-medium">{Math.min(indexOfLastProfile, profiles.length)}</span> of{" "}
+                  <span className="font-medium">{profiles.length}</span>{" "}
+                  team members
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 transition-colors"
+                    aria-label="Previous page"
+                  >
+                    Previous
+                  </button>
+                  <div className="flex items-center px-3 py-1 text-gray-600">
+                    <label htmlFor="page-number" className="sr-only">Page number</label>
+                    <input
+                      id="page-number"
+                      type="number"
+                      min="1"
+                      max={totalPages}
+                      value={currentPage}
+                      onChange={(e) => {
+                        const page = parseInt(e.target.value);
+                        if (!isNaN(page) && page >= 1 && page <= totalPages) {
+                          handlePageChange(page);
+                        }
+                      }}
+                      className="w-12 text-center border border-gray-300 rounded mx-2 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      aria-label={`Page ${currentPage} of ${totalPages}`}
+                    />
+                    <span>of {totalPages}</span>
+                  </div>
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 transition-colors"
+                    aria-label="Next page"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -582,7 +582,7 @@ export default function Admin() {
                     {/* Table Container */}
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm relative" style={{ zIndex: 1 }}>
                         <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
-                            {loading ? (
+                            {loading || !archivedOrders ? (
                                 <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6 text-black">
                                     <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4" aria-hidden="true"></div>
                                     <p className="font-medium" role="status">Loading orders...</p>
