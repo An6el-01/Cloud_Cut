@@ -178,111 +178,70 @@ export default function Packing() {
                 // Directly set the selected order so the UI can prepare for it
                 dispatch(setSelectedOrderId(orderId));
                 
-                // Query all packing orders with proper filters to calculate pagination
-                const { data: packingOrders, error } = await supabase
+                // Fetch packing orders from Supabase
+                const { data: packingOrders, error: ordersError } = await supabase
                     .from('orders')
                     .select('*')
                     .eq('status', 'Pending')
                     .eq('manufactured', true)
-                    .eq('packed', false);
-                    
-                if (error) {
-                    console.error('Error fetching packing orders:', error);
-                    setIsRefreshing(false);
-                    return;
-                }
-                    
-                console.log(`Fetched ${packingOrders?.length || 0} total packing orders`);
+                    .eq('packed', false)
+                    .order('order_date', { ascending: false });
                 
-                if (!packingOrders || packingOrders.length === 0) {
-                    console.error('No packing orders found');
-                    setIsRefreshing(false);
-                    return;
+                if (ordersError) {
+                    throw ordersError;
                 }
                 
-                // Verify the order exists in the fetched orders
+                // Check if the order exists in the fetched data
                 const orderExists = packingOrders.some(order => order.order_id === orderId);
+                
                 if (!orderExists) {
-                    console.error(`Order ${orderId} not found in packing orders`);
-                    setIsRefreshing(false);
                     return;
                 }
                 
-                console.log(`Order ${orderId} found in packing orders`);
-                
-                // Sort the orders the SAME WAY as they appear in your table
+                // Sort orders by priority
                 const sortedOrders = [...packingOrders].sort((a, b) => {
-                    // Get items for these orders to determine priority
-                    const aItems = state.orders.orderItems[a.order_id as string] || [];
-                    const bItems = state.orders.orderItems[b.order_id as string] || [];
+                    const orderItemsA = state.orders.orderItems[a.order_id as string] as OrderItem[] || [];
+                    const orderItemsB = state.orders.orderItems[b.order_id as string] as OrderItem[] || [];
                     
-                    // Calculate max priority for each order
-                    const aMaxPriority = aItems.length > 0 
-                        ? Math.max(...aItems.map((item: OrderItem) => item.priority || 0)) 
-                        : 0;
-                    const bMaxPriority = bItems.length > 0
-                        ? Math.max(...bItems.map((item: OrderItem) => item.priority || 0))
-                        : 0;
+                    const priorityA = orderItemsA.length > 0 ? Math.max(...orderItemsA.map(item => item.priority || 0)) : 0;
+                    const priorityB = orderItemsB.length > 0 ? Math.max(...orderItemsB.map(item => item.priority || 0)) : 0;
                     
-                    // Sort by priority (highest first)
-                    return bMaxPriority - aMaxPriority;
+                    return priorityB - priorityA;
                 });
                 
-                
-                // Find the index of our target order in the sorted list
+                // Find the index of the selected order in the sorted list
                 const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
-                console.log(`Order ${orderId} is at index ${orderIndex} in the sorted list`);
                 
-                // Calculate which page it should be on (1-indexed)
+                // Calculate which page the order should be on
                 const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
-                console.log(`Target page for order: ${targetPage}`);
                 
-                // If we're already on the right page, no need to navigate
-                if (targetPage === currentPage) {
+                if (targetPage !== currentPage) {
+                    // Navigate to the correct page
+                    await handlePageChange(targetPage);
                     
-                    // Scroll to the row
-                    setTimeout(() => {
-                        console.log('Attempting to scroll to selected row');
-                        if (selectedRowRef.current) {
-                            selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-                        } else {
-                            console.log('Selected row not found - but we are on the right page');
-                            console.log('Current orders:', orders.map(o => o.order_id).join(', '));
-                        }
-                    }, 100);
+                    // Re-set the selected order ID after navigation
+                    dispatch(setSelectedOrderId(orderId));
+                    
+                    // Wait for the DOM to update with the new page
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Attempt to scroll to the selected row after navigation
+                    const selectedRow = document.getElementById(`order-row-${orderId}`);
+                    if (selectedRow) {
+                        selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 } else {
+                    // Wait for the DOM to update
+                    await new Promise(resolve => setTimeout(resolve, 100));
                     
-                    await dispatch(fetchOrdersFromSupabase({
-                        page: targetPage,
-                        perPage: ordersPerPage,
-                        manufactured: true,
-                        packed: false,
-                        status: "Pending",
-                        view: 'packing'
-                    }));
-                    
-                    console.log(`Navigated to page ${targetPage}`);
-                    
-                    // Set selected order ID again after navigation
-                    setTimeout(() => {
-                        console.log(`Re-setting selected order ID to ${orderId} after navigation`);
-                        dispatch(setSelectedOrderId(orderId));
-                        
-                        // Scroll to the selected row
-                        setTimeout(() => {
-                            console.log('Attempting to scroll to selected row after navigation');
-                            if (selectedRowRef.current) {
-                                selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-                                console.log('Scrolled to selected row');
-                            } else {
-                                console.log('Selected row not found after navigation');
-                                console.log('Current orders after navigation:', orders.map(o => o.order_id).join(', '));
-                            }
-                        }, 500);
-                    }, 200);
+                    // Scroll to the selected row
+                    const selectedRow = document.getElementById(`order-row-${orderId}`);
+                    if (selectedRow) {
+                        selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
             } catch (error) {
-                console.error('Error in handleOrderClick:', error);
+                Sentry.captureException(error);
             } finally {
                 setIsRefreshing(false);
             }
@@ -957,12 +916,30 @@ export default function Packing() {
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-700/50 bg-gray-900/20">
-                                                        {selectedOrderItems.map((item) => (
-                                                            <tr key={item.id} className="hover:bg-gray-800/40 transition-colors duration-150">
-                                                                <td className="px-6 py-4 text-left text-gray-200 font-medium">{item.item_name}</td>
-                                                                <td className="px-6 py-4 text-center text-gray-300">{item.quantity}</td>
-                                                            </tr>
-                                                        ))}
+                                                        {(() => {
+                                                            // Group items by SKU
+                                                            const groupedItems = selectedOrderItems.reduce((acc, item) => {
+                                                                const key = item.sku_id;
+                                                                if (!acc[key]) {
+                                                                    acc[key] = {
+                                                                        ...item,
+                                                                        quantity: 0
+                                                                    };
+                                                                }
+                                                                acc[key].quantity += item.quantity;
+                                                                return acc;
+                                                            }, {} as Record<string, OrderItem>);
+
+                                                            // Convert grouped items to array and sort them
+                                                            return Object.values(groupedItems)
+                                                                .sort((a, b) => a.item_name.localeCompare(b.item_name))
+                                                                .map((item) => (
+                                                                    <tr key={item.sku_id} className="hover:bg-gray-800/40 transition-colors duration-150">
+                                                                        <td className="px-6 py-4 text-left text-gray-200 font-medium">{item.item_name}</td>
+                                                                        <td className="px-6 py-4 text-center text-gray-300">{item.quantity}</td>
+                                                                    </tr>
+                                                                ));
+                                                        })()}
                                                     </tbody>
                                                 </table>
                                             </div>
