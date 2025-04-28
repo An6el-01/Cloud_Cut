@@ -523,14 +523,14 @@ export default function Manufacturing() {
         
         // Calculate max priority for each order
         const aMaxPriority = aItems.length > 0 
-            ? Math.max(...aItems.map((item: OrderItem) => item.priority || 0)) 
-            : 0;
+            ? Math.min(...aItems.map((item: OrderItem) => item.priority ?? 10)) 
+            : 10;
         const bMaxPriority = bItems.length > 0
-            ? Math.max(...bItems.map((item: OrderItem) => item.priority || 0))
-            : 0;
+            ? Math.min(...bItems.map((item: OrderItem) => item.priority ?? 10))
+            : 10;
         
-        // Sort by priority (highest first)
-        return bMaxPriority - aMaxPriority;
+        // Sort by priority (lowest first)
+        return aMaxPriority - bMaxPriority;
       });
       
       // Find the index of our target order in the sorted list
@@ -849,8 +849,8 @@ export default function Manufacturing() {
     const ordersWithPriorities = ordersWithSheet.map(order => {
       const items = allOrderItems[order.order_id] || [];
       const maxPriority = items.length > 0 
-        ? Math.max(...items.map(item => item.priority || 0)) 
-        : 0;
+        ? Math.min(...items.map(item => item.priority ?? 10)) 
+        : 10;
       
       return {
         ...order,
@@ -858,8 +858,8 @@ export default function Manufacturing() {
       };
     });
     
-    // Sort orders by priority (highest first)
-    const sortedOrders = ordersWithPriorities.sort((a, b) => b.maxPriority - a.maxPriority);
+    // Sort orders by priority (lowest first)
+    const sortedOrders = ordersWithPriorities.sort((a, b) => a.maxPriority - b.maxPriority);
     
     return sortedOrders.map((order, index) => {
       // Get all items for this order with the current sku

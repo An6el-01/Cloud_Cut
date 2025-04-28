@@ -203,10 +203,10 @@ export default function Packing() {
                     const orderItemsA = state.orders.orderItems[a.order_id as string] as OrderItem[] || [];
                     const orderItemsB = state.orders.orderItems[b.order_id as string] as OrderItem[] || [];
                     
-                    const priorityA = orderItemsA.length > 0 ? Math.max(...orderItemsA.map(item => item.priority || 0)) : 0;
-                    const priorityB = orderItemsB.length > 0 ? Math.max(...orderItemsB.map(item => item.priority || 0)) : 0;
+                    const priorityA = orderItemsA.length > 0 ? Math.min(...orderItemsA.map(item => item.priority ?? 10)) : 10;
+                    const priorityB = orderItemsB.length > 0 ? Math.min(...orderItemsB.map(item => item.priority ?? 10)) : 10;
                     
-                    return priorityB - priorityA;
+                    return priorityA - priorityB;
                 });
                 
                 // Find the index of the selected order in the sorted list
@@ -568,8 +568,8 @@ export default function Packing() {
         const ordersWithPriorities = ordersWithPack.map(order => {
             const items = allOrderItems[order.order_id] || [];
             const maxPriority = items.length > 0
-                ? Math.max(...items.map((item: OrderItem) => item.priority || 0))
-                : 0;
+                ? Math.min(...items.map((item: OrderItem) => item.priority ?? 10))
+                : 10;
             
             return {
                 ...order,
@@ -577,8 +577,8 @@ export default function Packing() {
             };
         });
         
-        // Sort the orders by priority in descending order
-        ordersWithPriorities.sort((a, b) => b.maxPriority - a.maxPriority);
+        // Sort the orders by priority in ascending order
+        ordersWithPriorities.sort((a, b) => a.maxPriority - b.maxPriority);
         
         return ordersWithPriorities.map((order, index) => {
             return (

@@ -50,17 +50,17 @@ export function getPriorityLevel(
     isOnHold: boolean = false
 ): number {
     itemName = itemName.toLowerCase();
-    if (isOnHold) return 0;
-    if (itemName.includes('manual')) return 10;
+    if (isOnHold) return 10;
+    if (itemName.includes('manual')) return 0;
 
     // Handle case where foamSheet is empty or doesn't contain a color
     if (!foamSheet || foamSheet.trim() === 'N/A') {
-        if (dayNumber >= 5) return 9;
-        if (dayNumber === 4) return 7;
+        if (dayNumber >= 5) return 1;
+        if (dayNumber === 4) return 3;
         if (dayNumber === 3) return 5;
-        if (dayNumber === 2) return 3;
-        if (dayNumber === 1) return 1;
-        return 0;
+        if (dayNumber === 2) return 7;
+        if (dayNumber === 1) return 9;
+        return 10;
     }
 
     const color = foamSheet.split(' ')[0].toLowerCase(); // Ensure color is lowercase
@@ -72,43 +72,43 @@ export function getPriorityLevel(
 
     // Handle primary color items
     if (isPrimary) {
-        if (dayNumber >= 2) return 9;
-        if (dayNumber === 1) return 8;
+        if (dayNumber >= 2) return 1;
+        if (dayNumber === 1) return 2;
     }
 
     // Handle secondary color items
     if (isSecondary) {
-        if (dayNumber >= 3) return 9;
-        if (dayNumber === 2) return 7;
-        if (dayNumber === 1) return 4;
+        if (dayNumber >= 3) return 1;
+        if (dayNumber === 2) return 3;
+        if (dayNumber === 1) return 6;
     }
 
     // Handle tertiary color items
     if (isTertiary) {
-        if (dayNumber >= 5) return 9;
-        if (dayNumber === 4) return 7;
+        if (dayNumber >= 5) return 1;
+        if (dayNumber === 4) return 3;
         if (dayNumber === 3) return 5;
-        if (dayNumber === 2) return 3;
-        if (dayNumber === 1) return 1;
+        if (dayNumber === 2) return 7;
+        if (dayNumber === 1) return 9;
     }
 
     // Handle medium sheets
     if (isMediumSheet) {
-        if (dayNumber >= 2) return 9;
-        if (dayNumber === 1) return isAmazon ? 8 : 7;
+        if (dayNumber >= 2) return 1;
+        if (dayNumber === 1) return isAmazon ? 2 : 3;
     }
 
     // Handle retail or value packs
     if (isRetailOrValuePack) {
-        if (dayNumber >= 2) return 9;
-        if (dayNumber === 1) return isAmazon ? 8 : 7;
+        if (dayNumber >= 2) return 1;
+        if (dayNumber === 1) return isAmazon ? 2 : 3;
     }
 
     // Default priority for items that don't match any specific criteria
-    if (dayNumber >= 5) return 9;
-    if (dayNumber === 4) return 7;
+    if (dayNumber >= 5) return 1;
+    if (dayNumber === 4) return 3;
     if (dayNumber === 3) return 5;
-    if (dayNumber === 2) return 3;
-    if (dayNumber === 1) return 1;
-    return 0;
+    if (dayNumber === 2) return 7;
+    if (dayNumber === 1) return 9;
+    return 10;
 }

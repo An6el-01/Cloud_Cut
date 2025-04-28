@@ -13,7 +13,6 @@ import {
   Profile, 
   subscribeToProfiles 
 } from "@/utils/supabase";
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { getSupabaseClient } from "@/utils/supabase";
 
 export default function Team() {

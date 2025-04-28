@@ -70,7 +70,8 @@ export const generateCSV = (orders: Order[], orderItems: Record<string, OrderIte
                     };
                 });
         })
-        .sort((a, b) => Number(b.Priority) - Number(a.Priority));
+        //Check if this needs to be updated
+        .sort((a, b) => Number(a.Priority) - Number(b.Priority));
 
     //Convert items to CSV rows
     allItems.forEach((item) => {

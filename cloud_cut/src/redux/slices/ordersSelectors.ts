@@ -52,17 +52,17 @@ export const selectCurrentViewTotal = createSelector(
     }
   }
 );
-
+//Check if this needs to be updated
 export const selectSortedOrders = createSelector(
   [selectAllOrders, selectOrdersState],
   (orders, state) => {
     const sorted = orders
       .map(order => {
         const items = state.orderItems[order.order_id] || [];
-        const priority = items.length > 0 ? Math.max(...items.map((item: OrderItem) => item.priority || 0)) : 0;
+        const priority = items.length > 0 ? Math.min(...items.map((item: OrderItem) => item.priority ?? 10)) : 10;
         return { ...order, priority };
       })
-      .sort((a, b) => b.priority - a.priority);
+      .sort((a, b) => a.priority - b.priority);
     return sorted;
   }
 );

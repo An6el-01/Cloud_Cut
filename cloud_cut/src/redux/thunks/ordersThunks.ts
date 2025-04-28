@@ -528,19 +528,21 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       return acc;
     }, {});
 
+    //Check if this needs to be updated
     // Calculate priority for each order based on its items and sort ALL orders
     const ordersWithPriority = allOrders.map(order => {
       const typedOrder = order as SupabaseOrderItem;
       const items = allOrderItemsMap[typedOrder.order_id] || [];
       const priority = items.length > 0 
-        ? Math.max(...items.map(item => item.priority || 0)) 
-        : 0;
+        ? Math.min(...items.map(item => item.priority ?? 10)) 
+        : 10;
       return { ...typedOrder, calculatedPriority: priority } as unknown as OrderWithPriority;
     });
 
+    //Check if this needs to be updated
     // Sort ALL orders by priority in descending order
     const sortedOrders = ordersWithPriority.sort((a, b) => 
-      b.calculatedPriority - a.calculatedPriority
+      a.calculatedPriority - b.calculatedPriority
     );
 
     // We still calculate pagination info for the UI, but store ALL orders in state

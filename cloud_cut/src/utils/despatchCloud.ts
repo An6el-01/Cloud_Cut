@@ -142,6 +142,7 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
       return priority;
     });
 
+    //Check if this needs to be updated
     const highestPriority = itemPriorities.length > 0 ? Math.max(...itemPriorities) : 0;
     console.log(`Highest priority for order: ${highestPriority}`);
 
@@ -203,8 +204,9 @@ export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> 
       };
     });
 
+    //Check if this needs to be updated (Needs to be changed to lowest number of priority among items)
     // Calculate overall order priority (highest priority among items)
-    const orderPriority = Math.max(...items.map(item => item.priority || 0));
+    const orderPriority = Math.min(...items.map(item => item.priority ?? 10));
 
     const orderDate = new Date(order.date_received);
 
