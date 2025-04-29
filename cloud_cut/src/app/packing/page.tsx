@@ -49,11 +49,11 @@ export default function Packing() {
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'orders' | 'retail'>('orders');
     const [retailPackFilter, setRetailPackFilter] = useState('');
-    const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);
-    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
+    const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
     const [retailPackPage, setRetailPackPage] = useState(1);
-    const retailPacksPerPage = 12;
+    const retailPacksPerPage = 10;
+    const [retailPackTableBPage, setRetailPackTableBPage] = useState(1);
 
     const orderProgress = useSelector((state: RootState) =>
         orders.reduce((acc, order) => {
@@ -411,6 +411,10 @@ export default function Packing() {
 
     const handleRetailPackClick = (retailPack: string) => {
         setSelectedRetailPack(retailPack);
+        // Switch to orders tab
+        setActiveTab('orders');
+        // Find orders that contain this retail pack
+        findOrdersWithRetailPack(retailPack);
     };
 
     const getRetailPackColorClass = (retailPackName: string): string => {
@@ -487,6 +491,14 @@ export default function Packing() {
                     if (fetchedOrders) {
                         // Type casting to ensure we're setting Order[] type
                         const typedOrders = fetchedOrders as unknown as Order[];
+                        
+                        // Sort orders by the quantity of the retail pack (highest first)
+                        typedOrders.sort((a, b) => {
+                            const quantityA = getRetailPackQuantityInOrder(a.order_id, retailPack);
+                            const quantityB = getRetailPackQuantityInOrder(b.order_id, retailPack);
+                            return quantityB - quantityA;
+                        });
+                        
                         setOrdersWithRetailPacks(prev => ({
                             ...prev,
                             [retailPack]: typedOrders
@@ -514,121 +526,87 @@ export default function Packing() {
             .reduce((sum, item) => sum + item.quantity, 0);
     };
 
-    // Function to render the orders with retail pack table content
-    const renderOrdersWithRetailPack = (retailPack: string | null) => {
-        if (!retailPack) {
-            return (
-                <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center">
-                        <div className="flex flex-col items-center justify-center text-gray-800">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <p className="text-lg font-medium">No retail pack selected</p>
-                            <p className="text-sm text-gray-500 mt-1">Please select a retail pack to see orders</p>
-                        </div>
-                    </td>
-                </tr>
-            );
-        }
-        
-        if (loadingRetailPackOrders) {
-            return (
-                <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center">
-                        <div className="flex flex-col items-center justify-center text-gray-800">
-                            <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
-                            <p className="text-lg font-medium">Loading orders...</p>
-                            <p className="text-sm text-gray-500 mt-1">Retrieving orders with this retail pack</p>
-                        </div>
-                    </td>
-                </tr>
-            );
-        }
-        
-        const ordersWithPack = findOrdersWithRetailPack(retailPack);
-        
-        if (ordersWithPack.length === 0) {
-            return (
-                <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center">
-                        <div className="flex flex-col items-center justify-center text-gray-800">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <p className="text-lg font-medium">All done for now!</p>
-                            <p className="text-sm text-gray-500 mt-1">No pending packing orders contain this retail pack</p>
-                        </div>
-                    </td>
-                </tr>
-            );
-        }
-        
-        // Create an array with orders and their priorities
-        const ordersWithPriorities = ordersWithPack.map(order => {
-            const items = allOrderItems[order.order_id] || [];
-            const maxPriority = items.length > 0
-                ? Math.min(...items.map((item: OrderItem) => item.priority ?? 10))
-                : 10;
-            
-            return {
-                ...order,
-                maxPriority
-            };
-        });
-        
-        // Sort the orders by priority in ascending order
-        ordersWithPriorities.sort((a, b) => a.maxPriority - b.maxPriority);
-        
-        return ordersWithPriorities.map((order, index) => {
-            return (
-                <tr 
-                    key={order.order_id}
-                    className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${index % 2 === 0 ?
-                    `bg-white` : `bg-gray-50`}`}
-                    onClick={async () => {
-                        await Sentry.startSpan({
-                            name: 'handleOrderRowClick-packing',
-                        }, async () => {
-                            handleOrderClick(order.order_id);
-                            setActiveTab('orders');
-                        })
-                    }}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ''){
-                            e.preventDefault();
-                            handleOrderClick(order.order_id);
-                            setActiveTab('orders');
-                        }
-                    }}
-                    aria-label={`View details for order ${order.order_id} from ${order.customer_name}`}
-                >
-                    <td className="px-6 py-4 text-left">
-                        <div className="flex items-center">
-                            <span className="text-black text-lg">{order.order_id}</span>
-                        </div>
-                    </td>
-                    <td className="px-6 py-4 text-left">
-                        <span className="text-black text-lg">{order.customer_name}</span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>{order.maxPriority}</span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                        <span>{getRetailPackQuantityInOrder(order.order_id, retailPack)}</span>
-                    </td>
-                </tr>
-            );
-        });
+    // Function to compute the total number of retail packs after filtering
+    const getFilteredRetailPacks = () => {
+        return Object.entries(itemsByRetailPack)
+            .filter(([itemName]) => {
+                if (!retailPackFilter) return true;
+                return itemName.toLowerCase().includes(retailPackFilter.toLowerCase());
+            })
+            .sort(([itemNameA, quantityA], [itemNameB, quantityB]) => {
+                // Sort by quantity (highest first)
+                return quantityB - quantityA;
+            });
     };
 
-    // Add a function to handle retail pack page changes
-    const handleRetailPackPageChange = (newPage: number) => {
-        if (newPage >= 1) {
-            setRetailPackPage(newPage);
+    // Function to get retail packs for Table A
+    const getTableARetailPacks = () => {
+        const filteredPacks = getFilteredRetailPacks();
+        const startIndex = (retailPackPage - 1) * retailPacksPerPage;
+        const endIndex = Math.min(startIndex + retailPacksPerPage, filteredPacks.length);
+        
+        // Table A gets the first 10 items of the current page
+        return filteredPacks.slice(startIndex, endIndex);
+    };
+
+    // Function to get retail packs for Table B
+    const getTableBRetailPacks = () => {
+        const filteredPacks = getFilteredRetailPacks();
+        const totalPacks = filteredPacks.length;
+        
+        // Table B starts at the 11th item, and provides items from its own page
+        const tableBStartIndex = retailPacksPerPage + (retailPackTableBPage - 1) * retailPacksPerPage;
+        const tableBEndIndex = Math.min(tableBStartIndex + retailPacksPerPage, totalPacks);
+        
+        // Only return items if Table A is full (has 10 items)
+        if (totalPacks <= retailPacksPerPage) {
+            return [];
         }
+        
+        return filteredPacks.slice(tableBStartIndex, tableBEndIndex);
+    };
+
+    // Calculate total pages for each table
+    const calculateTotalPages = () => {
+        const filteredPacks = getFilteredRetailPacks();
+        const totalItems = filteredPacks.length;
+        
+        // Table A always has at least 1 page
+        const tableATotalPages = Math.ceil(Math.min(totalItems, retailPacksPerPage) / retailPacksPerPage) || 1;
+        
+        // Table B only has pages if there are more than 10 items total
+        let tableBTotalPages = 0;
+        if (totalItems > retailPacksPerPage) {
+            // Calculate how many additional pages are needed for Table B
+            tableBTotalPages = Math.ceil((totalItems - retailPacksPerPage) / retailPacksPerPage);
+        }
+        
+        return { tableATotalPages, tableBTotalPages };
+    };
+
+    // Handle Table A page changes
+    const handleTableAPageChange = (newPage: number) => {
+        if (newPage >= 1) {
+            const { tableATotalPages } = calculateTotalPages();
+            if (newPage <= tableATotalPages) {
+                setRetailPackPage(newPage);
+            }
+        }
+    };
+
+    // Handle Table B page changes
+    const handleTableBPageChange = (newPage: number) => {
+        if (newPage >= 1) {
+            const { tableBTotalPages } = calculateTotalPages();
+            if (newPage <= tableBTotalPages) {
+                setRetailPackTableBPage(newPage);
+            }
+        }
+    };
+    
+    // Compatibility function for old code
+    const handleRetailPackPageChange = (newPage: number) => {
+        handleTableAPageChange(newPage);
     };
 
     return (
@@ -681,7 +659,24 @@ export default function Packing() {
                     {/**Packing Orders Section */}
                     <div className="flex-1 max-w-3xl">
                         <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
-                            <h1 className="text-2xl font-bold text-white">Orders Ready For Packing</h1>
+                            <div className="flex items-center">
+                                <h1 className="text-2xl font-bold text-white">
+                                    {selectedRetailPack ? `${selectedRetailPack} Orders` : 'Orders Ready For Packing'}
+                                </h1>
+                                {selectedRetailPack && (
+                                    <div className="ml-4 flex items-center">                                        
+                                        <button 
+                                            onClick={() => setSelectedRetailPack(null)} 
+                                            className="px-2 py-1 bg-gray-700 text-white rounded-md hover:bg-gray-600 flex items-center text-sm"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                            Clear
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={handleRefresh}
                                 className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
@@ -715,7 +710,7 @@ export default function Packing() {
                                     >Retry
                                     </button>
                                 </div>
-                            ) : orders.length === 0 ? (
+                            ) : !selectedRetailPack && orders.length === 0 ? (
                                 <div className="text-center py-4">
                                     <p className="text-black">No orders found</p>
                                     <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
@@ -755,8 +750,30 @@ export default function Packing() {
                                                             </td>
                                                         </tr>
                                                     ))
+                                                ) : loadingRetailPackOrders && selectedRetailPack ? (
+                                                    // Loading state for fetching retail pack orders
+                                                    [...Array(3)].map((_, index) => (
+                                                        <tr key={`loading-retail-${index}`} className="animate-pulse">
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-blue-100 rounded w-20 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-blue-100 rounded w-28 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-blue-100 rounded w-8 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-blue-100 rounded w-24 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-blue-100 rounded w-12 mx-auto"></div>
+                                                            </td>
+                                                        </tr>
+                                                    ))
                                                 ) : (
-                                                    orders.map((order) => {
+                                                    // Filter orders based on selectedRetailPack if it's set
+                                                    (selectedRetailPack ? findOrdersWithRetailPack(selectedRetailPack) : orders).map((order) => {
                                                         //Get the items for this specific order
                                                         const orderItems = orderItemsById[order.order_id] || [];
                                                         // Use the calculated priority property if it exists
@@ -769,6 +786,7 @@ export default function Packing() {
                                                         return (
                                                             <tr
                                                                 key={order.order_id}
+                                                                id={`order-row-${order.order_id}`}
                                                                 ref={order.order_id === selectedOrderId ? selectedRowRef : null}
                                                                 className={`transition-all duration-200 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${
                                                                     order.order_id === selectedOrderId 
@@ -785,19 +803,42 @@ export default function Packing() {
                                                                 <td className="px-4 py-2 text-black">
                                                                     {new Date(order.order_date).toLocaleDateString("en-GB")}
                                                                 </td>
-                                                                <td className="px-4 py-2 text-black">{orderProgress[order.order_id]}</td>
+                                                                <td className="px-4 py-2 text-black">
+                                                                    {selectedRetailPack ? (
+                                                                        orderProgress[order.order_id]
+                                                                    ) : (
+                                                                        orderProgress[order.order_id]
+                                                                    )}
+                                                                </td>
                                                             </tr>
                                                         );
                                                     })
+                                                )}
+                                                {selectedRetailPack && findOrdersWithRetailPack(selectedRetailPack).length === 0 && !isRefreshing && (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-6 py-10 text-center">
+                                                            <div className="flex flex-col items-center justify-center text-black">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                </svg>
+                                                                <p className="text-lg font-medium">No orders found with {selectedRetailPack}</p>
+                                                                <p className="text-sm text-gray-500 mt-1">Try selecting a different retail pack</p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
                                                 )}
                                             </tbody>
                                         </table>
                                     </div>
                                     <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
                                         <div className="text-sm text-gray-600">
-                                            Showing {(currentPage - 1) * ordersPerPage + 1} to {" "}
-                                            {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders}{" "} pending orders
+                                            {selectedRetailPack ? (
+                                                `Showing ${findOrdersWithRetailPack(selectedRetailPack).length} orders with ${selectedRetailPack}`
+                                            ) : (
+                                                `Showing ${(currentPage - 1) * ordersPerPage + 1} to ${Math.min(currentPage * ordersPerPage, totalOrders)} of ${totalOrders} pending orders`
+                                            )}
                                         </div>
+                                        {!selectedRetailPack && (
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={() => handlePageChange(currentPage - 1)}
@@ -817,6 +858,7 @@ export default function Packing() {
                                                 Next
                                             </button>
                                         </div>
+                                        )}
                                     </div>
                                 </>
                             )}
@@ -966,10 +1008,10 @@ export default function Packing() {
             {/* Retail Packs Tab Active Section*/}
             {activeTab === 'retail' && (
                 <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
-                {/**Retail Packs Section */}        
+                {/**Retail Packs Section - Table A */}        
                     <div className="flex-1 max-w-3xl">
                         <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
-                            <h1 className="text-2xl font-bold text-white">Retail Packs</h1>
+                            <h1 className="text-2xl font-bold text-white">Table A</h1>
                         </div>
                         <div className="overflow-x-auto bg-white h-[calc(91vh-270px)] flex flex-col">
                             {loading ? (
@@ -1005,8 +1047,8 @@ export default function Packing() {
                                                     </tr>
                                                 ))
                                             ) : (
-                                                //Render Retail Packs and their quantities
-                                                Object.keys(itemsByRetailPack).length === 0 ? (
+                                                //Render Retail Packs and their quantities for Table A
+                                                getTableARetailPacks().length === 0 ? (
                                                     <tr>
                                                         <td colSpan={2} className="px-6 py-10 text-center">
                                                             <div className="flex flex-col items-center justify-center text-black">
@@ -1019,124 +1061,187 @@ export default function Packing() {
                                                         </td>
                                                     </tr>
                                                 ) : (
-                                                    <>
-                                                        {Object.entries(itemsByRetailPack)
-                                                            .filter(([itemName]) => {
-                                                                if (!retailPackFilter) return true;
-                                                                return itemName.toLowerCase().includes(retailPackFilter.toLowerCase());
-                                                            })
-                                                            .sort(([itemNameA, quantityA], [itemNameB, quantityB]) => {
-                                                                // Sort alphabetically by item name
-                                                                return quantityB - quantityA;
-                                                            })
-                                                            // Apply pagination
-                                                            .slice((retailPackPage - 1) * retailPacksPerPage, retailPackPage * retailPacksPerPage)
-                                                            .map(([itemName, quantity], index) => (
-                                                                <tr 
-                                                                    key={itemName} 
-                                                                    className={`transition-colors duration-150 
-                                                                        ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
-                                                                        hover:bg-blue-50 cursor-pointer shadow-sm`}
-                                                                    onClick={() => handleRetailPackClick(itemName)}
-                                                                >
-                                                                    <td className="px-6 py-5 text-left">
-                                                                        <div className="flex items-center space-x-3">
-                                                                            <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
-                                                                            <span className="text-black text-lg">
-                                                                                {itemName}
-                                                                            </span>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-6 py-5 text-center">
-                                                                        <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                                                                            {quantity}
-                                                                        </span>
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                    </>
+                                                    getTableARetailPacks().map(([itemName, quantity], index) => (
+                                                        <tr 
+                                                            key={itemName} 
+                                                            className={`transition-colors duration-150 
+                                                                ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
+                                                                hover:bg-blue-50 cursor-pointer shadow-sm`}
+                                                            onClick={() => handleRetailPackClick(itemName)}
+                                                        >
+                                                            <td className="px-6 py-5 text-left">
+                                                                <div className="flex items-center space-x-3">
+                                                                    <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
+                                                                    <span className="text-black text-lg">
+                                                                        {itemName}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-5 text-center">
+                                                                <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                    {quantity}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))
                                                 )
                                             )}
                                         </tbody>
                                     </table>
                                     </div>
-                                    {/**Pagination Controls */}
+                                    {/**Pagination Controls for Table A */}
                                     <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
                                         <div className="text-sm text-gray-600">
-                                            {Object.keys(itemsByRetailPack).filter(name => {
-                                                if (!retailPackFilter) return true;
-                                                return name.toLowerCase().includes(retailPackFilter.toLowerCase());
-                                            }).length} retail packs found
+                                            {getFilteredRetailPacks().length} retail packs found
                                         </div>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleRetailPackPageChange(retailPackPage - 1)}
-                                                disabled={retailPackPage === 1}
-                                                className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Previous
-                                            </button>
-                                            <span>
-                                                Page {retailPackPage} of {Math.max(1, Math.ceil(Object.keys(itemsByRetailPack).filter(name => {
-                                                    if (!retailPackFilter) return true;
-                                                    return name.toLowerCase().includes(retailPackFilter.toLowerCase());
-                                                }).length / retailPacksPerPage))}
-                                            </span>
-                                            <button
-                                                onClick={() => handleRetailPackPageChange(retailPackPage + 1)}
-                                                disabled={retailPackPage >= Math.ceil(Object.keys(itemsByRetailPack).filter(name => {
-                                                    if (!retailPackFilter) return true;
-                                                    return name.toLowerCase().includes(retailPackFilter.toLowerCase());
-                                                }).length / retailPacksPerPage)}
-                                                className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Next
-                                            </button>
-                                        </div>
+                                        {calculateTotalPages().tableATotalPages > 0 && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleTableAPageChange(retailPackPage - 1)}
+                                                    disabled={retailPackPage === 1}
+                                                    className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Previous
+                                                </button>
+                                                <span>
+                                                    Page {retailPackPage} of {calculateTotalPages().tableATotalPages}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleTableAPageChange(retailPackPage + 1)}
+                                                    disabled={retailPackPage >= calculateTotalPages().tableATotalPages}
+                                                    className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Next
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </>
                             )}     
                         </div>
                     </div>
-
-                    {/*Retail Packs Order Details Section */}
-                    <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
-                        <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full flex flex-col">
-                            <div className="px-6 py-5 bg-black/90">
-                                <h2 className="text-2xl font-bold text-white text-center">
-                                    {selectedRetailPack ? (
-                                        <div className="flex items-center justify-center">
-                                            <span className="relative">
-                                                Orders with<span className="font-semibold relative inline-flex items-center">
-                                                    <span className={`inline-block w-4 h-4 rounded-full ${(selectedRetailPack)}`}></span>
-                                                    {selectedRetailPack}
-                                                </span>
-                                            </span> 
-                                        </div>
-                                    ) : (
-                                        <span className="relative inline-block">Select a Retail Pack</span>
-                                    )}
-                                </h2>
-                            </div>
-                            <div className="flex-1 overflow-auto p-4">
-                                <div className="h-full">
-                                    <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
-                                        <table className="w-full h-full bg-white/90 rounded-lg shadow-lg overflow-hidden">
-                                            <thead className="bg-[#1d1d1d] sticky top-0 z-10">
-                                                <tr>
-                                                    <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Order ID</th>
-                                                    <th className="px-6 py-4 text-left text-lg font-semibold text-gray-200">Customer Name</th>
-                                                    <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Priority</th>
-                                                    <th className="px-6 py-4 text-center text-lg font-semibold text-gray-200">Quantity</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-300">
-                                                {renderOrdersWithRetailPack(selectedRetailPack)}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                {/**Retail Packs Section2 - Table B */}
+                    <div className="flex-1 max-w-3xl">
+                        <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
+                            <h1 className="text-2xl font-bold text-white">Table B</h1>
+                        </div>
+                        <div className="overflow-x-auto bg-white h-[calc(91vh-270px)] flex flex-col">
+                            {loading ? (
+                                <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
+                                    <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
+                                    <p className="text-gray-700 font-medium">Loading Retail Packs...</p>
                                 </div>
-                            </div>
+                            ) : error ? (
+                                <div className="text-center py-4">
+                                    <p className="text-red-500">{error}</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex-1 overflow-y-auto">
+                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
+                                        <thead className="bg-gray-100/90 sticky top-0">
+                                            <tr>
+                                                <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
+                                                <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-300">
+                                            {isRefreshing ? (
+                                                //Skeleton loading rows while refreshing
+                                                [...Array(5)].map((_, index) => (
+                                                    <tr key={`skeleton-${index}`} className="animate-pulse">
+                                                        <td className="px-6 py-5">
+                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                                        </td>
+                                                        <td className="px-6 py-5">
+                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                //Render Retail Packs and their quantities for Table B
+                                                getTableBRetailPacks().length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={2} className="px-6 py-10 text-center">
+                                                            <div className="flex flex-col items-center justify-center text-black">
+                                                                {getFilteredRetailPacks().length <= retailPacksPerPage ? (
+                                                                    <>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                        </svg>
+                                                                        <p className="text-lg font-medium">All retail packs are in Table A</p>
+                                                                        <p className="text-sm text-gray-500 mt-1">Table B is not needed</p>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                                                        </svg>
+                                                                        <p className="text-lg font-medium">No additional retail packs</p>
+                                                                        <p className="text-sm text-gray-500 mt-1">There are no additional retail packs to display in Table B</p>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    getTableBRetailPacks().map(([itemName, quantity], index) => (
+                                                        <tr 
+                                                            key={itemName} 
+                                                            className={`transition-colors duration-150 
+                                                                ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
+                                                                hover:bg-blue-50 cursor-pointer shadow-sm`}
+                                                            onClick={() => handleRetailPackClick(itemName)}
+                                                        >
+                                                            <td className="px-6 py-5 text-left">
+                                                                <div className="flex items-center space-x-3">
+                                                                    <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
+                                                                    <span className="text-black text-lg">
+                                                                        {itemName}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-5 text-center">
+                                                                <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                    {quantity}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )
+                                            )}
+                                        </tbody>
+                                    </table>
+                                    </div>
+                                    {/**Pagination Controls for Table B */}
+                                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
+                                        <div className="text-sm text-gray-600">
+                                            {Math.max(0, getFilteredRetailPacks().length - retailPacksPerPage)} additional retail packs
+                                        </div>
+                                        {calculateTotalPages().tableBTotalPages > 0 && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleTableBPageChange(retailPackTableBPage - 1)}
+                                                    disabled={retailPackTableBPage === 1}
+                                                    className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Previous
+                                                </button>
+                                                <span>
+                                                    Page {retailPackTableBPage} of {calculateTotalPages().tableBTotalPages}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleTableBPageChange(retailPackTableBPage + 1)}
+                                                    disabled={retailPackTableBPage >= calculateTotalPages().tableBTotalPages}
+                                                    className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Next
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}     
                         </div>
                     </div>
                 </div>

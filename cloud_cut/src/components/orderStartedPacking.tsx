@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useRef, useEffect, useState} from "react";
+import React, {useRef, useEffect, useState, useCallback} from "react";
 import { Order, OrderItem } from "@/types/redux";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -34,6 +34,8 @@ export default function StartPacking({
     const {loading} = useSelector((state: RootState) => state.orders)
     const [allItemsPacked, setAllItemsPacked] = useState(false);
     const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+    const [pendingUpdates, setPendingUpdates] = useState<Record<string, boolean>>({});
+    const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Add an effect to update the checkedItems set whenever selectedOrderItems changes
     useEffect(() => {
@@ -66,6 +68,45 @@ export default function StartPacking({
             setAllItemsPacked(allCompleted);
         }
     }, [selectedOrderItems]);
+
+    // Create a debounced function to process pending updates
+    const processPendingUpdates = useCallback(() => {
+        if (updateTimeoutRef.current) {
+            clearTimeout(updateTimeoutRef.current);
+            updateTimeoutRef.current = null;
+        }
+
+        updateTimeoutRef.current = setTimeout(() => {
+            const updates = {...pendingUpdates};
+            
+            // Clear pending updates first before processing to prevent loops
+            setPendingUpdates({});
+            
+            // Process each pending update
+            Object.entries(updates).forEach(([itemId, completed]) => {
+                // Direct dispatch to Redux
+                dispatch(updateItemCompleted({ 
+                    orderId: selectedOrder.order_id, 
+                    itemId, 
+                    completed 
+                }));
+            });
+        }, 300);
+    }, [pendingUpdates, dispatch, selectedOrder?.order_id]);
+
+    // Process updates when pendingUpdates changes
+    useEffect(() => {
+        if (Object.keys(pendingUpdates).length > 0) {
+            processPendingUpdates();
+        }
+        
+        // Cleanup on unmount
+        return () => {
+            if (updateTimeoutRef.current) {
+                clearTimeout(updateTimeoutRef.current);
+            }
+        };
+    }, [pendingUpdates, processPendingUpdates]);
 
     // Function to reset picking status - single source of truth
     const resetPickingStatus = () => {
@@ -313,20 +354,8 @@ export default function StartPacking({
     };
 
     const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
-        // If marking as incomplete, just do it directly
-        if (!completed) {
-            dispatch(updateItemCompleted({ orderId, itemId, completed }));
-            return;
-        }
-
-        // Count how many items are already completed
-        const completedItems = selectedOrderItems.filter(item =>
-            item.completed || item.id === itemId // Count the current item if it's being marked as completed
-        );
-
-        
-            // Not the last item, just mark it as completed
-            dispatch(updateItemCompleted({ orderId, itemId, completed }));
+        // Queue the update instead of dispatching immediately
+        setPendingUpdates(prev => ({...prev, [itemId]: completed}));
     };
 
     const handleCloseClick = () => {
@@ -552,18 +581,8 @@ export default function StartPacking({
                                                                                 checked={checkedItems.has(item.sku_id)}
                                                                                 onChange={(e) => {
                                                                                     const newCheckedState = e.target.checked;
-                                                                                    // Update all items with this SKU
-                                                                                    selectedOrderItems
-                                                                                        .filter(i => i.sku_id === item.sku_id)
-                                                                                        .forEach(i => {
-                                                                                            dispatch(updateItemCompleted({
-                                                                                                orderId: selectedOrder.order_id,
-                                                                                                itemId: i.id,
-                                                                                                completed: newCheckedState
-                                                                                            }));
-                                                                                        });
                                                                                     
-                                                                                    // Update the checked items set
+                                                                                    // Update UI state immediately
                                                                                     setCheckedItems(prev => {
                                                                                         const newSet = new Set(prev);
                                                                                         if (newCheckedState) {
@@ -574,10 +593,24 @@ export default function StartPacking({
                                                                                         return newSet;
                                                                                     });
                                                                                     
-                                                                                    // Update allItemsPacked state based on whether all items are checked
-                                                                                    const allChecked = Object.values(groupedItems).every(i => 
-                                                                                        newCheckedState ? checkedItems.has(i.sku_id) || i.sku_id === item.sku_id : checkedItems.has(i.sku_id) && i.sku_id !== item.sku_id
-                                                                                    );
+                                                                                    // Queue updates for all items with this SKU
+                                                                                    const itemsToUpdate = selectedOrderItems
+                                                                                        .filter(i => i.sku_id === item.sku_id);
+                                                                                    
+                                                                                    const newUpdates: Record<string, boolean> = {};
+                                                                                    itemsToUpdate.forEach(i => {
+                                                                                        newUpdates[i.id] = newCheckedState;
+                                                                                    });
+                                                                                    
+                                                                                    setPendingUpdates(prev => ({...prev, ...newUpdates}));
+                                                                                    
+                                                                                    // Update allItemsPacked state based on current UI
+                                                                                    const currentGroupedItems = {...groupedItems};
+                                                                                    currentGroupedItems[item.sku_id].completed = newCheckedState;
+                                                                                    
+                                                                                    const allChecked = Object.values(currentGroupedItems)
+                                                                                        .every(i => i.completed);
+                                                                                    
                                                                                     setAllItemsPacked(allChecked);
                                                                                 }}
                                                                                 className="sr-only peer"
@@ -613,9 +646,9 @@ export default function StartPacking({
                             onClick={handleDoneClick}
                             className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-sm flex items-center gap-2"
                             aria-label="Mark order as complete"
-                            disabled={isProcessing}
+                            disabled={isProcessing || Object.keys(pendingUpdates).length > 0}
                         >
-                            {isProcessing ? (
+                            {isProcessing || Object.keys(pendingUpdates).length > 0 ? (
                                 <>
                                     <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
