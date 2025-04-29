@@ -27,6 +27,8 @@ export default function Team() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const router = useRouter();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredProfiles, setFilteredProfiles] = useState<Profile[]>([]);
 
   // Add useEffect to clear success message after 10 seconds
   useEffect(() => {
@@ -52,11 +54,36 @@ export default function Team() {
   const [currentPage, setCurrentPage] = useState(1);
   const profilesPerPage = 7;
   
-  // Calculate pagination values
+  // Filter and sort profiles when dependencies change
+  useEffect(() => {
+    if (!profiles) return;
+
+    let result = [...profiles];
+
+    // Apply search filter
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      result = result.filter(
+        (profile) => 
+          profile.name.toLowerCase().includes(lowerSearchTerm) ||
+          profile.email.toLowerCase().includes(lowerSearchTerm)
+      );
+    }
+
+    setFilteredProfiles(result);
+    setCurrentPage(1); // Reset to first page on search
+  }, [profiles, searchTerm]);
+
+  // Handle clear search
+  const handleClearSearch = () => {
+    setSearchTerm("");
+  };
+
+  // Calculate pagination values based on filtered profiles instead of all profiles
   const indexOfLastProfile = currentPage * profilesPerPage;
   const indexOfFirstProfile = indexOfLastProfile - profilesPerPage;
-  const currentProfiles = profiles.slice(indexOfFirstProfile, indexOfLastProfile);
-  const totalPages = Math.ceil(profiles.length / profilesPerPage);
+  const currentProfiles = filteredProfiles.slice(indexOfFirstProfile, indexOfLastProfile);
+  const totalPages = Math.ceil(filteredProfiles.length / profilesPerPage);
 
   // Handle page change
   const handlePageChange = (pageNumber: number) => {
@@ -366,16 +393,58 @@ export default function Team() {
         {/* Team Members Table */}
         <div className="w-[80vw] max-w-[1200px] min-w-[900px]">
           <div className="bg-[#1d1d1d] rounded-t-lg p-4">
-            <h1 className="text-2xl font-bold text-white">Team Members</h1>
+            <div className="flex flex-col space-y-3 md:space-y-0 md:flex-row justify-between items-start md:items-center">
+              <h1 className="text-2xl font-bold text-white">Team Members</h1>
+              <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-3 w-full md:w-auto">
+                {/* Search results counter */}
+                {searchTerm && (
+                  <div className="text-sm text-gray-300 self-start sm:self-center sm:mr-4" aria-live="polite">
+                    Found {filteredProfiles.length} {filteredProfiles.length === 1 ? 'member' : 'members'} for "{searchTerm}"
+                  </div>
+                )}
+
+                <div className="flex space-x-3 w-full sm:w-auto">
+                  {/* Search bar */}
+                  <div className="relative flex-1 sm:w-64">
+                    <input
+                      type="text"
+                      placeholder="Search by name or email"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-10 py-2 text-sm text-black bg-white/90 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      aria-label="Search team members"
+                    />
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                      <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                      </svg>
+                    </div>
+                    {searchTerm && (
+                      <button
+                        onClick={handleClearSearch}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        aria-label="Clear search"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="m15 9-6 6"/>
+                          <path d="m9 9 6 6"/>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto bg-white rounded-b-lg shadow-lg">
             <table className="w-full border border-gray-200">
               <thead className="bg-gray-100 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-4 text-center text-black text-md font-semibold">Name</th>
-                  <th className="px-6 py-4 text-center text-black text-md font-semibold">Email</th>
-                  <th className="px-12 py-4 text-center text-black text-md font-semibold">Phone Number</th>
-                  <th className="px-12 py-4 text-center text-black text-md font-semibold">Role</th>
+                  <th className="px-16 py-4 text-center text-black text-md font-semibold">Email</th>
+                  <th className="px-3 py-4 text-center text-black text-md font-semibold">Phone Number</th>
+                  <th className="px-8 py-4 text-center text-black text-md font-semibold">Role</th>
                   <th className="px-2 py-4  text-black text-md font-semibold">Actions</th>
                 </tr>
               </thead>
@@ -407,6 +476,24 @@ export default function Team() {
                         </td>
                       </tr>
                     ))
+                  ) : filteredProfiles.length === 0 && searchTerm ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                        <div className="flex flex-col items-center">
+                          <svg className="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                          </svg>
+                          <p className="text-lg font-medium">No team members found</p>
+                          <p className="text-sm">Try a different search term or clear the search</p>
+                          <button 
+                            onClick={handleClearSearch}
+                            className="mt-3 px-4 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                          >
+                            Clear Search
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   ) : (
                     currentProfiles.map((profile) => (
                       <tr key={profile.id} className="hover:bg-gray-50 text-center transition-colors">
@@ -447,12 +534,12 @@ export default function Team() {
               </table>
             </div>
             {/* Pagination controls */}
-            {profiles.length > 0 && (
+            {filteredProfiles.length > 0 && (
               <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 border-t border-gray-200">
                 <div className="text-sm text-gray-600 mb-3 sm:mb-0">
                   Showing <span className="font-medium">{indexOfFirstProfile + 1}</span> to{" "}
-                  <span className="font-medium">{Math.min(indexOfLastProfile, profiles.length)}</span> of{" "}
-                  <span className="font-medium">{profiles.length}</span>{" "}
+                  <span className="font-medium">{Math.min(indexOfLastProfile, filteredProfiles.length)}</span> of{" "}
+                  <span className="font-medium">{filteredProfiles.length}</span>{" "}
                   team members
                 </div>
                 <div className="flex gap-2">
