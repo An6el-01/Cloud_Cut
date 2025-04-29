@@ -15,6 +15,7 @@ import EditCompOrder from '@/components/editCompOrder';
 import DeleteCompletedOrder from '@/components/DeleteCompletedOrder';
 import * as Sentry from '@sentry/nextjs';
 import { fetchArchivedOrders } from '@/redux/thunks/ordersThunks';
+import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
 
 // Define types used by the dropdown component
 type SortField = 'order_id' | 'order_date' | 'customer_name';
@@ -229,6 +230,7 @@ export default function Admin() {
     const { loading, error } = useSelector((state: RootState) => state.orders);
     const selectedRowRef = useRef<HTMLTableRowElement>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [currentSlide, setCurrentSlide] = useState(0);
     
     // New state to track editing state
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -256,6 +258,61 @@ export default function Admin() {
     const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
     const currentOrders = filteredOrders.slice(indexOfFirstOrder, indexOfLastOrder);
     const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
+
+    const brands = [
+        {name: 'DeWalt', image: '/dewalt.png'},
+        {name: 'Milwaukee', image: '/milwaukee.png'},
+        {name: 'Makita', image: '/makita.png'},
+        {name: 'Peli', image: '/peli.png'},
+        {name: 'Erbauer', image: '/erbauer.png'},
+        {name: 'Festool', image: '/festool.png'},
+        {name: 'Bosch', image: '/bosch.png'},
+        {name: 'Stanley', image: '/stanley.png'},
+        {name: 'Halfords', image: '/halfords.png'},
+        {name: 'Husky', image: '/husky.png'},
+        {name: 'Einhell', image: '/einhell.png'},
+        {name: 'Magnusson', image: '/magnusson.png'},
+        {name: 'OX', image: '/ox.png'},
+        {name: 'Klein Tools', image: '/klein.png'},
+        {name: 'Craftsman', image: '/craftsman.png'},
+        {name: 'Trend', image: '/trend.png'},
+        {name: 'Ryobi', image: '/ryobi.png'},
+        {name: 'Nuprol', image: '/nuprol.png'},
+        {name: 'Hikoki', image: '/hikoki.png'},
+        {name: 'Ridgid', image: '/ridgid.png'},
+        {name: 'ThoughBuilt', image: '/toughbilt.png'},
+        {name: 'Facom', image: '/facom.png'},
+        {name: 'AEG', image: '/AEG.png'},
+        {name: 'Tanos', image: '/tanos.png'},
+        {name: 'JCB', image: '/jcb.png'},
+        {name: 'Panasonic', image: '/panasonic.png'},
+        {name: 'Flex', image: '/flex.png'},
+        {name: 'Sortimo', image: '/sortimo.png'},
+        {name: 'Reisser', image: '/reisser.png'},
+        {name: 'QBrick', image: '/qbrick.png'},
+        {name: 'Rothenberger', image: '/rothenberger.png'},
+        {name: 'V-Tuf', image: '/vtuf.png'},
+        {name: 'Strauss', image: '/strauss.png'},
+        {name: 'Metabo', image: '/metabo.png'},
+        {name: 'Industrial', image: '/industrial.png'},
+        {name: 'Keter', image: '/keter.png'},
+        {name: 'Hart', image: '/hart.png'},
+        {name: 'Worx', image: '/worx.png'},
+        {name: 'Wisent', image: '/wisent.png'},
+        {name: 'Wurth', image: '/wurth.png'},
+        {name: 'Hasta', image: '/hasta.png'},
+    ]
+
+    //Data for Pie Chart
+    const data= [
+        {name: 'BLUE 30mm', value: 40},
+        {name: 'RED 30mm', value: 25},
+        {name: 'GREEN 30mm', value: 10},
+        {name: 'ORANGE 50mm', value: 15},
+        {name: 'Others', value: 10},
+    ];
+
+    const COLORS = ['#3B82F6', '#EF4444', '#F97316', '#22C55E', '#9CA3AF'];
 
     // Fetch archived orders on component mount
     useEffect(() => {
@@ -472,8 +529,25 @@ export default function Admin() {
         });
     }, [sortConfig]);
     
-
+    //Function to handle going to the next slide on carousel
+    const nextSlide = useCallback(() => {
+        setCurrentSlide((prev) => (prev + 1) % Math.ceil(brands.length / 2));
+    }, [brands.length]);
     
+    //Function to handle going to the previous slide on carousel
+    const prevSlide = () => {
+        setCurrentSlide((prev) => (prev - 1 + Math.ceil(brands.length / 2)) % Math.ceil(brands.length / 2));
+    };
+    
+    // Add auto-slide functionality
+    useEffect(() => {
+        const timer = setInterval(() => {
+            nextSlide();
+        }, 5000);
+
+        // Cleanup on unmount or when nextSlide changes
+        return () => clearInterval(timer);
+    }, [nextSlide]);
 
     return (
         <div className="relative min-h-screen text-white">
@@ -581,7 +655,7 @@ export default function Admin() {
                     
                     {/* Table Container */}
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm relative" style={{ zIndex: 1 }}>
-                        <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
+                        <div className="overflow-x-auto bg-white h-[calc(105vh-300px)] flex flex-col">
                             {loading || !archivedOrders ? (
                                 <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6 text-black">
                                     <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4" aria-hidden="true"></div>
@@ -852,18 +926,125 @@ export default function Admin() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <h1 className="text-2xl font-bold text-white">Foam Inserts</h1>
                     </div>
-                    <div className="overflow-x-auto bg-white h-[calc(35vh-120px)] flex flex-col">
-                        <div className="flex-1 overflow-y-auto">
-                            <h1 className="text-lg font-semibold text-black">Display Foam Insert Brands</h1>
+                    <div className="relative bg-white h-[250px] sm:h-[300px] lg:h-[calc(38vh-120px)] flex flex-col">
+                        {/**Carousel Container */}
+                        <div className="flex-1 overflow-hidden relative">
+                            <div
+                                className="flex transition-transform duration-500 ease-in-out h-full mt-5 "
+                                style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+                            >
+                                {/* Group brands into pairs */}
+                                {Array.from({ length: Math.ceil(brands.length / 2) }, (_, i) => brands.slice(i * 2, (i + 1) * 2)).map((brandPair, index) => (
+                                    <div key={index} className="min-w-full h-full flex justify-around items-center px-4">
+                                        {brandPair.map((brand, brandIndex) => (
+                                            <div key={`${index}-${brandIndex}`} className="w-1/2 h-full flex items-center justify-center relative px-2">
+                                                <Image
+                                                    src={brand.image}
+                                                    alt={`${brand.name} logo`}
+                                                    width={120}
+                                                    height={120}
+                                                    sizes="(max-width: 640px) 80px, (max-width: 768px) 100px, 120px"
+                                                    priority={index === 0}
+                                                    className="object-contain w-auto h-auto max-w-[80%] max-h-[80%] sm:max-w-[85%] sm:max-h-[85%] lg:max-w-[90%] lg:max-h-[90%]"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                            {/**Navigation Buttons */}
+                            <button
+                                onClick={() => {
+                                    prevSlide();
+                                }}
+                                className="absolute left-2 top-2/3 transform -translate-y-1/2 bg-gray-800/50 text-white p-2 rounded-full hover:bg-gray-800"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m15 18-6-6 6-6"/>
+                                </svg>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    nextSlide();
+                                }}
+                                className="absolute right-2 top-2/3 transform -translate-y-1/2 bg-gray-800/50 text-white p-2 rounded-full hover:bg-gray-800"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m9 18 6-6-6-6"/>
+                                </svg>
+                            </button>
+                        </div>
+                        {/**View More Button */}
+                        <div className="flex justify-center py-4">
+                            <button className="bg-gradient-to-r from-red-800 to-red-600 text-white px-6 py-2 rounded-full flex items-center space-x-2 hover:from-red-700 hover:to-red-500 ">
+                                <span>View More</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M5 12h14"/>
+                                        <path d="m12 5 7 7-7 7"/>
+                                    </svg>
+                            </button>
                         </div>
                     </div>
                     {/* Best Performing Foam Sheets */}
-                    <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4 mt-10">
+                    <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4 mt-4 lg:mt-5">
                         <h1 className="text-2xl font-bold text-white">Best Performing Foam Sheets</h1>
                     </div>
-                    <div className="overflow-x-auto bg-white h-[calc(56vh-185px)] flex flex-col">
-                        <div className="flex-1 overflow-y-auto">
-                            <h1 className="text-lg font-semibold text-black">Display Pie Chart</h1>
+                    <div className="bg-white rounded-b-lg shadow-lg p-4 sm:p-6 flex flex-col justify-center">
+                        <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 lg:gap-11 justify-center items-center">
+                            {/* Legend */}
+                            <div className="flex flex-row sm:flex-col gap-2 sm:gap-3 justify-center flex-wrap ml-11">
+                                {data.map((entry, index) => (
+                                    <div key={entry.name} className="flex items-center gap-2 min-w-[100px]">
+                                        <div 
+                                            className="w-6 h-3 rounded-full" 
+                                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                        />
+                                        <span className="text-xs sm:text-sm text-gray-700">{entry.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            {/* Chart */}
+                            <div className="w-full sm:flex-1 h-[200px] sm:h-[calc(53vh-250px)]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={data}
+                                            dataKey="value"
+                                            nameKey="name"
+                                            cx="70%"
+                                            cy="50%"
+                                            outerRadius={80}
+                                            fill="#8884d8"
+                                            paddingAngle={2}
+                                        >
+                                            {data.map((entry, index) => (
+                                                <Cell 
+                                                    key={`cell-${index}`} 
+                                                    fill={COLORS[index % COLORS.length]}
+                                                />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip 
+                                            formatter={(value) => [`${value}%`, null]}
+                                            contentStyle={{ 
+                                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '4px',
+                                                fontSize: '12px'
+                                            }}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                        <div className="flex justify-center py-3 sm:py-4">
+                            <button className="bg-gradient-to-r from-red-800 to-red-600 text-white px-6 py-2 rounded-full flex items-center space-x-2 hover:from-red-700 hover:to-red-500 ">
+                                <span>View Analytics</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M5 12h14"/>
+                                    <path d="m12 5 7 7-7 7"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                 </div>

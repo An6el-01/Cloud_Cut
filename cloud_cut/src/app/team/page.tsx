@@ -373,10 +373,10 @@ export default function Team() {
               <thead className="bg-gray-100 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-4 text-center text-black text-md font-semibold">Name</th>
-                  <th className="px-12 py-4 text-center text-black text-md font-semibold">Email</th>
+                  <th className="px-6 py-4 text-center text-black text-md font-semibold">Email</th>
                   <th className="px-12 py-4 text-center text-black text-md font-semibold">Phone Number</th>
                   <th className="px-12 py-4 text-center text-black text-md font-semibold">Role</th>
-                  <th className="px-6 py-4 text-center text-black text-md font-semibold">Actions</th>
+                  <th className="px-2 py-4  text-black text-md font-semibold">Actions</th>
                 </tr>
               </thead>
             </table>
@@ -390,7 +390,7 @@ export default function Team() {
                         <td className="px-6 py-4">
                           <div className="h-4 bg-gray-200 rounded w-24 mx-auto"></div>
                         </td>
-                        <td className="px-12 py-4">
+                        <td className="px-12 py-4 ">
                           <div className="h-4 bg-gray-200 rounded w-32 mx-auto"></div>
                         </td>
                         <td className="px-12 py-4">
