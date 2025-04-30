@@ -28,6 +28,7 @@ let authToken: string | null = null;
 async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise<T> {
   if (!authToken) {
     authToken = await getAuthToken();
+    console.log('New token:', authToken);
   }
 
   try {
@@ -44,6 +45,7 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
     if (response.status === 401) {
       console.log('Token expired, refreshing...');
       authToken = await getAuthToken();
+      console.log('New token:', authToken);
       const retryResponse = await fetch(url, {
         ...options,
         headers: {
@@ -101,13 +103,13 @@ export async function getAuthToken(): Promise<string> {
 }
 
 export async function fetchOrders(page: number = 1, perPage: number = 15): Promise<OrdersResponse> {
-  const fiveDaysAgo = new Date();
-  fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
   const now = new Date();
+  const fiveDaysAgo = new Date(now.getTime() - (5 * 24 * 60 * 60 * 1000)); // 5 days ago in milliseconds
   const dateRange = `${Math.floor(fiveDaysAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
 
   const normalizedPerPage = Math.min(Math.max(perPage, 5), 20);
   const url = `${BASE_URL}/api/despatchCloud/proxy?path=orders&page=${page}&per_page=${normalizedPerPage}&filters[date_range]=${dateRange}`;
+  console.log(`Page: ${page}, Per Page: ${normalizedPerPage}, Date Range: ${dateRange}`);
   console.log("Fetching orders from:", url);
   const response = await fetchWithAuth<OrdersResponse>(url);
 

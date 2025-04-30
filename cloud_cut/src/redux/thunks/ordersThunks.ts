@@ -9,6 +9,7 @@ import { optimizeItemName } from '@/utils/optimizeItemName';
 import { downloadCSV, generateCSV } from '@/utils/exportCSV';
 import { processItemsForOrders } from '../utils/orderUtils';
 import { setSyncStatus } from '../slices/ordersSlice';
+import { shouldOrderBeManufactured } from '@/utils/manufacturingUtils';
 
 // Define helper type for Supabase response items
 type SupabaseOrderItem = {
@@ -335,6 +336,68 @@ export const syncOrders = createAsyncThunk(
         } catch (error) {
           console.error('Error processing order items:', error);
           console.log('Continuing with sync despite item processing error');
+        }
+      }
+      
+      //********* STEP 4.5: Update manufacturing status for all orders *********
+      console.log('STEP 4.5: Updating manufacturing status for all orders...');
+      
+      // Get all active orders that need manufacturing status update
+      const { data: activeOrdersToUpdate, error: manufacturingOrdersError } = await supabase
+        .from('orders')
+        .select('order_id')
+        .in('order_id', [...existingActiveOrderIds, ...newlyAddedOrderIds]);
+      
+      if (manufacturingOrdersError) {
+        console.error('Error fetching active orders for manufacturing update:', manufacturingOrdersError);
+      } else if (activeOrdersToUpdate) {
+        // Process each order in batches
+        const batchSize = 20;
+        for (let i = 0; i < activeOrdersToUpdate.length; i += batchSize) {
+          const batch = activeOrdersToUpdate.slice(i, i + batchSize);
+          const orderIds = batch.map(o => o.order_id);
+          
+          // Get items for these orders
+          const { data: items, error: manufacturingItemsError } = await supabase
+            .from('order_items')
+            .select('*')
+            .in('order_id', orderIds);
+          
+          if (manufacturingItemsError) {
+            console.error('Error fetching items for manufacturing update:', manufacturingItemsError);
+            continue;
+          }
+          
+          // Group items by order_id
+          const itemsByOrder = items.reduce<Record<string, OrderItem[]>>((acc, item) => {
+            const typedItem = item as unknown as OrderItem;
+            if (!acc[typedItem.order_id]) acc[typedItem.order_id] = [];
+            acc[typedItem.order_id].push(typedItem);
+            return acc;
+          }, {});
+          
+          // Update manufacturing status for each order
+          const updates = Object.entries(itemsByOrder).map(([orderId, items]) => ({
+            order_id: orderId,
+            manufactured: shouldOrderBeManufactured(items),
+            updated_at: new Date().toISOString()
+          }));
+          
+          // Update orders in batches
+          const { error: manufacturingUpdateError } = await supabase
+            .from('orders')
+            .upsert(updates, { onConflict: 'order_id' });
+          
+          if (manufacturingUpdateError) {
+            console.error('Error updating manufacturing status:', manufacturingUpdateError);
+          } else {
+            console.log(`Updated manufacturing status for ${updates.length} orders`);
+          }
+          
+          // Small delay to prevent rate limiting
+          if (i + batchSize < activeOrdersToUpdate.length) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
         }
       }
       

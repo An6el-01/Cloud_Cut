@@ -1,9 +1,11 @@
 import { configureStore } from "@reduxjs/toolkit";
 import enhancedOrdersReducer from './slices/ordersSlice';
+import stockReducer from './slices/stockSlice';
 
 export const store = configureStore({
     reducer: {
         orders: enhancedOrdersReducer,
+        stock: stockReducer,
     },
 });
 

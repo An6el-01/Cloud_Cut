@@ -10,6 +10,8 @@ export default function ManuConfirm({
     orderIdsToPacking,
     orderIdsToMarkCompleted,
     orderProgress,
+    mediumSheetTotalQuantity,
+    selectedMediumSheet
 } : {
     isOpen: boolean;
     onClose: () => void;
@@ -18,6 +20,8 @@ export default function ManuConfirm({
     orderIdsToPacking?: string[];
     orderIdsToMarkCompleted?: string[];
     orderProgress?: string;
+    mediumSheetTotalQuantity?: number;
+    selectedMediumSheet?: string;
 }) {
     console.log("ManuConfirm: Component received props", { 
         isOpen, orderId, orderIdsToPacking, orderIdsToMarkCompleted, orderProgress 
@@ -198,6 +202,10 @@ export default function ManuConfirm({
         isReadyForPacking
     });
 
+    const handleMediumSheetTotalQuantity = () => {
+
+    }
+
     return (
         <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300"
@@ -235,7 +243,7 @@ export default function ManuConfirm({
                     {isMultipleOrders ? (
                         <>
                             <p>
-                                Are you confirming that <span className="font-medium">all items</span> for these <span className="font-semibold">{packingOrders.length} orders</span> have been manufactured?
+                                Are you confirming that you have manufactured {mediumSheetTotalQuantity} {selectedMediumSheet}?
                             </p>
                             
                             {/* Packing Orders Section */}
@@ -310,8 +318,11 @@ export default function ManuConfirm({
                         <>
                             <p>
                                 {isReadyForPacking
-                                    ? 'Are you confirming that all items for this order have been manufactured?' 
-                                    : 'Are you confirming that this item has been manufactured?'}
+                                    ? <>
+                                    Are you confirming that you have manufactured <strong className="font-semibold">{mediumSheetTotalQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
+                                    </>
+                                    : `Are you confirming that you have manufactured this ${selectedMediumSheet}?`
+                                }
                             </p>
                             <p className={`flex items-center ${isReadyForPacking ? 'bg-green-50 dark:bg-green-900/30' : 'bg-blue-50 dark:bg-blue-900/30'} p-3 rounded-lg`}>
                                 <span className={`${isReadyForPacking ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'} mr-2`}>

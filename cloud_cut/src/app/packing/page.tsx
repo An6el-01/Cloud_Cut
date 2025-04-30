@@ -52,7 +52,7 @@ export default function Packing() {
     const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
     const [retailPackPage, setRetailPackPage] = useState(1);
-    const retailPacksPerPage = 10;
+    const retailPacksPerPage = 7;
     const [retailPackTableBPage, setRetailPackTableBPage] = useState(1);
 
     const orderProgress = useSelector((state: RootState) =>
@@ -492,11 +492,15 @@ export default function Packing() {
                         // Type casting to ensure we're setting Order[] type
                         const typedOrders = fetchedOrders as unknown as Order[];
                         
-                        // Sort orders by the quantity of the retail pack (highest first)
+                        // Sort orders by priority (lowest first)
                         typedOrders.sort((a, b) => {
-                            const quantityA = getRetailPackQuantityInOrder(a.order_id, retailPack);
-                            const quantityB = getRetailPackQuantityInOrder(b.order_id, retailPack);
-                            return quantityB - quantityA;
+                            const itemsA = allOrderItems[a.order_id] || [];
+                            const itemsB = allOrderItems[b.order_id] || [];
+                            
+                            const priorityA = itemsA.length > 0 ? Math.min(...itemsA.map(item => item.priority || 10)) : 10;
+                            const priorityB = itemsB.length > 0 ? Math.min(...itemsB.map(item => item.priority || 10)) : 10;
+                            
+                            return priorityA - priorityB;
                         });
                         
                         setOrdersWithRetailPacks(prev => ({
@@ -518,13 +522,6 @@ export default function Packing() {
         return ordersWithRetailPacks[retailPack] || [];
     };
 
-    // Function to get quantity of a specific retail pack in an order
-    const getRetailPackQuantityInOrder = (orderId: string, retailPack: string) => {
-        const items = allOrderItems[orderId] || [];
-        return items
-            .filter(item => item.item_name === retailPack && !item.completed)
-            .reduce((sum, item) => sum + item.quantity, 0);
-    };
 
     // Function to compute the total number of retail packs after filtering
     const getFilteredRetailPacks = () => {
@@ -604,10 +601,6 @@ export default function Packing() {
         }
     };
     
-    // Compatibility function for old code
-    const handleRetailPackPageChange = (newPage: number) => {
-        handleTableAPageChange(newPage);
-    };
 
     return (
         <div className="min-h-screen">
@@ -777,6 +770,7 @@ export default function Packing() {
                                                         //Get the items for this specific order
                                                         const orderItems = orderItemsById[order.order_id] || [];
                                                         // Use the calculated priority property if it exists
+                                                        /**THIS IS NOT GETTING THE PRIORITY FOR THE ORDERS PROPERLY. */
                                                         const displayPriority = 'calculatedPriority' in order
                                                             ? (order as OrderWithPriority).calculatedPriority
                                                             : (orderItems.length > 0
@@ -804,11 +798,7 @@ export default function Packing() {
                                                                     {new Date(order.order_date).toLocaleDateString("en-GB")}
                                                                 </td>
                                                                 <td className="px-4 py-2 text-black">
-                                                                    {selectedRetailPack ? (
-                                                                        orderProgress[order.order_id]
-                                                                    ) : (
-                                                                        orderProgress[order.order_id]
-                                                                    )}
+                                                                    {orderProgress[order.order_id]}
                                                                 </td>
                                                             </tr>
                                                         );
@@ -816,8 +806,8 @@ export default function Packing() {
                                                 )}
                                                 {selectedRetailPack && findOrdersWithRetailPack(selectedRetailPack).length === 0 && !isRefreshing && (
                                                     <tr>
-                                                        <td colSpan={5} className="px-6 py-10 text-center">
-                                                            <div className="flex flex-col items-center justify-center text-black">
+                                                        <td colSpan={5} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
+                                                            <div className="flex flex-col items-center justify-center h-full text-black">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                                 </svg>
@@ -1024,73 +1014,72 @@ export default function Packing() {
                                     <p className="text-red-500">{error}</p>
                                 </div>
                             ) : (
-                                <>
-                                    <div className="flex-1 overflow-y-auto">
-                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
-                                        <thead className="bg-gray-100/90 sticky top-0">
-                                            <tr>
-                                                <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
-                                                <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-300">
-                                            {isRefreshing ? (
-                                                //Skeleton loading rows while refreshing
-                                                [...Array(5)].map((_, index) => (
-                                                    <tr key={`skeleton-${index}`} className="animate-pulse">
-                                                        <td className="px-6 py-5">
-                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
-                                                        </td>
-                                                        <td className="px-6 py-5">
-                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
-                                                        </td>
-                                                    </tr>
-                                                ))
-                                            ) : (
-                                                //Render Retail Packs and their quantities for Table A
-                                                getTableARetailPacks().length === 0 ? (
-                                                    <tr>
-                                                        <td colSpan={2} className="px-6 py-10 text-center">
-                                                            <div className="flex flex-col items-center justify-center text-black">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                                                </svg>
-                                                                <p className="text-lg font-medium">No retail packs in pending orders</p>
-                                                                <p className="text-sm text-gray-500 mt-1">There are no retail packs in the orders ready for packing</p>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ) : (
-                                                    getTableARetailPacks().map(([itemName, quantity], index) => (
-                                                        <tr 
-                                                            key={itemName} 
-                                                            className={`transition-colors duration-150 
-                                                                ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
-                                                                hover:bg-blue-50 cursor-pointer shadow-sm`}
-                                                            onClick={() => handleRetailPackClick(itemName)}
-                                                        >
-                                                            <td className="px-6 py-5 text-left">
-                                                                <div className="flex items-center space-x-3">
-                                                                    <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
-                                                                    <span className="text-black text-lg">
-                                                                        {itemName}
-                                                                    </span>
-                                                                </div>
+                                <div className="flex flex-col h-full">
+                                    <div className="overflow-y-auto flex-1">
+                                        <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto">
+                                            <thead className="bg-gray-100/90 sticky top-0">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
+                                                    <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-300">
+                                                {isRefreshing ? (
+                                                    //Skeleton loading rows while refreshing
+                                                    [...Array(5)].map((_, index) => (
+                                                        <tr key={`skeleton-${index}`} className="animate-pulse">
+                                                            <td className="px-6 py-5">
+                                                                <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                                                             </td>
-                                                            <td className="px-6 py-5 text-center">
-                                                                <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                                                                    {quantity}
-                                                                </span>
+                                                            <td className="px-6 py-5">
+                                                                <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                                                             </td>
                                                         </tr>
                                                     ))
-                                                )
-                                            )}
-                                        </tbody>
-                                    </table>
+                                                ) : (
+                                                    //Render Retail Packs and their quantities for Table A
+                                                    getTableARetailPacks().length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={2} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
+                                                                <div className="flex flex-col items-center justify-center h-full text-black">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                                                    </svg>
+                                                                    <p className="text-lg font-medium">No retail packs in pending orders</p>
+                                                                    <p className="text-sm text-gray-500 mt-1">There are no retail packs in the orders ready for packing</p>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        getTableARetailPacks().map(([itemName, quantity], index) => (
+                                                            <tr 
+                                                                key={itemName} 
+                                                                className={`transition-colors duration-150 
+                                                                    ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
+                                                                    hover:bg-blue-50 cursor-pointer shadow-sm`}
+                                                                onClick={() => handleRetailPackClick(itemName)}
+                                                            >
+                                                                <td className="px-6 py-3 text-left">
+                                                                    <div className="flex items-center space-x-3">
+                                                                        <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
+                                                                        <span className="text-black text-lg">
+                                                                            {itemName}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-3 text-center">
+                                                                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                        {quantity}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    )
+                                                )}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    {/**Pagination Controls for Table A */}
-                                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
+                                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200 mt-auto">
                                         <div className="text-sm text-gray-600">
                                             {getFilteredRetailPacks().length} retail packs found
                                         </div>
@@ -1116,7 +1105,7 @@ export default function Packing() {
                                             </div>
                                         )}
                                     </div>
-                                </>
+                                </div>
                             )}     
                         </div>
                     </div>
@@ -1136,85 +1125,84 @@ export default function Packing() {
                                     <p className="text-red-500">{error}</p>
                                 </div>
                             ) : (
-                                <>
-                                    <div className="flex-1 overflow-y-auto">
-                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
-                                        <thead className="bg-gray-100/90 sticky top-0">
-                                            <tr>
-                                                <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
-                                                <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-300">
-                                            {isRefreshing ? (
-                                                //Skeleton loading rows while refreshing
-                                                [...Array(5)].map((_, index) => (
-                                                    <tr key={`skeleton-${index}`} className="animate-pulse">
-                                                        <td className="px-6 py-5">
-                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
-                                                        </td>
-                                                        <td className="px-6 py-5">
-                                                            <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
-                                                        </td>
-                                                    </tr>
-                                                ))
-                                            ) : (
-                                                //Render Retail Packs and their quantities for Table B
-                                                getTableBRetailPacks().length === 0 ? (
-                                                    <tr>
-                                                        <td colSpan={2} className="px-6 py-10 text-center">
-                                                            <div className="flex flex-col items-center justify-center text-black">
-                                                                {getFilteredRetailPacks().length <= retailPacksPerPage ? (
-                                                                    <>
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                                        </svg>
-                                                                        <p className="text-lg font-medium">All retail packs are in Table A</p>
-                                                                        <p className="text-sm text-gray-500 mt-1">Table B is not needed</p>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                                                        </svg>
-                                                                        <p className="text-lg font-medium">No additional retail packs</p>
-                                                                        <p className="text-sm text-gray-500 mt-1">There are no additional retail packs to display in Table B</p>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ) : (
-                                                    getTableBRetailPacks().map(([itemName, quantity], index) => (
-                                                        <tr 
-                                                            key={itemName} 
-                                                            className={`transition-colors duration-150 
-                                                                ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
-                                                                hover:bg-blue-50 cursor-pointer shadow-sm`}
-                                                            onClick={() => handleRetailPackClick(itemName)}
-                                                        >
-                                                            <td className="px-6 py-5 text-left">
-                                                                <div className="flex items-center space-x-3">
-                                                                    <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
-                                                                    <span className="text-black text-lg">
-                                                                        {itemName}
-                                                                    </span>
-                                                                </div>
+                                <div className="flex flex-col h-full">
+                                    <div className="overflow-y-auto flex-1">
+                                        <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto">
+                                            <thead className="bg-gray-100/90 sticky top-0">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
+                                                    <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-300">
+                                                {isRefreshing ? (
+                                                    //Skeleton loading rows while refreshing
+                                                    [...Array(5)].map((_, index) => (
+                                                        <tr key={`skeleton-${index}`} className="animate-pulse">
+                                                            <td className="px-6 py-5">
+                                                                <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                                                             </td>
-                                                            <td className="px-6 py-5 text-center">
-                                                                <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                                                                    {quantity}
-                                                                </span>
+                                                            <td className="px-6 py-5">
+                                                                <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                                                             </td>
                                                         </tr>
                                                     ))
-                                                )
-                                            )}
-                                        </tbody>
-                                    </table>
+                                                ) : (
+                                                    //Render Retail Packs and their quantities for Table B
+                                                    getTableBRetailPacks().length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={2} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
+                                                                <div className="flex flex-col items-center justify-center h-full text-black">
+                                                                    {getFilteredRetailPacks().length <= retailPacksPerPage ? (
+                                                                        <>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                            </svg>
+                                                                            <p className="text-lg font-medium">All retail packs are in Table A</p>
+                                                                            <p className="text-sm text-gray-500 mt-1">Table B is not needed</p>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                                                            </svg>
+                                                                            <p className="text-lg font-medium">No additional retail packs</p>
+                                                                            <p className="text-sm text-gray-500 mt-1">There are no additional retail packs to display in Table B</p>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        getTableBRetailPacks().map(([itemName, quantity], index) => (
+                                                            <tr 
+                                                                key={itemName} 
+                                                                className={`transition-colors duration-150 
+                                                                    ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
+                                                                    hover:bg-blue-50 cursor-pointer shadow-sm`}
+                                                                onClick={() => handleRetailPackClick(itemName)}
+                                                            >
+                                                                <td className="px-6 py-3 text-left">
+                                                                    <div className="flex items-center space-x-3">
+                                                                        <div className={`w-4 h-4 rounded-full mr-3 ${getRetailPackColorClass(itemName)}`}></div>
+                                                                        <span className="text-black text-lg">
+                                                                            {itemName}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-3 text-center">
+                                                                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                        {quantity}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    )
+                                                )}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    {/**Pagination Controls for Table B */}
-                                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
+                                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200 mt-auto">
                                         <div className="text-sm text-gray-600">
                                             {Math.max(0, getFilteredRetailPacks().length - retailPacksPerPage)} additional retail packs
                                         </div>
@@ -1240,7 +1228,7 @@ export default function Packing() {
                                             </div>
                                         )}
                                     </div>
-                                </>
+                                </div>
                             )}     
                         </div>
                     </div>

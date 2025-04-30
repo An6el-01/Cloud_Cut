@@ -67,9 +67,9 @@ export default function Manufacturing() {
   const [allMediumSheetOrdersChecked, setAllMediumSheetOrdersChecked] = useState(false);
   const [orderIdsToPacking, setOrderIdsToPacking] = useState<string[]>([]);
   const [orderIdsToMarkCompleted, setOrderIdsToMarkCompleted] = useState<string[]>([]);
-  // Add a new state to track the current progress value for the confirmation dialog
   const [currentOrderProgress, setCurrentOrderProgress] = useState<string | undefined>(undefined);
-
+  const [selectedMediumSheetQuantity, setSelectedMediumSheetQuantity] = useState<number>(0);
+  const [selectedMediumSheet, setSelectedMediumSheet] = useState<string>();
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
     return items.filter(item => {
@@ -266,6 +266,15 @@ export default function Manufacturing() {
     const newSelectedSheet = selectedFoamSheet === sku ? null : sku;
     setSelectedFoamSheet(newSelectedSheet);
     
+    // Update the selected medium sheet quantity
+    if (newSelectedSheet) {
+      setSelectedMediumSheetQuantity(itemsByMediumSheet[newSelectedSheet] || 0);
+      setSelectedMediumSheet(newSelectedSheet);
+    } else {
+      setSelectedMediumSheetQuantity(0);
+      setSelectedMediumSheet('N/A');
+    }
+    
     // Reset any checkboxes and processing states
     setAllMediumSheetOrdersChecked(false);
     setCheckedOrders(new Set());
@@ -305,6 +314,7 @@ export default function Manufacturing() {
   }, {} as Record<string, string>);
 
   // Function to automatically mark orders with no manufacturing items as manufactured
+  // Leave this as is for now (syncOrders Thunk Breaks if this is deleted)
   const autoMarkOrdersWithNoManufacturingItems = async () => {
     return Sentry.startSpan({
       name: 'autoMarkOrdersWithNoManufacturingItems',
@@ -476,7 +486,6 @@ export default function Manufacturing() {
       return () => clearTimeout(timer);
     }
   }, [currentView, orders.length]);
-
   // Function to handle clicking on an order row in the 'Orders With' section
   const handleOrderClick = async (orderId: string) => {
     try {
@@ -1649,6 +1658,7 @@ export default function Manufacturing() {
                         <thead className="bg-gray-100/90 sticky top-0 ">
                           <tr>
                             <th className="px-6 py-4 text-left text-lg font-semibold text-black">Foam Sheet</th>
+                            {/* <th className="px-6 py-4 text-left text-lg font-semibold text-black">Stock Level</th> */}
                             <th className="px-6 py-4 text-center text-lg font-semibold text-black">Qty</th>
                           </tr>
                         </thead>
@@ -1660,6 +1670,9 @@ export default function Manufacturing() {
                                 <td className="px-6 py-5">
                                   <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                                 </td>
+                                {/* <td>
+                                  <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
+                                </td> */}
                                 <td>
                                   <div className="h-4 bg-gray-600 rounded w-20 mx-auto opacity-40"></div>
                                 </td>
@@ -1907,6 +1920,8 @@ export default function Manufacturing() {
           orderIdsToPacking={orderIdsToPacking}
           orderIdsToMarkCompleted={orderIdsToMarkCompleted}
           orderProgress={currentOrderProgress}
+          mediumSheetTotalQuantity={selectedMediumSheetQuantity}
+          selectedMediumSheet={selectedFoamSheet ? formatMediumSheetName(selectedFoamSheet) : undefined}
         />
       )}
     </div>
