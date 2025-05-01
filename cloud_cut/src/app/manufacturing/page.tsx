@@ -1716,7 +1716,7 @@ export default function Manufacturing() {
                                     key={sku} 
                                     className={`transition-colors duration-150 
                                       ${selectedFoamSheet === sku 
-                                        ? 'bg-blue-50' 
+                                        ? 'bg-blue-200' 
                                         : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                                       } hover:bg-blue-50 cursor-pointer shadow-sm`}
                                     onClick={async () => {

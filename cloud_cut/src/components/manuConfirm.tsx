@@ -37,7 +37,10 @@ export default function ManuConfirm({
     const [markCompletedOrders, setMarkCompletedOrders] = useState<string[]>([]);
     const [totalOrders, setTotalOrders] = useState(0);
     const [isMultipleOrders, setIsMultipleOrders] = useState(false);
-    
+    const [adjustedMediumSheetQuantity, setAdjustedMediumSheetQuantity] = useState(mediumSheetTotalQuantity || 0);
+    const [mediumSheetsAddedToStock, setMediumSheetsAddedToStock] = useState(0);
+    const [userMediumSheetsAddedToStock, setUserMediumSheetsAddedToStock] = useState(mediumSheetsAddedToStock);
+
     // Parse order progress to determine if it's ready for packing
     const [isReadyForPacking, setIsReadyForPacking] = useState(true);
     
@@ -202,9 +205,45 @@ export default function ManuConfirm({
         isReadyForPacking
     });
 
-    const handleMediumSheetTotalQuantity = () => {
+    const handleMediumSheetsManufactured = () => {
+        if (!mediumSheetTotalQuantity) return;
+        
+        // Calculate the next multiple of 4
+        const nextMultipleOf4 = Math.ceil(mediumSheetTotalQuantity / 4) * 4;
+        setAdjustedMediumSheetQuantity(nextMultipleOf4);
 
+        const mediumSheetsAddedToStock = adjustedMediumSheetQuantity - mediumSheetTotalQuantity;
+
+        setMediumSheetsAddedToStock(mediumSheetsAddedToStock);
     }
+
+    // Effect to update adjusted quantity when mediumSheetTotalQuantity changes
+    useEffect(() => {
+        if (mediumSheetTotalQuantity) {
+            const nextMultipleOf4 = Math.ceil(mediumSheetTotalQuantity / 4) * 4;
+            setAdjustedMediumSheetQuantity(nextMultipleOf4);
+            
+            // Calculate sheets added to stock after we have the adjusted quantity
+            const sheetsAdded = nextMultipleOf4 - mediumSheetTotalQuantity;
+            console.log('Calculating sheets added:', {
+                mediumSheetTotalQuantity,
+                nextMultipleOf4,
+                sheetsAdded
+            });
+            setMediumSheetsAddedToStock(sheetsAdded);
+        }
+    }, [mediumSheetTotalQuantity]);
+
+    // Add debug log for render
+    console.log('Render state:', {
+        mediumSheetsAddedToStock,
+        adjustedMediumSheetQuantity,
+        mediumSheetTotalQuantity
+    });
+
+    useEffect(() => {
+        setUserMediumSheetsAddedToStock(mediumSheetsAddedToStock);
+    }, [mediumSheetsAddedToStock]);
 
     return (
         <div 
@@ -231,7 +270,7 @@ export default function ManuConfirm({
                         <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                 </button>
-
+                {/**Confirm Completion Title */}
                 <h2 
                     id="dialog-title" 
                     className="text-xl font-bold text-gray-900 dark:text-white mb-4"
@@ -240,13 +279,36 @@ export default function ManuConfirm({
                 </h2>
                 
                 <div className="mb-6 text-gray-700 dark:text-gray-300 space-y-3">
+                    {/**SubTitle for Multiple Orders */}
                     {isMultipleOrders ? (
                         <>
-                            <p>
-                                Are you confirming that you have manufactured {mediumSheetTotalQuantity} {selectedMediumSheet}?
-                            </p>
+                            <>
+                                Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong> {selectedMediumSheet}?</strong>
+                            </>
+
+                            {/**How many sheets are being added to stock */}
+                            <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
+                                <div className="flex items-center mb-2">
+                                    <span className="text-red-600 dark:text-red-400 mr-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+                                        </svg>
+                                    </span>
+                                    <span className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            className="w-16 px-2 py-1 border border-gray-300 rounded text-black font-semibold text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            value={userMediumSheetsAddedToStock}
+                                            onChange={e => setUserMediumSheetsAddedToStock(Math.max(0, Number(e.target.value)))}
+                                            aria-label="Medium sheets to add to stock"
+                                        />
+                                        sheets will be added to stock
+                                    </span>
+                                </div>
+                            </div>
                             
-                            {/* Packing Orders Section */}
+                            {/* Orders Being moved to Packing */}
                             {packingOrders.length > 0 && (
                                 <div className="bg-green-50 dark:bg-green-900/30 p-3 rounded-lg mb-3">
                                     <div className="flex items-center mb-2">
@@ -280,14 +342,14 @@ export default function ManuConfirm({
                                 </div>
                             )}
                             
-                            {/* Mark Completed Orders Section */}
+                            {/*Orders being marked as completed */}
                             {markCompletedOrders.length > 0 && (
                                 <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded-lg">
                                     <div className="flex items-center mb-2">
                                         <span className="text-blue-600 dark:text-blue-400 mr-2">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                        </svg>
+                                            </svg>
                                         </span>
                                         <span>
                                             Only the medium sheet items in the following orders will be marked as completed:
@@ -316,14 +378,38 @@ export default function ManuConfirm({
                         </>
                     ) : (
                         <>
+                        {/**Subtitle for Single Order being moved to Packing */}
                             <p>
                                 {isReadyForPacking
                                     ? <>
-                                    Are you confirming that you have manufactured <strong className="font-semibold">{mediumSheetTotalQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
+                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
                                     </>
-                                    : `Are you confirming that you have manufactured this ${selectedMediumSheet}?`
-                                }
+                                    : <>
+                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
+                                    </>
+                            }
                             </p>
+                             {/**How many sheets are being added to stock */}
+                             <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
+                                <div className="flex items-center">
+                                    <span className="text-red-600 dark:text-red-400 mr-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+                                        </svg>
+                                    </span>
+                                    <span className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            className="w-16 px-2 py-1 border border-gray-300 rounded text-black font-semibold text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            value={userMediumSheetsAddedToStock}
+                                            onChange={e => setUserMediumSheetsAddedToStock(Math.max(0, Number(e.target.value)))}
+                                            aria-label="Medium sheets to add to stock"
+                                        />
+                                        sheets will be added to stock
+                                    </span>
+                                </div>
+                            </div>
                             <p className={`flex items-center ${isReadyForPacking ? 'bg-green-50 dark:bg-green-900/30' : 'bg-blue-50 dark:bg-blue-900/30'} p-3 rounded-lg`}>
                                 <span className={`${isReadyForPacking ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'} mr-2`}>
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -341,15 +427,10 @@ export default function ManuConfirm({
                                     }
                                 </span>
                             </p>
-                            {orderProgress && (
-                                <div className="text-sm text-gray-500 mt-1 pl-2">
-                                    Progress: {orderProgress}
-                                </div>
-                            )}
                         </>
                     )}
                 </div>
-                
+                {/**Confirm Buttons */}
                 <div className="flex justify-center">
                     <button
                         type="button"
@@ -357,7 +438,7 @@ export default function ManuConfirm({
                         onClick={handleConfirm}
                         className={`px-6 py-2.5 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 shadow-md hover:shadow-lg ${
                             isReadyForPacking
-                                ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' 
+                                ? 'bg-blue-600 hover:bg--700 focus:ring-blue-500' 
                                 : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
                         }`}
                         aria-label="Confirm processing orders"

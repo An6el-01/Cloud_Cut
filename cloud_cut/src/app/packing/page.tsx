@@ -52,7 +52,7 @@ export default function Packing() {
     const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
     const [retailPackPage, setRetailPackPage] = useState(1);
-    const retailPacksPerPage = 7;
+    const retailPacksPerPage = 9;
     const [retailPackTableBPage, setRetailPackTableBPage] = useState(1);
 
     const orderProgress = useSelector((state: RootState) =>
