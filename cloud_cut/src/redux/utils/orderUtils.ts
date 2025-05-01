@@ -66,103 +66,102 @@ export const processItemsForOrders = async (
     console.error(`No valid orders found in either table. Cannot insert items.`);
     return 0;
   }
+
+  // Fetch ALL existing items for these orders in both tables at once
+  const { data: existingActiveItems, error: activeItemsError } = await supabase
+    .from('order_items')
+    .select('*')
+    .in('order_id', orderIds);
+
+  const { data: existingArchivedItems, error: archivedItemsError } = await supabase
+    .from('archived_order_items')
+    .select('*')
+    .in('order_id', orderIds);
+
+  if (activeItemsError) {
+    console.error(`Error fetching existing active items:`, activeItemsError);
+  }
+  if (archivedItemsError) {
+    console.error(`Error fetching existing archived items:`, archivedItemsError);
+  }
+
+  // Create a map of existing items for quick lookup
+  const existingItemsMap = new Map();
   
-  // Check existing active items to avoid duplicates
-  const activeOrderIdsArray = Array.from(activeOrderIds);
-  if (activeOrderIdsArray.length > 0) {
-    const { data: existingActiveItems, error: activeItemsError } = await supabase
-      .from('order_items')
-      .select('order_id, sku_id, item_name')
-      .in('order_id', activeOrderIdsArray);
-      
-    if (activeItemsError) {
-      console.error(`Error fetching existing active items:`, activeItemsError);
-    }
+  // Add active items to the map
+  existingActiveItems?.forEach(item => {
+    const key = `${item.order_id}_${item.sku_id}_${item.item_name}_${item.quantity}`;
+    existingItemsMap.set(key, { ...item, isArchived: false });
+  });
+
+  // Add archived items to the map
+  existingArchivedItems?.forEach(item => {
+    const key = `${item.order_id}_${item.sku_id}_${item.item_name}_${item.quantity}`;
+    existingItemsMap.set(key, { ...item, isArchived: true });
+  });
+
+  console.log(`Found ${existingItemsMap.size} total existing items across both tables`);
+
+  // Process items for active orders
+  for (const orderId of activeOrderIds) {
+    const items = orderItemsByOrderId[orderId];
+    if (!items) continue;
     
-    const existingActiveItemKeys = new Set(
-      existingActiveItems?.map(item => `${item.order_id}_${item.sku_id}_${item.item_name}`) || []
-    );
-    console.log(`Found ${existingActiveItemKeys.size} existing items in order_items`);
-    
-    // Process items for active orders
-    for (const orderId of activeOrderIdsArray) {
-      const items = orderItemsByOrderId[orderId];
-      if (!items) continue;
+    items.forEach(item => {
+      const key = `${orderId}_${item.sku_id}_${item.item_name}_${item.quantity}`;
       
-      items.forEach(item => {
-        const uniqueStr = `${orderId}_${item.sku_id}_${item.item_name}`;
-        
-        // Skip if item already exists
-        if (existingActiveItemKeys.has(uniqueStr)) {
-          skippedCount++;
-          return;
-        }
-        
-        const newItem = {
-          order_id: orderId,
-          sku_id: item.sku_id,
-          item_name: item.item_name,
-          quantity: item.quantity,
-          completed: false,
-          foamsheet: item.foamsheet || '',
-          extra_info: item.extra_info || '',
-          priority: item.priority || 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        
-        itemsToInsert.push(newItem);
-      });
-    }
+      // Skip if item already exists in either table
+      if (existingItemsMap.has(key)) {
+        skippedCount++;
+        return;
+      }
+      
+      const newItem = {
+        order_id: orderId,
+        sku_id: item.sku_id,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        completed: false,
+        foamsheet: item.foamsheet || '',
+        extra_info: item.extra_info || '',
+        priority: item.priority || 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      itemsToInsert.push(newItem);
+    });
   }
   
-  // Check existing archived items to avoid duplicates
-  const archivedOrderIdsArray = Array.from(archivedOrderIds);
-  if (archivedOrderIdsArray.length > 0) {
-    const { data: existingArchivedItems, error: archivedItemsError } = await supabase
-      .from('archived_order_items')
-      .select('order_id, sku_id, item_name')
-      .in('order_id', archivedOrderIdsArray);
-      
-    if (archivedItemsError) {
-      console.error(`Error fetching existing archived items:`, archivedItemsError);
-    }
+  // Process items for archived orders
+  for (const orderId of archivedOrderIds) {
+    const items = orderItemsByOrderId[orderId];
+    if (!items) continue;
     
-    const existingArchivedItemKeys = new Set(
-      existingArchivedItems?.map(item => `${item.order_id}_${item.sku_id}_${item.item_name}`) || []
-    );
-    console.log(`Found ${existingArchivedItemKeys.size} existing items in archived_order_items`);
-    
-    // Process items for archived orders
-    for (const orderId of archivedOrderIdsArray) {
-      const items = orderItemsByOrderId[orderId];
-      if (!items) continue;
+    items.forEach(item => {
+      const key = `${orderId}_${item.sku_id}_${item.item_name}_${item.quantity}`;
       
-      items.forEach(item => {
-        const uniqueStr = `${orderId}_${item.sku_id}_${item.item_name}`;
-        
-        // Skip if item already exists
-        if (existingArchivedItemKeys.has(uniqueStr)) {
-          skippedCount++;
-          return;
-        }
-        
-        const newItem = {
-          order_id: orderId,
-          sku_id: item.sku_id,
-          item_name: item.item_name,
-          quantity: item.quantity,
-          completed: true, // Set to true for archived items
-          foamsheet: item.foamsheet || '',
-          extra_info: item.extra_info || '',
-          priority: item.priority || 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        
-        archivedItemsToInsert.push(newItem);
-      });
-    }
+      // Skip if item already exists in either table
+      if (existingItemsMap.has(key)) {
+        skippedCount++;
+        return;
+      }
+      
+      const newItem = {
+        order_id: orderId,
+        sku_id: item.sku_id,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        completed: true, // Set to true for archived items
+        foamsheet: item.foamsheet || '',
+        extra_info: item.extra_info || '',
+        priority: item.priority || 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      archivedItemsToInsert.push(newItem);
+    });
   }
   
   // Process missing orders - collect items for orders that don't exist in either table
