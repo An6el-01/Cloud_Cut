@@ -1,104 +1,68 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { StockState } from '@/types/redux';
+import { fetchFinishedStockFromSupabase, syncFinishedStock } from '../thunks/stockThunk';
 
-export interface StockState {
-  loading: boolean;
-  error: string | null;
-  items: StockItem[];
+interface StockItem {
+  id: number;
+  sku: string;
+  stock: number;
+  item_name: string;
+  created_at: string;
+  updated_at: string;
 }
-
-export interface StockItem {
-  id: string;
-  color: string;
-  thirty_mm_stock: number;
-  fifty_mm_stock: number;
-  seventy_mm_stock: number;
-  lastUpdated: string;
-}
-
-const dummyStockData: StockItem[] = [
-  {
-    id: '1',
-    color: 'White',
-    thirty_mm_stock: 150,
-    fifty_mm_stock: 200,
-    seventy_mm_stock: 100,
-    lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    color: 'Black',
-    thirty_mm_stock: 180,
-    fifty_mm_stock: 150,
-    seventy_mm_stock: 120,
-    lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: '3',
-    color: 'Red',
-    thirty_mm_stock: 90,
-    fifty_mm_stock: 110,
-    seventy_mm_stock: 80,
-    lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: '4',
-    color: 'Blue',
-    thirty_mm_stock: 120,
-    fifty_mm_stock: 160,
-    seventy_mm_stock: 90,
-    lastUpdated: new Date().toISOString(),
-  },
-  {
-    id: '5',
-    color: 'Green',
-    thirty_mm_stock: 100,
-    fifty_mm_stock: 130,
-    seventy_mm_stock: 70,
-    lastUpdated: new Date().toISOString(),
-  },
-];
 
 const initialState: StockState = {
+  allFinishedStock: [],
+  syncStatus: 'idle',
   loading: false,
   error: null,
-  items: dummyStockData,
+  items: []
 };
 
-const stockSlice = createSlice({
+export const stockSlice = createSlice({
   name: 'stock',
   initialState,
   reducers: {
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
-    },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
-    },
-    setItems: (state, action: PayloadAction<StockItem[]>) => {
-      state.items = action.payload;
-    },
-    addItem: (state, action: PayloadAction<StockItem>) => {
-      state.items.push(action.payload);
-    },
-    updateItem: (state, action: PayloadAction<StockItem>) => {
-      const index = state.items.findIndex(item => item.id === action.payload.id);
-      if (index !== -1) {
-        state.items[index] = action.payload;
-      }
-    },
-    removeItem: (state, action: PayloadAction<string>) => {
-      state.items = state.items.filter(item => item.id !== action.payload);
+    setSyncStatus: (state, action: PayloadAction<'idle' | 'syncing' | 'error'>) => {
+      state.syncStatus = action.payload;
     },
   },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchFinishedStockFromSupabase.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchFinishedStockFromSupabase.fulfilled, (state, action: PayloadAction<StockItem[]>) => {
+        state.loading = false;
+        state.items = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchFinishedStockFromSupabase.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch stock data';
+      })
+      .addCase(syncFinishedStock.pending, (state) => {
+        state.syncStatus = 'syncing';
+        state.error = null;
+      })
+      .addCase(syncFinishedStock.fulfilled, (state) => {
+        state.syncStatus = 'idle';
+        state.error = null;
+      })
+      .addCase(syncFinishedStock.rejected, (state, action) => {
+        state.syncStatus = 'error';
+        state.error = action.error.message || 'Failed to sync stock data';
+      });
+  }
 });
 
-export const {
-  setLoading,
-  setError,
-  setItems,
-  addItem,
-  updateItem,
-  removeItem,
-} = stockSlice.actions;
+export const { setSyncStatus } = stockSlice.actions;
 
-export default stockSlice.reducer; 
+const stockReducer = stockSlice.reducer;
+
+export default stockReducer;
+
+
+
+

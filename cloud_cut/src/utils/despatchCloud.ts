@@ -111,6 +111,7 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
   const url = `${BASE_URL}/api/despatchCloud/proxy?path=orders&page=${page}&per_page=${normalizedPerPage}&filters[date_range]=${dateRange}`;
   console.log(`Page: ${page}, Per Page: ${normalizedPerPage}, Date Range: ${dateRange}`);
   console.log("Fetching orders from:", url);
+  console.log("Auth Token:", authToken);
   const response = await fetchWithAuth<OrdersResponse>(url);
 
   const processedOrders = response.data.map(order => {

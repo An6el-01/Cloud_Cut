@@ -1,4 +1,4 @@
-import { DespatchCloudOrder } from './despatchCloud';
+import { DespatchCloudOrder, InventoryItem as DespatchCloudInventoryItem } from './despatchCloud';
 
 export interface Order {
     id: number;
@@ -34,6 +34,11 @@ export interface OrderItem {
     updated_at: string;
 }
 
+export interface InventoryItem extends DespatchCloudInventoryItem {
+    created_at: string;
+    updated_at: string;
+}
+
 export interface OrdersState {
     allOrders: Order[],
     manufacturingOrders: Order[],
@@ -55,4 +60,19 @@ export interface OrdersState {
     archivedOrdersError: string | null;
     syncStatus: 'idle' | 'syncing' | 'error';
     currentView: 'manufacturing' | 'packing' | 'picking' | 'archived';
+}
+
+export interface StockState {
+    allFinishedStock: InventoryItem[],
+    syncStatus: 'idle' | 'syncing' | 'error';
+    loading: boolean;
+    error: string | null;
+    items: Array<{
+        id: number;
+        sku: string;
+        stock: number;
+        item_name: string;
+        created_at: string;
+        updated_at: string;
+    }>;
 }

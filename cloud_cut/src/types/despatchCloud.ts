@@ -51,17 +51,20 @@ export interface OrderDetails {
 }
 
 export interface InventoryItem {
-    sku: string,
-    type: string,
-    name: string,
-    stock_available: number,
-    stock_open: number,
-    weight_kg: number,
-    stock_level_available?: number,
-    stock_level_open?: number,
-    stockwarn?: number,
-    syncstock?: string; //'Y' OR 'N'
-    productweight?: number,
-    updated_at?: number,
+    id: number;
+    name: string;
+    sku: string;
+    stock_level: string;
 }
 
+export interface InventoryResponse {
+    total: number;
+    per_page: string;
+    current_page: number;
+    last_page: number;
+    next_page_url: string;
+    prev_page_url: string | null;
+    from: number;
+    to: number;
+    data: InventoryItem[];
+}

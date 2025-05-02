@@ -1043,7 +1043,7 @@ export default function Packing() {
                                                             <td colSpan={2} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
                                                                 <div className="flex flex-col items-center justify-center h-full text-black">
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                                     </svg>
                                                                     <p className="text-lg font-medium">No retail packs in pending orders</p>
                                                                     <p className="text-sm text-gray-500 mt-1">There are no retail packs in the orders ready for packing</p>

@@ -1,4 +1,4 @@
-import { Order, OrderItem } from "@/types/redux";
+import { Order, OrderItem, InventoryItem } from "@/types/redux";
 import { createBrowserClient } from '@supabase/ssr';
 import { UserMetadata } from "@supabase/supabase-js";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
@@ -245,3 +245,11 @@ export const subscribeToProfiles = (callback: (payload: RealtimePostgresChangesP
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, callback)
     .subscribe();
 }
+
+export const subscribeToFinishedStock = (callback: (payload:
+  RealtimePostgresChangesPayload<InventoryItem>) =>  void) => {
+    return supabase
+      .channel('finished_stock')
+      .on('postgres_changes', { event: '*', schema: 'public', table:"orders"}, callback )
+      .subscribe();
+  }
