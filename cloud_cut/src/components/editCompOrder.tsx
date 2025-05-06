@@ -354,7 +354,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
                     <a 
-                        href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${editedOrder.order_id}`}
+                        href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${editedOrder.raw_data?.id}`}
                         target="_blank"
                         rel="noopener noreferrer" 
                         className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
@@ -561,7 +561,7 @@ export default function EditCompOrder({ order, onClose, onSave }: EditCompOrderP
                                                                 className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 text-black dark:text-white"
                                                             />
                                                         ) : (
-                                                            <div className="text-sm text-gray-900 dark:text-gray-200">{item.foamsheet || 'N/A'}</div>
+                                                            <div className="text-sm text-gray-900 dark:text-gray-200 text-center">{item.foamsheet || 'N/A'}</div>
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap text-center">
