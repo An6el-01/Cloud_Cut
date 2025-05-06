@@ -27,6 +27,7 @@ import { inventoryMap } from '@/utils/inventoryMap';
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
+import { getSupabaseClient } from "@/utils/supabase";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -1174,6 +1175,29 @@ export default function Manufacturing() {
     fetchOrders();
   }, [dispatch, currentPage, ordersPerPage]);
 
+  // State for finished_stock values by SKU
+  const [finishedStockBySku, setFinishedStockBySku] = useState<Record<string, number>>({});
+
+  // Fetch finished_stock values for all SKUs on mount
+  useEffect(() => {
+    const fetchFinishedStock = async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('finished_stock')
+        .select('sku, stock');
+      if (!error && data) {
+        const stockMap: Record<string, number> = {};
+        (data as any[]).forEach((item) => {
+          if (typeof item.sku === 'string' && typeof item.stock === 'number') {
+            stockMap[item.sku] = item.stock;
+          }
+        });
+        setFinishedStockBySku(stockMap);
+      }
+    };
+    fetchFinishedStock();
+  }, []);
+
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -1658,7 +1682,7 @@ export default function Manufacturing() {
                         <thead className="bg-gray-100/90 sticky top-0 ">
                           <tr>
                             <th className="px-6 py-4 text-left text-lg font-semibold text-black">Foam Sheet</th>
-                            {/* <th className="px-6 py-4 text-left text-lg font-semibold text-black">Stock Level</th> */}
+                             <th className="px-6 py-4 text-center text-lg font-semibold text-black whitespace-nowrap">Stock Level</th>
                             <th className="px-6 py-4 text-center text-lg font-semibold text-black">Qty</th>
                           </tr>
                         </thead>
@@ -1744,6 +1768,15 @@ export default function Manufacturing() {
                                         </span>
                                       </div>
                                     </td>
+
+                                    <td className="px-6 py-5 text-center">
+                                      <div className="flex items-center justify-center">
+                                        <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                         {finishedStockBySku[sku] !== undefined ? finishedStockBySku[sku] : '—'}
+                                         </span>
+                                      </div>
+                                    </td>
+
                                     <td className="px-6 py-5 text-center">
                                       <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
                                         {quantity}

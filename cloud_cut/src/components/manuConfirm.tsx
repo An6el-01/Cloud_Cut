@@ -298,8 +298,19 @@ export default function ManuConfirm({
     });
 
     useEffect(() => {
-        setUserMediumSheetsAddedToStock(mediumSheetsAddedToStock);
-    }, [mediumSheetsAddedToStock]);
+        if (
+            typeof mediumSheetTotalQuantity === 'number' &&
+            typeof currentMediumSheetStock === 'number'
+        ) {
+            // How many do we need to manufacture?
+            const needed = Math.max(0, mediumSheetTotalQuantity - currentMediumSheetStock);
+            // Always manufacture in multiples of 4
+            const manufacturedQty = needed > 0 ? Math.ceil(needed / 4) * 4 : 0;
+            // Sheets left over after fulfilling the order
+            const leftover = manufacturedQty - needed;
+            setUserMediumSheetsAddedToStock(leftover > 0 ? leftover : 0);
+        }
+    }, [mediumSheetTotalQuantity, currentMediumSheetStock]);
 
     const getMediumSheetCurrentStock = async () => {
         if (!sku) {
@@ -379,6 +390,7 @@ export default function ManuConfirm({
                 >
                     Confirm Completion
                 </h2>
+                               
                 
                 <div className="mb-6 text-gray-700 dark:text-gray-300 space-y-3">
                     {/**SubTitle for Multiple Orders */}
@@ -409,30 +421,42 @@ export default function ManuConfirm({
                             </>
                         ) : (
                             <>
-                            Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong> {selectedMediumSheet}?</strong>
-
-                             {/**How many sheets are being added to stock */}
-                             <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
-                                <div className="flex items-center mb-2">
-                                    <span className="text-red-600 dark:text-red-400 mr-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+                                 <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded-lg mb-4 border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Stock available icon">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
-                                    </span>
-                                    <span className="flex items-center gap-2">
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            className="w-16 px-2 py-1 border border-gray-300 rounded text-black font-semibold text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                            value={userMediumSheetsAddedToStock}
-                                            onChange={e => setUserMediumSheetsAddedToStock(Math.max(0, Number(e.target.value)))}
-                                            aria-label="Medium sheets to add to stock"
-                                        />
-                                        sheets will be added to stock
-                                    </span>
+                                        <div>
+                                            <h3 className="font-semibold text-green-800 dark:text-green-200">Stock Available!</h3>
+                                            <p className="text-green-700 dark:text-green-300 mb-1">
+                                                We have <span className="font-bold">{currentMediumSheetStock}</span> sheets in stock.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </>
+                                Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong>{selectedMediumSheet}?</strong>
+                                {/*How many sheets are being added to stock*/}
+                                <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
+                                    <div className="flex items-center mb-2">
+                                        <span className="text-red-600 dark:text-red-400 mr-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+                                            </svg>
+                                        </span>
+                                        <span className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                className="w-16 px-2 py-1 border border-gray-300 rounded text-black font-semibold text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                value={userMediumSheetsAddedToStock}
+                                                onChange={e => setUserMediumSheetsAddedToStock(Math.max(0, Number(e.target.value)))}
+                                                aria-label="Medium sheets to add to stock"
+                                            />
+                                            sheets will be added to stock
+                                        </span>
+                                    </div>
+                                </div>
+                            </>
                         )}
                            
 
@@ -533,7 +557,23 @@ export default function ManuConfirm({
                                 </>
                             ) : (
                                 <>
-                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
+                                    <>
+                                    <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded-lg mb-4 border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Stock available icon">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <h3 className="font-semibold text-green-800 dark:text-green-200">Stock Available!</h3>
+                                            <p className="text-green-700 dark:text-green-300 mb-1">
+                                                We have <span className="font-bold">{currentMediumSheetStock}</span> sheets in stock.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                    </>
+                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong>{selectedMediumSheet}?</strong>
+                                    {/*How many sheets are being added to stock*/}
                                     <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
                                         <div className="flex items-center">
                                             <span className="text-red-600 dark:text-red-400 mr-2">

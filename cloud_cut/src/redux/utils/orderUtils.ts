@@ -104,6 +104,13 @@ export const processItemsForOrders = async (
 
   // Process items for active orders
   for (const orderId of activeOrderIds) {
+    // Skip this order if it already has any items in the database (active or archived)
+    const hasActiveItems = existingActiveItems?.some(item => item.order_id === orderId);
+    const hasArchivedItems = existingArchivedItems?.some(item => item.order_id === orderId);
+    if (hasActiveItems || hasArchivedItems) {
+      console.log(`Skipping order ${orderId}: items already exist in the database.`);
+      continue;
+    }
     const items = orderItemsByOrderId[orderId];
     if (!items) continue;
     
@@ -112,6 +119,11 @@ export const processItemsForOrders = async (
       
       // Skip if item already exists in either table
       if (existingItemsMap.has(key)) {
+        skippedCount++;
+        return;
+      }
+      // Double-check: Prevent adding the same item twice in this run
+      if (itemsToInsert.some(existing => existing.order_id === orderId && existing.sku_id === item.sku_id && existing.item_name === item.item_name && existing.quantity === item.quantity)) {
         skippedCount++;
         return;
       }
@@ -135,6 +147,13 @@ export const processItemsForOrders = async (
   
   // Process items for archived orders
   for (const orderId of archivedOrderIds) {
+    // Skip this order if it already has any items in the database (active or archived)
+    const hasActiveItems = existingActiveItems?.some(item => item.order_id === orderId);
+    const hasArchivedItems = existingArchivedItems?.some(item => item.order_id === orderId);
+    if (hasActiveItems || hasArchivedItems) {
+      console.log(`Skipping archived order ${orderId}: items already exist in the database.`);
+      continue;
+    }
     const items = orderItemsByOrderId[orderId];
     if (!items) continue;
     
@@ -143,6 +162,11 @@ export const processItemsForOrders = async (
       
       // Skip if item already exists in either table
       if (existingItemsMap.has(key)) {
+        skippedCount++;
+        return;
+      }
+      // Double-check: Prevent adding the same item twice in this run
+      if (archivedItemsToInsert.some(existing => existing.order_id === orderId && existing.sku_id === item.sku_id && existing.item_name === item.item_name && existing.quantity === item.quantity)) {
         skippedCount++;
         return;
       }

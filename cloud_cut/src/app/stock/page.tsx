@@ -54,7 +54,7 @@ export default function Stock() {
 
     // Filter items to only show medium sheets and apply search filter
     const mediumSheetItems = items
-        .filter(item => item.sku?.startsWith('SFS-'))
+        .filter(item => item.sku?.startsWith('SFS-100/50'))
         .filter(item => 
             item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
