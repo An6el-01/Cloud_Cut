@@ -225,6 +225,14 @@ export const deleteUser = async (id: string): Promise<void> => {
   }
 };
 
+// Stock-Related Functions
+export const editFinishedStock = async (name: string, sku: string, stock: number) => {
+
+}
+
+
+
+/**SUBSCRIPTION FUNCTIONS TO TABLES IN SUPABASE */
 export const subscribeToOrders = (callback: (payload: RealtimePostgresChangesPayload<Order>) =>  void) => {
   return supabase 
     .channel('orders')

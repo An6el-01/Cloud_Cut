@@ -7,6 +7,8 @@ import { AppDispatch, RootState} from '@/redux/store';
 import * as Sentry from '@sentry/nextjs';
 import Image from "next/image";
 import { fetchFinishedStockFromSupabase, syncFinishedStock } from "@/redux/thunks/stockThunk";
+import { getSupabaseClient } from "@/utils/supabase";
+
 
 // Define the type for stock items
 interface StockItem {
@@ -18,16 +20,6 @@ interface StockItem {
     updated_at: string;
 }
 
-// Add helper function to format medium sheet name
-const formatMediumSheetName = (sku: string): string => {
-    const parts = sku.split('-');
-    if (parts.length >= 3) {
-        const color = parts[1];
-        const thickness = parts[2];
-        return `${color} [${thickness}]`;
-    }
-    return sku;
-};
 
 // Add helper function to get color class for medium sheet
 const getSheetColorClass = (sheetName: string): string => {
@@ -51,12 +43,23 @@ export default function Stock() {
     const dispatch = useDispatch<AppDispatch>();
     const [activeTab, setActiveTab] = useState<'StockManagement' | 'DamageTracking'>('StockManagement');
     const {loading, error, items} = useSelector((state: RootState) => state.stock);
+    const userProfile = useSelector((state: RootState) => state.auth.userProfile);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 9;
+    const [searchQuery, setSearchQuery] = useState('');
+    const [editingItem, setEditingItem] = useState<StockItem | null>(null);
+    const [editValue, setEditValue] = useState<number>(0);
+    const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
 
-    // Filter items to only show medium sheets
-    const mediumSheetItems = items.filter(item => item.sku?.startsWith('SFS-'));
+    // Filter items to only show medium sheets and apply search filter
+    const mediumSheetItems = items
+        .filter(item => item.sku?.startsWith('SFS-'))
+        .filter(item => 
+            item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.stock.toString().includes(searchQuery)
+        );
     
     // Calculate pagination
     const totalPages = Math.ceil(mediumSheetItems.length / itemsPerPage);
@@ -102,6 +105,132 @@ export default function Stock() {
     const handlePageChange = (newPage: number) => {
         setCurrentPage(newPage);
     };
+
+
+    const handleEdit = async (item: StockItem) => {
+        try { 
+            console.log("Edit button clicked for item:", item);
+            
+            //Get the current session from Supabase
+            const supabase = getSupabaseClient();
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if(!session) {
+                console.error("You must be logged in to edit stock item");
+                return;
+            }
+
+            //Find the item with matching sku from the session
+            const currentItem = items.find(i => i.sku === item.sku);
+
+            const allowedRoles = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
+            
+            if (!userProfile || !allowedRoles.includes(userProfile.role)) {
+                console.error("You do not have permission to edit stock items");
+                return;
+            }
+
+            // Set the item being edited and its current stock value
+            setEditingItem(item);
+            setEditValue(item.stock);
+            
+        } catch (error) {
+            console.error("Error in handleEdit:", error);
+        }
+    }
+
+    const handleSave = async () => {
+        if (!editingItem) return;
+
+        try {
+            const supabase = getSupabaseClient();
+            const { error } = await supabase
+                .from('finished_stock')
+                .update({ stock: editValue })
+                .eq('sku', editingItem.sku);
+
+            if (error) {
+                console.error("Error updating stock:", error);
+                return;
+            }
+
+            // Refresh the stock data
+            dispatch(fetchFinishedStockFromSupabase({
+                page: currentPage,
+                perPage: itemsPerPage
+            }));
+
+            // Clear editing state
+            setEditingItem(null);
+            setEditValue(0);
+        } catch (error) {
+            console.error("Error saving stock update:", error);
+        }
+    }
+
+    const handleCancel = () => {
+        setEditingItem(null);
+        setEditValue(0);
+    }
+
+    const handleDelete = async (item: StockItem) => {
+        try {
+            //Get the current session from Supabase
+            const supabase = getSupabaseClient();
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if(!session) {
+                console.error("You must be logged in to delete stock item");
+                return;
+            }
+
+            const allowedRoles = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
+            
+            if (!userProfile || !allowedRoles.includes(userProfile.role)) {
+                console.error("You do not have permission to delete stock items");
+                console.log(userProfile?.role);
+                return;
+            }
+
+            // Set the item to be deleted for confirmation
+            setDeleteConfirmItem(item);
+            
+        } catch (error) {
+            console.error("Error in handleDelete:", error);
+        }
+    }
+
+    const confirmDelete = async () => {
+        if (!deleteConfirmItem) return;
+
+        try {
+            const supabase = getSupabaseClient();
+            const { error } = await supabase
+                .from('finished_stock')
+                .delete()
+                .eq('sku', deleteConfirmItem.sku);
+
+            if (error) {
+                console.error("Error deleting stock item:", error);
+                return;
+            }
+
+            // Refresh the stock data
+            dispatch(fetchFinishedStockFromSupabase({
+                page: currentPage,
+                perPage: itemsPerPage
+            }));
+
+            // Clear delete confirmation state
+            setDeleteConfirmItem(null);
+        } catch (error) {
+            console.error("Error confirming delete:", error);
+        }
+    }
+
+    const cancelDelete = () => {
+        setDeleteConfirmItem(null);
+    }
 
     return (
         <div className="min-h-screen">
@@ -171,6 +300,28 @@ export default function Stock() {
 
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="flex items-center gap-4">
+                                    {/* Search Bar */}
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Search items..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            className="w-64 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        />
+                                        <svg
+                                            className="absolute right-3 top-2.5 h-5 w-5 text-gray-400"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            viewBox="0 0 20 20"
+                                            fill="currentColor"
+                                        >
+                                            <path
+                                                fillRule="evenodd"
+                                                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                                                clipRule="evenodd"
+                                            />
+                                        </svg>
+                                    </div>
                                     <button
                                         onClick={async () => {
                                             try {
@@ -240,7 +391,7 @@ export default function Stock() {
                                                 currentItems.map((item: StockItem) => (
                                                     <tr
                                                         key={item.id}
-                                                        className="transition-all duration-200 cursor-pointer text-center h-16"
+                                                        className="transition-all duration-200 text-center h-16"
                                                     >
                                                         <td className="px-4 py-2 text-left">
                                                             <div className="flex items-center">
@@ -257,15 +408,49 @@ export default function Stock() {
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-2 text-black">
-                                                            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                                                                {item.stock}
-                                                            </span>
+                                                            {editingItem?.id === item.id ? (
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editValue}
+                                                                        onChange={(e) => setEditValue(Number(e.target.value))}
+                                                                        className="w-20 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        min="0"
+                                                                    />
+                                                                    <button
+                                                                        onClick={handleSave}
+                                                                        className="p-1 text-green-600 hover:text-green-700"
+                                                                        aria-label="Save changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={handleCancel}
+                                                                        className="p-1 text-red-600 hover:text-red-700"
+                                                                        aria-label="Cancel changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                    {item.stock}
+                                                                </span>
+                                                            )}
                                                         </td>
                                                         <td className="px-4 py-2 text-black">
                                                             <button 
                                                                 className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                                                onClick={() => {}}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleEdit(item);
+                                                                }}
                                                                 aria-label="Edit an item"
+                                                                disabled={editingItem !== null}
                                                             >
                                                                 <Image
                                                                     src="/editPencil.png"
@@ -278,8 +463,12 @@ export default function Stock() {
                                                         <td className="px-4 py-2 text-black">
                                                             <button
                                                                 className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                                                onClick={() => {}}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDelete(item);
+                                                                }}
                                                                 aria-label="Delete an item"
+                                                                disabled={editingItem !== null}
                                                             >
                                                                 <Image
                                                                     src="/binClosed.png"
@@ -338,6 +527,34 @@ export default function Stock() {
                     </div>
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {deleteConfirmItem && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
+                        <> 
+                            Are you sure you want to delete the stock item <strong className="font-semibold">{deleteConfirmItem.item_name}" (SKU: {deleteConfirmItem.sku})
+                                </strong>"?
+                            This action cannot be undone.
+                        </>
+                        <div className="flex justify-end gap-4">
+                            <button
+                                onClick={cancelDelete}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

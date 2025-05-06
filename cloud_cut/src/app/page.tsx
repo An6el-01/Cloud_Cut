@@ -4,6 +4,15 @@ import Image from "next/image";
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import { signIn, getCurrentUser, checkAuth } from '@/utils/supabase';
+import { useDispatch } from 'react-redux';
+import { setUser, setUserProfile } from '@/redux/slices/authSlice';
+import { getSupabaseClient } from '@/utils/supabase';
+import { User } from '@supabase/supabase-js';
+
+interface Profile {
+  role: string;
+  email: string;
+}
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -12,6 +21,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
+  const dispatch = useDispatch();
 
   // Handle client-side mounting
   useEffect(() => {
@@ -25,9 +35,26 @@ export default function Home() {
         const isAuthenticated = await checkAuth();
         if(isAuthenticated) {
           const user = await getCurrentUser();
-          if (user?.user_metadata.needsPasswordReset){
+          if (!user) return;
+          
+          if (user.user_metadata.needsPasswordReset){
             router.push("/resetPassword")
-          }else{
+          } else {
+            // Get user profile from profiles table
+            const supabase = getSupabaseClient();
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('email', user.email || '')
+              .single();
+
+            if (profile) {
+              dispatch(setUser(user));
+              dispatch(setUserProfile({
+                role: profile.role as string,
+                email: profile.email as string
+              }));
+            }
             router.push("/manufacturing");
           }
         }
@@ -36,7 +63,7 @@ export default function Home() {
       }
     };
     checkSession();
-  }, [router]);
+  }, [router, dispatch]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,12 +71,43 @@ export default function Home() {
     setLoading(true);
 
     try {
-      await signIn(email, password);
-      const user = await getCurrentUser();
-
-      if (user?.user_metadata.needsPasswordReset) {
+      const { user } = await signIn(email, password);
+      if (!user) return;
+      
+      if (user.user_metadata.needsPasswordReset) {
         router.push("/resetPassword");
       } else {
+        // Get user profile from profiles table
+        const supabase = getSupabaseClient();
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', user.email || '')
+          .single();
+
+        if (profileError) {
+          console.error('Error fetching user profile:', profileError);
+          setError('Error fetching user profile');
+          return;
+        }
+
+        if (profile) {
+          // Set both user and profile in Redux
+          dispatch(setUser(user));
+          dispatch(setUserProfile({
+            role: profile.role as string,
+            email: profile.email as string
+          }));
+          
+          // Store in localStorage for persistence
+          localStorage.setItem('authState', JSON.stringify({
+            user,
+            userProfile: {
+              role: profile.role,
+              email: profile.email
+            }
+          }));
+        }
         router.push("/manufacturing");
       }
     } catch (error: unknown) {

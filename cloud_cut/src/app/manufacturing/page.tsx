@@ -1922,6 +1922,7 @@ export default function Manufacturing() {
           orderProgress={currentOrderProgress}
           mediumSheetTotalQuantity={selectedMediumSheetQuantity}
           selectedMediumSheet={selectedFoamSheet ? formatMediumSheetName(selectedFoamSheet) : undefined}
+          sku={selectedFoamSheet || undefined}
         />
       )}
     </div>

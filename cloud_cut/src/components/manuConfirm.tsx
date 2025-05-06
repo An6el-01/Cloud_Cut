@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
+import { getSupabaseClient } from "@/utils/supabase";
 
 export default function ManuConfirm({
     isOpen,
@@ -11,7 +12,8 @@ export default function ManuConfirm({
     orderIdsToMarkCompleted,
     orderProgress,
     mediumSheetTotalQuantity,
-    selectedMediumSheet
+    selectedMediumSheet,
+    sku,
 } : {
     isOpen: boolean;
     onClose: () => void;
@@ -22,6 +24,7 @@ export default function ManuConfirm({
     orderProgress?: string;
     mediumSheetTotalQuantity?: number;
     selectedMediumSheet?: string;
+    sku?: string;
 }) {
     console.log("ManuConfirm: Component received props", { 
         isOpen, orderId, orderIdsToPacking, orderIdsToMarkCompleted, orderProgress 
@@ -37,10 +40,11 @@ export default function ManuConfirm({
     const [markCompletedOrders, setMarkCompletedOrders] = useState<string[]>([]);
     const [totalOrders, setTotalOrders] = useState(0);
     const [isMultipleOrders, setIsMultipleOrders] = useState(false);
+    const [isAvailableStock, setIsAvailableStock] = useState(false);
     const [adjustedMediumSheetQuantity, setAdjustedMediumSheetQuantity] = useState(mediumSheetTotalQuantity || 0);
     const [mediumSheetsAddedToStock, setMediumSheetsAddedToStock] = useState(0);
     const [userMediumSheetsAddedToStock, setUserMediumSheetsAddedToStock] = useState(mediumSheetsAddedToStock);
-
+    const [currentMediumSheetStock, setCurrentMediumSheetStock] = useState(0);
     // Parse order progress to determine if it's ready for packing
     const [isReadyForPacking, setIsReadyForPacking] = useState(true);
     
@@ -74,12 +78,63 @@ export default function ManuConfirm({
         resetState();
     };
     
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         console.log("ManuConfirm: handleConfirm called - Current state:", {
-            packingOrders, markCompletedOrders, totalOrders, isMultipleOrders, isReadyForPacking
+            packingOrders, markCompletedOrders, totalOrders, isMultipleOrders, isReadyForPacking,
+            userMediumSheetsAddedToStock, sku
         });
-        onConfirm(packingOrders, markCompletedOrders);
-        resetState();
+
+        try {
+            const supabase = getSupabaseClient();
+            // If there is available stock, deduct from stock
+            if (isAvailableStock && sku && typeof mediumSheetTotalQuantity === 'number') {
+                const newStockValue = currentMediumSheetStock - mediumSheetTotalQuantity;
+                const { error: updateError } = await supabase
+                    .from('finished_stock')
+                    .update({ stock: newStockValue })
+                    .eq('sku', sku);
+                if (updateError) {
+                    console.error("Error updating stock (deducting):", updateError);
+                    return;
+                }
+                console.log("Stock deducted for SKU:", sku, "New value:", newStockValue);
+            } else if (sku && userMediumSheetsAddedToStock > 0) {
+                // Only add to stock if not using available stock
+                // First get current stock value
+                const { data: currentStock, error: fetchError } = await supabase
+                    .from('finished_stock')
+                    .select('stock')
+                    .eq('sku', sku)
+                    .single();
+
+                if (fetchError) {
+                    console.error("Error fetching current stock:", fetchError);
+                    return;
+                }
+
+                // Calculate new stock value
+                const newStockValue = (currentStock?.stock as number || 0) + userMediumSheetsAddedToStock;
+
+                // Update stock value
+                const { error: updateError } = await supabase
+                    .from('finished_stock')
+                    .update({ stock: newStockValue })
+                    .eq('sku', sku);
+
+                if (updateError) {
+                    console.error("Error updating stock:", updateError);
+                    return;
+                }
+
+                console.log("Successfully updated stock for SKU:", sku, "New value:", newStockValue);
+            }
+
+            // Call the original onConfirm with the order arrays
+            onConfirm(packingOrders, markCompletedOrders);
+            resetState();
+        } catch (error) {
+            console.error("Error in handleConfirm:", error);
+        }
     };
     
     // Effect to update state when props change
@@ -202,7 +257,8 @@ export default function ManuConfirm({
         markCompletedOrders,
         totalOrders,
         isMultipleOrders,
-        isReadyForPacking
+        isReadyForPacking,
+        isAvailableStock
     });
 
     const handleMediumSheetsManufactured = () => {
@@ -245,6 +301,52 @@ export default function ManuConfirm({
         setUserMediumSheetsAddedToStock(mediumSheetsAddedToStock);
     }, [mediumSheetsAddedToStock]);
 
+    const getMediumSheetCurrentStock = async () => {
+        if (!sku) {
+            console.log("No SKU provided to fetch current stock");
+            return;
+        }
+
+        try {
+            const supabase = getSupabaseClient();
+            const { data: currentStock, error: fetchError } = await supabase
+                .from('finished_stock')
+                .select('stock')
+                .eq('sku', sku)
+                .single();
+
+            if (fetchError) {
+                console.error("Error fetching current stock:", fetchError);
+                return;
+            }
+
+            if (currentStock) {
+                setCurrentMediumSheetStock(currentStock.stock as number);
+                console.log("Current stock value for SKU", sku, ":", currentStock.stock);
+                if (mediumSheetTotalQuantity && mediumSheetTotalQuantity <= (currentStock.stock as number)) {
+                    setIsAvailableStock(true);
+                    console.log("There is enough stock for the order");
+                    console.log("Medium sheet total quantity:", mediumSheetTotalQuantity);
+                    console.log("Medium sheet current stock:", currentStock.stock);
+                } else {
+                    setIsAvailableStock(false);
+                    console.log("There is not enough stock for the order");
+                    console.log("Medium sheet total quantity:", mediumSheetTotalQuantity);
+                    console.log("Medium sheet current stock:", currentStock.stock);
+                }
+            }
+        } catch (error) {
+            console.error("Error in getMediumSheetCurrentStock:", error);
+        }
+    };
+
+    // Add useEffect to fetch current stock when modal opens and SKU is available
+    useEffect(() => {
+        if (isOpen && sku) {
+            getMediumSheetCurrentStock();
+        }
+    }, [isOpen, sku]);
+
     return (
         <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300"
@@ -282,12 +384,35 @@ export default function ManuConfirm({
                     {/**SubTitle for Multiple Orders */}
                     {isMultipleOrders ? (
                         <>
+                        {isAvailableStock ? (
                             <>
-                                Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong> {selectedMediumSheet}?</strong>
-                            </>
+                                <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded-lg mb-4 border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Stock available icon">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <h3 className="font-semibold text-green-800 dark:text-green-200">Stock Available!</h3>
+                                            <p className="text-green-700 dark:text-green-300 mb-1">
+                                                We have <span className="font-bold">{currentMediumSheetStock}</span> sheets in stock.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr className="my-4 border-gray-200 dark:border-gray-700" />
+                                <p className="text-gray-700 dark:text-gray-300 mb-2">
+                                    By confirming, <strong>{mediumSheetTotalQuantity}</strong> sheets will be deducted from <strong>{selectedMediumSheet}.</strong>
+                                </p>
 
-                            {/**How many sheets are being added to stock */}
-                            <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
+                                <p> <strong>New Stock Level:</strong> {currentMediumSheetStock - (mediumSheetTotalQuantity || 0)} sheets</p>
+                               
+                            </>
+                        ) : (
+                            <>
+                            Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong> {selectedMediumSheet}?</strong>
+
+                             {/**How many sheets are being added to stock */}
+                             <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
                                 <div className="flex items-center mb-2">
                                     <span className="text-red-600 dark:text-red-400 mr-2">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -307,6 +432,11 @@ export default function ManuConfirm({
                                     </span>
                                 </div>
                             </div>
+                        </>
+                        )}
+                           
+
+                           
                             
                             {/* Orders Being moved to Packing */}
                             {packingOrders.length > 0 && (
@@ -379,37 +509,53 @@ export default function ManuConfirm({
                     ) : (
                         <>
                         {/**Subtitle for Single Order being moved to Packing */}
-                            <p>
-                                {isReadyForPacking
-                                    ? <>
-                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
-                                    </>
-                                    : <>
-                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
-                                    </>
-                            }
-                            </p>
+                            
                              {/**How many sheets are being added to stock */}
-                             <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
-                                <div className="flex items-center">
-                                    <span className="text-red-600 dark:text-red-400 mr-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
-                                        </svg>
-                                    </span>
-                                    <span className="flex items-center gap-2">
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            className="w-16 px-2 py-1 border border-gray-300 rounded text-black font-semibold text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                            value={userMediumSheetsAddedToStock}
-                                            onChange={e => setUserMediumSheetsAddedToStock(Math.max(0, Number(e.target.value)))}
-                                            aria-label="Medium sheets to add to stock"
-                                        />
-                                        sheets will be added to stock
-                                    </span>
-                                </div>
-                            </div>
+                             {isAvailableStock ? (
+                                <>
+                                    <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded-lg mb-4 border border-green-200 dark:border-green-800">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Stock available icon">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <div>
+                                                <h3 className="font-semibold text-green-800 dark:text-green-200">Stock Available!</h3>
+                                                <p className="text-green-700 dark:text-green-300 mb-1">
+                                                    We have <span className="font-bold">{currentMediumSheetStock}</span> sheets in stock.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p className="text-gray-700 dark:text-gray-300 mb-2">
+                                        By confirming, <strong>{mediumSheetTotalQuantity}</strong> sheets will be deducted from <strong>{selectedMediumSheet}.</strong>
+                                    </p>
+                                    <p> <strong>New Stock Level:</strong> {currentMediumSheetStock - (mediumSheetTotalQuantity || 0)} sheets</p>
+                                </>
+                            ) : (
+                                <>
+                                    Are you confirming that you have manufactured <strong className="font-semibold">{adjustedMediumSheetQuantity}</strong> of <strong className="font-semibold">{selectedMediumSheet}</strong>
+                                    <div className="bg-gray-50 dark:bg-gray-900/30 p-3 rounded-lg mb-1">
+                                        <div className="flex items-center">
+                                            <span className="text-red-600 dark:text-red-400 mr-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+                                                </svg>
+                                            </span>
+                                            <span className="flex items-center gap-2">
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    className="w-16 px-2 py-1 border border-gray-300 rounded text-black font-semibold text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                    value={userMediumSheetsAddedToStock}
+                                                    onChange={e => setUserMediumSheetsAddedToStock(Math.max(0, Number(e.target.value)))}
+                                                    aria-label="Medium sheets to add to stock"
+                                                />
+                                                sheets will be added to stock
+                                            </span>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                             <p className={`flex items-center ${isReadyForPacking ? 'bg-green-50 dark:bg-green-900/30' : 'bg-blue-50 dark:bg-blue-900/30'} p-3 rounded-lg`}>
                                 <span className={`${isReadyForPacking ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'} mr-2`}>
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
