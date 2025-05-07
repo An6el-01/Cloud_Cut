@@ -30,6 +30,7 @@ export const syncFinishedStock = createAsyncThunk(
             do{
                 const { data, total: pageTotal, last_page } = await fetchInventory(page, perPage);
                 console.log(`Fetched page ${page}: ${data.length} inventory items`);
+                console.log('Sample items from page:', data.slice(0, 3));
                 allFinishedStock = allFinishedStock.concat(data as unknown as InventoryItem[]);
                 total = pageTotal;
                 lastPage = last_page;
@@ -37,6 +38,7 @@ export const syncFinishedStock = createAsyncThunk(
             } while (page <= lastPage);
 
             console.log(`Total finished stock fetched: ${allFinishedStock.length}, reported total: ${total}`);
+            console.log('Sample of all items:', allFinishedStock.slice(0, 5));
 
             const inventoryItems: InventoryItem[] = allFinishedStock.map(item => {
                 return {
@@ -47,9 +49,17 @@ export const syncFinishedStock = createAsyncThunk(
                 };
             });
 
+            // Filter for only medium sheets (SKUs starting with SFS-)
+            const mediumSheetItems = inventoryItems.filter(item => 
+                item.sku?.toUpperCase().startsWith('SFS-')
+            );
+
+            console.log('Filtered medium sheet items:', mediumSheetItems);
+            console.log(`Found ${mediumSheetItems.length} medium sheet items`);
+
             // Use SKU as unique identifier and combine stock levels for items with the same SKU
             const uniqueItems = new Map();
-            inventoryItems.forEach(item => {
+            mediumSheetItems.forEach(item => {
                 if (uniqueItems.has(item.sku)) {
                     // If item exists, add stock levels
                     const existingItem = uniqueItems.get(item.sku);
@@ -68,6 +78,8 @@ export const syncFinishedStock = createAsyncThunk(
 
             // Convert Map to array for insertion
             const itemsToInsert = Array.from(uniqueItems.values());
+            console.log('Items to insert into Supabase:', itemsToInsert.slice(0, 5));
+            console.log('Total items to insert:', itemsToInsert.length);
 
             // Insert items into Supabase
             const { error: insertError } = await supabase
@@ -108,7 +120,8 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
 
         //Get all items (no pagination)
         const { data: allItems, error: fetchError } = await query
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(10000); // Set a high limit to ensure we get all items
 
         if (fetchError) {
             console.error('Error fetching finished stock:', fetchError);
@@ -123,12 +136,33 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         console.log('Raw data from Supabase:', typedItems);
         console.log(`Fetched ${typedItems.length} items from Supabase`);
         
+        // Debug log for yellow medium sheets
+        const yellowSheets = typedItems.filter(item => item.sku?.includes('Y'));
+        console.log('Yellow sheets found in raw data:', yellowSheets);
+        
         // Filter medium sheet items with case-insensitive SKU check
-        const mediumSheetItems = typedItems.filter(item => 
-            item.sku?.toUpperCase().startsWith('SFS-')
-        );
+        const mediumSheetItems = typedItems.filter(item => {
+            const sku = item.sku?.toUpperCase() || '';
+            const isMediumSheet = sku.startsWith('SFS-') && /SFS-\d+\/\d+\/\d+[KBGEOMPRTY]$/.test(sku);
+            
+            // Debug log for each item being filtered
+            if (sku.includes('Y')) {
+                console.log('Processing yellow sheet:', {
+                    sku,
+                    isMediumSheet,
+                    item_name: item.item_name
+                });
+            }
+            
+            return isMediumSheet;
+        });
+        
         console.log('Medium sheet items:', mediumSheetItems);
         console.log(`Found ${mediumSheetItems.length} medium sheet items`);
+        
+        // Debug log specifically for yellow medium sheets in filtered results
+        const yellowMediumSheets = mediumSheetItems.filter(item => item.sku?.includes('Y'));
+        console.log('Yellow medium sheets in filtered results:', yellowMediumSheets);
 
         return mediumSheetItems;
      }
