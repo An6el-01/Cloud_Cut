@@ -53,13 +53,15 @@ export default function Stock() {
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
 
     // Filter items to only show medium sheets and apply search filter
+    console.log('All items before filtering:', items);
     const mediumSheetItems = items
-        .filter(item => item.sku?.startsWith('SFS-100/50'))
+        .filter(item => item.item_name?.toLowerCase().includes('medium sheet'))
         .filter(item => 
             item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.stock.toString().includes(searchQuery)
         );
+    console.log('Filtered medium sheet items:', mediumSheetItems);
     
     // Calculate pagination
     const totalPages = Math.ceil(mediumSheetItems.length / itemsPerPage);
