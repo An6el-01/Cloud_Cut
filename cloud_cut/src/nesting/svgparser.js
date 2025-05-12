@@ -833,6 +833,700 @@
         return { start: start, end: end };
     }
 
-    //START ON LINE 899 ON ORIGINAL FILE.
+    //set the given path as absolute coordinates (capital commands)
+    SvgParser.prototype.pathToAbsolute = function(path) {
+        if(!path || path.tagName != 'path'){
+            throw Error('invalid path');
+        }
 
-})
+        var seglist = path.pathSegList;
+        var x=0, y=0, x0=0, y0=0, x1=0, y1=0, x2=0, y2=0;
+
+        for(var i = 0; i < seglist.numberOfItems; i++){
+            var command = seglist.getItem(i).pathSegTypeAsLetter;
+            var s = seglist.getItem(i);
+
+            if(/[MLHVCSQTA]/.test(command)){
+                if ('x' in s) s=s.x;
+                if ('y' in s) y=s.y;
+            } else {
+                if ('x1' in s) x1 = x+s.x1;
+                if ('x2' in s) x2 = x+s.x2;
+                if ('y1' in s) y1 = y+s.y1;
+                if ('y2' in s) y2 = y+s.y2;
+                if ('x' in s) x+=s.x;
+                if ('y' in s) y+=s.y;
+
+                switch(command){
+                    case 'm': seglist.replaceItem(path.createSVGPathSegMoveToAbs(x,y), i);
+                    break;
+                    case 'l': seglist.replaceItem(path.createSVGPathSegLinetoAbs(x,y), i);
+                    break;
+                    case 'h': seglist.replaceItem(path.createSVGPathSegLinetoHorizontalAbs(x), i);
+                    break;
+                    case 'v': seglist.replaceItem(path.createSVGPathSegLineToVerticalAbs(y), i);
+                    break;
+                    case 'c': seglist.replaceItem(path.createSVGPathSegCurvetoCubicAbs(x, y, x1, y1, x2, y2), i);
+                    break;
+                    case 's': seglist.replaceItem(path.createSVGPathSegCurvetoCubicSmoothAbs(x, y, x2, y2), i);
+                    break;
+                    case 'q': seglist.replaceItem(path.createSVGPathSegCurvetoQuadraticAbs(x, y, x1, y1), i);
+                    break;
+                    case 't': seglist.replaceItem(path.createSVGPathSegCurvetoQuadraticSmoothAbs(x, y,), i);
+                    break;
+                    case 'a': seglist.replaceItem(path.createSVGPathSegArcAbs(x,y,s.r1,s.r2,s.angle,s.largeArcFlag,s.sweepFlag), i);
+                    break;
+                    case 'z': case 'Z': x=x0; y=y0; 
+                    break;
+                }
+            }
+            //record the start of subpath
+            if (command=='M' || command=='m') x0=x, y0=y;
+        }
+    };
+
+    // takes an SVG transform string and returns corresponding SVGMatrix
+    SvgParser.prototype.transformParse = function(transformString){
+        var operations = {
+            matrix: true,
+            scale: true,
+            rotate: true,
+            translate: true,
+            skewX: true,
+            skewY: true
+        };
+
+        var CMD_SPLIT_RE    = /\s*(matrix|translate|scale|rotate|skewX|skewY)\s*\(\s*(.+?)\s*\)[\s,]*/;
+		var PARAMS_SPLIT_RE = /[\s,]+/;
+
+        var matrix = new Matrix();
+        var cmd, params;
+
+        //Split into ['', 'translate', '10 50', '', 'scale', '2', '', 'rotate', '-45', '']
+        transformString.split(CMD_SPLIT_RE).forEach(function (item) {
+            // SKIP EMPTY ELEMENTS
+            if (!item.length) {return;}
+
+            // remember operation
+            if (typeof operations[item] !== 'undefined') {
+                cmd = item;
+                return;
+            }
+
+            // extract params & att operation to matrix
+            params = item.split(PARAMS_SPLIT_RE).map(function (i){
+                return +i || 0;
+            });
+
+            // If params count is not correct - ignore command
+            switch(cmd){
+                case 'matrix':
+                    if(params.length === 6){
+                        matrix.matrix(params);
+                    }
+                return;
+
+                case 'scale':
+                    if (params.length === 1){
+                        matrix.scale(params[0], params[0]);
+                    } else if (params.length === 2){
+                        matrix.scale(params[0], params[1]);
+                    }
+                return;
+
+                case 'rotate':
+                    if (params.length === 1){
+                        matrix.rotate(params[0], 0, 0);
+                    } else if (params.length === 3){
+                        matrix.rotate(params[0], params[1], params[2]);
+                    }
+                return;
+
+                case 'translate':
+                    if (params.length === 1){
+                        matrix.translate(params[0], 0);
+                    } else if (params.length === 2){
+                        matrix.translate(params[0], params[3]);
+                    }
+                return;
+
+                case 'skewX':
+                    if (params.length === 1){
+                        matrix.skewX(params[0]);
+                    }
+                return;
+
+                case 'skewY':
+                    if (params.length === 1){
+                        matrix.skewY(params[0]);
+                    }
+                return;
+            }
+        });
+
+        return matrix;
+    }
+
+    // recursively apply the transform property to the given element
+    SvgParser.prototype.applyTransform = function(element, globalTransform, skipClosed, dxfFlag){
+
+        globalTransform = globalTransform || '';
+        var transformString = element.getAttribute('transform') || '';
+        transformString = globalTransform + ' ' + transformString;
+
+        var transform, scale, rotate;
+
+        if(transformString && transformString.length > 0){
+            var transform = this.transformParse(transformString);
+        }
+
+        if(!transform){
+            transform = new Matrix();
+        }
+
+        var tarray = transform.toArray();
+
+        //decompose affine matrix to rotate, scale components (translate is just the 3rd column)
+        var rotate = Math.atan2(tarray[1], tarray[3])*180/Math.PI;
+        var scale = Math.sqrt(tarray[0]*tarray[0] + tarray[2]*tarray[2]);
+
+        if(element.tagName == 'g' || element.tagName == 'svg' || element.tagName == 'defs'){
+            element.removeAttribute('transform');
+            var children = Array.prototype.slice.call(element.children);
+            for(var i=0; i<children.length; i++){
+                this.applyTransform(children[i], transformString, skipClosed, dxfFlag);
+            }
+        }
+        else if(transform && !transform.isIdentity()){
+            switch(element.tagName){
+                case 'ellipse':
+                    if(skipClosed){
+                        element.setAttribute('transform', transformString);
+                        return;
+                    }
+                    // the goal is the remove the transform property, but an ellipse without a transform property will have no rotation
+                    // for simplicity, we'll just replace the ellipse with a path, and apply transform to that path
+                    var path = this.svg.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    var move = path.createSVGPathSegMovetoAbs(parseFloat(element.getAttribute('cx'))
+                    -parseFloat(element.getAttribute('rx')), parseFloat(element.getAttribute('cy')));
+                    var arc1 = path.createSVGPathSegArcAbs(parseFloat(element.getAttribute('cx'))
+                    +parseFloat(element.getAttribute('rx')), parseFloat(element.getAttribute('cy')), parseFloat(element.getAttribute('rx')),
+                    element.getAttribute('ry'),0,1,0);
+                    var arc2 = path.createSVGPathSegArcAbs(parseFloat(element.getAttribute('cx'))-parseFloat(element.getAttribute('rx')),element.getAttribute('cy'),element.getAttribute('rx'),element.getAttribute('ry'),0,1,0);
+
+                    path.pathSegList.appendItem(move);
+                    path.pathSegList.appendItem(arc1);
+                    path.pathSegList.appendItem(arc2);
+                    path.pathSegList.appendItem(path.createSVGPathSegClosePath());
+
+                    var transformProperty = element.getAttribute('transform');
+                    if(transformProperty){
+                        path.setAttribute('transform', transformProperty);
+                    }
+
+                    element.parentElement.replaceChild(path, element);
+
+                    element = path;
+                case 'path':
+                    if(skipClosed && this.isClosed(element)){
+                        element.setAttribute('transform', transformString);
+                        return;
+                    }
+                    this.pathToAbsolute(element);
+                    var seglist = element.pathSegList;
+                    var prevx = 0;
+                    var prevy = 0;
+
+                    for(var i = 0; i < seglist.numberOfItems; i++){
+                        var s = seglist.getItem(i);
+                        var command = s.pathSegTypeAsLetter;
+
+                        if(command == 'H'){
+                            seglist.replaceItem(element.createSVGPathSegLinetoAbs(s.x, prevy), i);
+                            s = seglist.getItem(i);
+                        }
+                        // todo: fix hack from dxf conversion
+                        else if(command == 'A'){
+                            if(dxfFlag){
+                                // fix dxf import error
+                                var arcrotate = (rotate == 180) ? 0 : rotate;
+                                var arcsweep = (rotate == 180) ? !s.sweepFlag : s.sweepFlag;
+                            }
+                            else{
+                                var arcrotate = s.angle + rotate;
+                                var arcsweep = s.sweepFlag;
+                            }
+
+                            seglist.replaceItem(element.createSVGPathSegArcAbs(s.x,s.y,s.r1*scale,s.r2*scale,arcrotate,s.largeArcFlag,arcsweep), i);
+                            s = seglist.getItem(i);
+                        }
+                        if('x' in s && 'y' in s){
+                            var transformed = transform.calc(s.x, s.y);
+                            prevx = s.x;
+                            prevy = s.y;
+
+                            s.x = transformed[0];
+                            s.y = transformed[1];
+                        }
+                        if('x1' in s && 'y1' in s){
+                            var transformed = transform.calc(s.x1, s.y1);
+                            s.x1 = transformed[0];
+                            s.y1 = transformed[1];
+                        }
+                        if('x2' in s && 'y2' in s){
+                            var transformed = transform.calc(s.x2, s.y2);
+                            s.x2 = transformed[0];
+                            s.y2 = transformed[1];
+                        }
+                    }
+
+                    element.removeAttribute('transform');
+                break;
+                case 'image':
+                    element.setAttribute('transform', transformString);
+                break;
+                case 'line':
+                    var x1 = Number(element.getAttribute('x1'));
+                    var y1 = Number(element.getAttribute('y1'));
+                    var x2 = Number(element.getAttribute('x2'));
+                    var y2 = Number(element.getAttribute('y2'));
+                    var transformed1 = transform.calc(x1, y1);
+                    var transformed2 = transform.calc(x2, y2);
+
+                    element.setAttribute('x1', transformed1[0]);
+                    element.setAttribute('y1', transformed1[1]);
+
+                    element.setAttribute('x2', transformed2[0]);
+                    element.setAttribute('y2', transformed2[1]);
+
+                    element.removeAttribute('transform');
+                break;
+                case 'circle':
+                    if(skipClosed){
+                        element.setAttribute('transform', transformString);
+                        return;
+                    }
+                    var transformed = transform.calc(element.getAttribute('cx'), element.getAttribute('cy'));
+                    element.setAttribute('cx', transformed[0]);
+                    element.setAttribute('cy', transformed[1]);
+
+                    // skew not supported
+                    element.setAttribute('r', element.getAttribute('r')*scale);
+                break;
+
+                case 'rect':
+                    if(skipClosed){
+                        element.setAttribute('transform', transformString);
+                        return;
+                    }
+                    //similar to the ellipse, we'll replace rect with polygon
+                    var polygon = this.svg.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+
+                    var p1 =  this.svgRoot.createSVGPoint();
+                    var p2 =  this.svgRoot.createSVGPoint();
+                    var p3 =  this.svgRoot.createSVGPoint();
+                    var p4 =  this.svgRoot.createSVGPoint();
+
+                    p1.x = parseFloat(element.getAttribute('x')) || 0;
+                    p1.y = parseFloat(element.getAttribute('y')) || 0;
+
+                    p2.x = p1.x + parseFloat(element.getAttribute(width));
+                    p2.y = p1.y;
+
+                    p3.x = p2.x;
+                    p3.y = p1.y + parseFloat(element.getAttribute('height'));
+
+                    p4.x = p1.x;
+                    p4.y = p3.y;
+
+                    polygon.points.appendItem(p1);
+                    polygon.points.appendItem(p2);
+                    polygon.points.appendItem(p3);
+                    polygon.points.appendItem(p4);
+
+                    // OnShape exports a rectangle at position 0/0, drop it
+                    if(p1.x === 0 && p1.y === 0){
+                        polygon.points.clear();
+                    }
+
+                    var transformProperty = element.getAttribute('transform');
+                    if(transformProperty){
+                        polygon.setAttribute('transform', transformProperty);
+                    }
+
+                    element.parentElement.replaceChild(polygon, element);
+                    element = polygon;
+
+                case 'polygon':
+                case 'polyline':
+                    if(skipClosed && this.isClosed(element)){
+                        element.setAttribute('transform', transformString);
+                        return;
+                    }
+                    for( var i = 0; i <  element.points.length; i++){
+                        var point =  element.points[i];
+                        var transformed = transform.calc(point.x, point.y);
+                        point.x = transformed[0];
+                        point.y = transformed[1];
+                    }
+
+                    element.removeAttribute('transform');
+                break;
+            }
+        }
+    }
+
+    //bring all child elements to the top level
+    SvgParser.prototype.flatten = function(element){
+        for(var i = 0; i < element.children.length; i++){
+            this.flatten(element.children[i]);
+        }
+
+        if(element.tagName != 'svg' && element.parentElement){
+            while(element.children.length > 0){
+                element.parentElement.appendChild(element.children[0]);
+            }
+        }
+    }
+
+    // remove all elements with tag name not in whitelist
+    // use this to remove <text>, <g> etc that don't represent shapes
+    SvgParser.prototype.filter = function(whitelist, element){
+        if(!whitelist || whitelist.length == 0){
+            throw Error('invalid whitelist');
+        }
+
+        element = element || this.svgRoot;
+
+        for(var i = 0; i < element.children.length; i++){
+            this.filter(whitelist, element.children[i]);
+        }
+
+        if(element.children.length == 0 && whitelist.indexOf(element.tagName) < 0){
+            element.parentElement.removeChild(element);
+        }
+    }
+
+    //split a compound path (paths with M, m commands) into an array of paths
+    SvgParser.prototype.splitPath = function (path){
+        if(!path || path.tagName != 'path' || !path.parentElement){
+            return false;
+        }
+
+        var seglist = path.pathSegList;
+
+        var x=0, y=0, x0=0, y0=0;
+        var paths = [];
+        
+        var p;
+
+        var lastM = 0;
+
+        for(var i = seglist.numberOfItems - 1; i >= 0; i--){
+            if(i > 0 && seglist.getItem(i).pathSegTypeAsLetter == 'M' || seglist.getItem(i).pathSegTypeAsLetter == 'm'){
+                lastM = i;
+                break;
+            }
+        }
+
+        if(lastM == 0){
+            return false; //only on 1 M command, there is no need to split
+        }
+
+        for(i = 0; i < seglist.numberOfItems; i++){
+            var s = seglist.getItem(i);
+            var command = s.pathSegTypeAsLetter;
+            if (command == 'M' || command == 'm'){
+                p = path.cloneNode();
+                p.setAttribute('d','');
+                paths.push(p);
+            }
+
+            if(/[MLHVCSQTA]/.test(command)){
+                if ('x' in s) x= s.x;
+                if ('y' in s) y= s.y;
+
+                p.pathSegList.appendItem(s);
+            }
+            else{
+                if( 'x' in s) x+=s.x;
+                if( 'y' in s) y+=s.y;
+                if(command == 'm'){
+                    p.pathSegList.appendItem(path.createSVGPathSegMovetoAbs(x,y));
+                }
+                else{
+                    if(command == 'Z' || command == 'z'){
+                        x = x0;
+                        y = y0;
+                    }
+                    p.pathSegList.appendItem(s);
+                }
+            }
+
+            //Record the part of a subpath
+            if (command == 'M' || command == 'm'){
+                x0 = x, y0 = y;
+            }
+        }
+
+        var addedPaths = [];
+        for( i = 0; i < paths.length; i++){
+            //don't add trivial paths from sequential M commands
+            if(paths[i].pathSegList.numberOfItems > 1){
+                path.parentElement.insertBefore(paths[i], path);
+                addedPaths.push(paths[i]);
+            }
+        }
+
+        path.remove();
+
+        return addedPaths;
+    }
+
+    // recursively run the given function on the given element
+    SvgParser.prototype.recurse = function(element, func){
+        // only operate on original DOM tree, ignore any children that are added. Avoid infinite loops
+        var children = Array.prototype.slice.call(element.children);
+        for(var i = 0; i < children.length; i++){
+            this.recurse(children[i], func);
+        }
+        func(element);
+    }
+
+    //return polygon from the given SVG element in the form of an array of points
+    SvgParser.prototype.polygonify =  function(element) {
+        var poly = [];
+        var i;
+
+        switch(element.tagName){
+            case 'polygon':
+            case 'polyline':
+                for( i = 0; i < element.points.length; i++){
+                    poly.push({
+                        x: element.points[i].x,
+                        y: element.points[i].y
+                    });
+                }
+            break;
+
+            case 'rect':
+                var p1 = {};
+                var p2 = {};
+                var p3 = {};
+                var p4 = {};
+
+                p1.x = parseFloat(element.getAttribute('x')) || 0;
+                p1.y = parseFloat(element.getAttribute('y')) || 0;
+
+                p2.x = p1.x + parseFloat(element.getAttribute('width'));
+                p2.y = p1.y;
+
+                p3.x = p2.x;
+                p3.y = p1.y + parseFloat(element.getAttribute('height'));
+
+                p4.x = p1.x;
+                p4.y = p3.y;
+
+                poly.push(p1);
+                poly.push(p2);
+                poly.push(p3);
+                poly.push(p4);
+            break;
+
+            case 'circle':
+                var radius = parseFloat(element.getAttribute('r'));
+                var cx = parseFloat(element.getAttribute('cx'));
+                var cy = parseFloat(element.getAttribute('cy'));
+
+                // num is the smallest number of segments required to approximate the circle to the given tolerance
+                var num = Math.ceil((2*Math.PI)/Math.acos(1 - (this.conf.tolerance/radius)));
+
+                if (num < 3){
+                    num = 3;
+                }
+
+                for(var i = 0; i < num; i++){
+                    var theta = i * ( (2*Math.PI) / num);
+                    var point = {};
+                    point.x = radius*Math.cos(theta) + cx;
+                    point.y = radius*Math.sin(theta) + cy;
+
+                    poly.push(point);
+                }
+            break;
+            
+            case 'ellipse':
+                // same as circle case. There is probably a way to reduce points but for convenience just flatten the equivalent circular polygon
+                var rx = parseFloat(element.getAttribute('rx'));
+                var ry = parseFloat(element.getAttribute('ry'));
+                var maxradius = Math.max(rx, ry);
+
+                var cx = parseFloat(element.getAttribute('cx'));
+                var cy = parseFloat(element.getAttribute('cy'));
+
+                var num = Math.ceil((2*Math.PI)/Math.acos(1 - (this.conf.tolerance/maxradius)));
+
+                if(num<3){
+                    num = 3;
+                }
+
+                for(var i = 0; i < num; i++){
+                    var theta = i * ( (2*Math.PI) / num);
+					var point = {};
+					point.x = rx*Math.cos(theta) + cx;
+					point.y = ry*Math.sin(theta) + cy;
+
+					poly.push(point);
+                }
+            break;
+
+            case 'path':
+                poly =  this.polygonifyPath(element);
+            break;
+        }
+
+        // do not include last point if coincident with starting point
+        while(poly.length > 0 && GeometryUtil.almostEqual(poly[0].x,poly[poly.length-1].x, this.conf.toleranceSvg) && GeometryUtil.almostEqual(poly[0].y,poly[poly.length-1].y, this.conf.toleranceSvg)){
+			poly.pop();
+		}
+
+        return poly;
+    };
+
+    SvgParser.prototype.poligonifyPath = function(path){
+        // we'll assume that splitpath has already been run on this path, and it only has on M/m command
+        var seglist = path.pathSegList;
+        var poly = [];
+        var firstCommand = seglist.getItem(0);
+        var lastCommand = seglist.getItem(seglist.numberOfItems - 1);
+
+        var x=0, y=0, x0=0, y0=0, x1=0, y1=0, x2=0, y2=0, prevx=0, prevy=0, prevx1=0, prevy1=0, prevx2=0, prevy2=0;
+
+        for(var i = 0; i < seglist.numberOfItems; i++){
+            var s = seglist.getItem(i);
+            var command = s.pathSegTypeAsLetter;
+
+            prevx = x;
+            prevy = y;
+
+            prevx1 = x1;
+            prevy1 = y1;
+
+            prevx2 = x2;
+            prevy2 = y2;
+
+            if (/[MLHVCSQTA]/.test(command)){
+                if ('x1' in s) x1=s.x1;
+                if ('x2' in s) x2=s.x2;
+                if ('y1' in s) y1=s.y1;
+                if ('y2' in s) y2=s.y2;
+                if ('x' in s) x=s.x;
+                if ('y' in s) y=s.y;
+            } else{
+                if ('x1' in s) x1=x+s.x1;
+				if ('x2' in s) x2=x+s.x2;
+				if ('y1' in s) y1=y+s.y1;
+				if ('y2' in s) y2=y+s.y2;
+				if ('x'  in s) x+=s.x;
+				if ('y'  in s) y+=s.y;
+			}
+			switch(command){
+				// linear line types
+				case 'm':
+				case 'M':
+				case 'l':
+				case 'L':
+				case 'h':
+				case 'H':
+				case 'v':
+				case 'V':
+					var point = {};
+					point.x = x;
+					point.y = y;
+					poly.push(point);
+				break;
+                // Quadratic Beziers
+				case 't':
+                    case 'T':
+                    // implicit control point
+                    if(i > 0 && /[QqTt]/.test(seglist.getItem(i-1).pathSegTypeAsLetter)){
+                        x1 = prevx + (prevx-prevx1);
+                        y1 = prevy + (prevy-prevy1);
+                    }
+                    else{
+                        x1 = prevx;
+                        y1 = prevy;
+                    }
+                    case 'q':
+                    case 'Q':
+                        var pointlist = GeometryUtil.QuadraticBezier.linearize({x: prevx, y: prevy}, {x: x, y: y}, {x: x1, y: y1}, this.conf.tolerance);
+                        pointlist.shift(); // firstpoint would already be in the poly
+                        for(var j=0; j<pointlist.length; j++){
+                            var point = {};
+                            point.x = pointlist[j].x;
+                            point.y = pointlist[j].y;
+                            poly.push(point);
+                        }
+                    break;
+                    case 's':
+                    case 'S':
+                        if(i > 0 && /[CcSs]/.test(seglist.getItem(i-1).pathSegTypeAsLetter)){
+                            x1 = prevx + (prevx-prevx2);
+                            y1 = prevy + (prevy-prevy2);
+                        }
+                        else{
+                            x1 = prevx;
+                            y1 = prevy;
+                        }
+                    case 'c':
+                    case 'C':
+                        var pointlist = GeometryUtil.CubicBezier.linearize({x: prevx, y: prevy}, {x: x, y: y}, {x: x1, y: y1}, {x: x2, y: y2}, this.conf.tolerance);
+                        pointlist.shift(); // firstpoint would already be in the poly
+                        for(var j=0; j<pointlist.length; j++){
+                            var point = {};
+                            point.x = pointlist[j].x;
+                            point.y = pointlist[j].y;
+                            poly.push(point);
+                        }
+                    break;
+                    case 'a':
+                    case 'A':
+                        var pointlist = GeometryUtil.Arc.linearize({x: prevx, y: prevy}, {x: x, y: y}, s.r1, s.r2, s.angle, s.largeArcFlag,s.sweepFlag, this.conf.tolerance);
+                        pointlist.shift();
+    
+                        for(var j=0; j<pointlist.length; j++){
+                            var point = {};
+                            point.x = pointlist[j].x;
+                            point.y = pointlist[j].y;
+                            poly.push(point);
+                        }
+                    break;
+                    case 'z': case 'Z': x=x0; y=y0; break;
+                }
+                // Record the start of a subpath
+                if (command=='M' || command=='m') x0=x, y0=y;
+            }
+    
+            return poly;
+        };
+    
+        // expose public methods
+        var parser = new SvgParser();
+    
+        root.SvgParser = {
+            config: parser.config.bind(parser),
+            load: parser.load.bind(parser),
+            clean: parser.cleanInput.bind(parser),
+            polygonify: parser.polygonify.bind(parser),
+            polygonifyPath: parser.polygonifyPath.bind(parser),
+            isClosed: parser.isClosed.bind(parser),
+            applyTransform: parser.applyTransform.bind(parser),
+            transformParse: parser.transformParse.bind(parser),
+            flatten: parser.flatten.bind(parser),
+            splitLines: parser.splitLines.bind(parser),
+            mergeLines: parser.mergeLines.bind(parser),
+            mergeOverlap: parser.mergeOverlap.bind(parser),
+            polygonElements: parser.polygonElements
+        };
+    
+    }(this));
