@@ -143,27 +143,64 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         // Filter medium sheet items with case-insensitive SKU check
         const mediumSheetItems = typedItems.filter(item => {
             const sku = item.sku?.toUpperCase() || '';
-            const isMediumSheet = sku.startsWith('SFS-') && /SFS-\d+\/\d+\/\d+[KBGEOMPRTY]$/.test(sku);
+            // Check for specific medium sheet patterns
+            const validPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
+            const isMediumSheet = validPatterns.some(pattern => sku.includes(pattern));
             
             // Debug log for each item being filtered
             if (sku.includes('Y')) {
-                console.log('Processing yellow sheet:', {
+                console.log('Processing sheet:', {
                     sku,
                     isMediumSheet,
-                    item_name: item.item_name
+                    item_name: item.item_name,
+                    stock: item.stock
                 });
             }
             
             return isMediumSheet;
         });
+
+        // Define color order for sorting
+        const colorOrder: { [key: string]: number } = {
+            'BLACK': 1,
+            'BLUE': 2,
+            'GREEN': 3,
+            'GREY': 4,
+            'GRAY': 4,
+            'ORANGE': 5,
+            'PINK': 6,
+            'PURPLE': 7,
+            'RED': 8,
+            'TEAL': 9,
+            'YELLOW': 10
+        };
+
+        // Sort medium sheet items by color
+        const sortedMediumSheetItems = mediumSheetItems.sort((a, b) => {
+            const colorA = Object.keys(colorOrder).find(color => 
+                a.item_name.toUpperCase().includes(color)
+            ) || 'OTHER';
+            const colorB = Object.keys(colorOrder).find(color => 
+                b.item_name.toUpperCase().includes(color)
+            ) || 'OTHER';
+
+            const orderA = colorOrder[colorA] || 999;
+            const orderB = colorOrder[colorB] || 999;
+
+            if (orderA === orderB) {
+                // If same color, sort by SKU
+                return a.sku.localeCompare(b.sku);
+            }
+            return orderA - orderB;
+        });
         
-        console.log('Medium sheet items:', mediumSheetItems);
-        console.log(`Found ${mediumSheetItems.length} medium sheet items`);
+        console.log('Medium sheet items after filtering and sorting:', sortedMediumSheetItems);
+        console.log(`Found ${sortedMediumSheetItems.length} medium sheet items`);
         
         // Debug log specifically for yellow medium sheets in filtered results
-        const yellowMediumSheets = mediumSheetItems.filter(item => item.sku?.includes('Y'));
+        const yellowMediumSheets = sortedMediumSheetItems.filter(item => item.sku?.includes('Y'));
         console.log('Yellow medium sheets in filtered results:', yellowMediumSheets);
 
-        return mediumSheetItems;
+        return sortedMediumSheetItems;
      }
 );

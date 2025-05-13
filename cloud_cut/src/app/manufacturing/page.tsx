@@ -75,7 +75,14 @@ export default function Manufacturing() {
   const filterItemsBySku = (items: OrderItem[]) => {
     return items.filter(item => {
       const sku = item.sku_id.toUpperCase();
-      return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFS');
+      // Check for specific medium sheet patterns
+      const validMediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
+      const isMediumSheet = validMediumSheetPatterns.some(pattern => sku.includes(pattern));
+      
+      // Include items that are either:
+      // 1. SFI or SFC items (manufacturing items)
+      // 2. Medium sheets with our specific patterns
+      return sku.startsWith('SFI') || sku.startsWith('SFC') || isMediumSheet;
     });
   };
 
@@ -92,9 +99,16 @@ export default function Manufacturing() {
     // Get all order items from the state, not just the ones for the current page
     const allOrderItems = Object.values(state.orders.orderItems).flat();
     
+    // Define valid medium sheet patterns
+    const validMediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
+    
     return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
-      // Medium sheets SKUs start with 'SFS'
-      if (item.sku_id.startsWith('SFS-') && !item.completed) {
+      // Check if this is a valid medium sheet SKU
+      const isMediumSheet = validMediumSheetPatterns.some(pattern => 
+        item.sku_id.startsWith('SFS-') && item.sku_id.includes(pattern) && !item.completed
+      );
+      
+      if (isMediumSheet) {
         // Add the item quantity to the total for this SKU
         acc[item.sku_id] = (acc[item.sku_id] || 0) + item.quantity;
       }

@@ -148,7 +148,10 @@ export default function Stock() {
             const supabase = getSupabaseClient();
             const { error } = await supabase
                 .from('finished_stock')
-                .update({ stock: editValue })
+                .update({ 
+                    stock: editValue,
+                    updated_at: new Date().toISOString()
+                })
                 .eq('sku', editingItem.sku);
 
             if (error) {
@@ -156,17 +159,19 @@ export default function Stock() {
                 return;
             }
 
-            // Refresh the stock data
-            dispatch(fetchFinishedStockFromSupabase({
-                page: currentPage,
-                perPage: itemsPerPage
-            }));
-
-            // Clear editing state
+            // Clear editing state first
             setEditingItem(null);
             setEditValue(0);
+
+            // Then refresh the stock data
+            await dispatch(fetchFinishedStockFromSupabase({
+                page: currentPage,
+                perPage: itemsPerPage
+            })).unwrap();
+
         } catch (error) {
             console.error("Error saving stock update:", error);
+            // Optionally show an error message to the user
         }
     }
 
