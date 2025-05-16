@@ -204,7 +204,7 @@ export async function createUser(data: {
     
     return { 
       success: true,
-      message: `User created successfully. A password reset email has been sent to ${email}. They can use the temporary password (${tempPassword}) until they reset it.`
+      message: `User created successfully. Your temporary password is ${tempPassword} Please reset it after logging in.`
     };
   } catch (error) {
     console.error('Server Action - Unexpected error:', error);

@@ -57,6 +57,7 @@ export interface InventoryItem {
     stock_level: string;
 }
 
+
 export interface InventoryResponse {
     total: number;
     per_page: string;
@@ -68,3 +69,4 @@ export interface InventoryResponse {
     to: number;
     data: InventoryItem[];
 }
+

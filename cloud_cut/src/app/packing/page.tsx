@@ -52,7 +52,7 @@ export default function Packing() {
     const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
     const [retailPackPage, setRetailPackPage] = useState(1);
-    const retailPacksPerPage = 9;
+    const retailPacksPerPage = 15;
     const [retailPackTableBPage, setRetailPackTableBPage] = useState(1);
 
     const orderProgress = useSelector((state: RootState) =>
@@ -670,22 +670,6 @@ export default function Packing() {
                                     </div>
                                 )}
                             </div>
-                            <button
-                                onClick={handleRefresh}
-                                className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
-                                disabled={isRefreshing}
-                                aria-label={isRefreshing ? "Syncing orders in progress" : "Refresh orders list"}
-                            >
-                                <span className={`${isRefreshing ? "animate-spin" : ""} text-red-400`}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-                                        <path d="M21 3v5h-5"/>
-                                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-                                        <path d="M8 16H3v5"/>
-                                    </svg>
-                                </span>
-                                <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
-                            </button>
                         </div>
                         <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
                             {loading ? (
@@ -710,8 +694,8 @@ export default function Packing() {
                                 </div>
                             ) : (
                                 <>
-                                    <div className="flex-1 overflow-y-auto">
-                                        <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
+                                    <div className="flex-1 overflow-y-auto min-h-[400px]">
+                                        <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto">
                                             <thead className="bg-gray-100/90 sticky top-0">
                                                 <tr>
                                                     <th className="px-4 py-4 text-center text-black text-md">Order ID</th>
@@ -782,7 +766,7 @@ export default function Packing() {
                                                                 key={order.order_id}
                                                                 id={`order-row-${order.order_id}`}
                                                                 ref={order.order_id === selectedOrderId ? selectedRowRef : null}
-                                                                className={`transition-all duration-200 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${
+                                                                className={`transition-all duration-200 cursor-pointer text-center h-14 ${
                                                                     order.order_id === selectedOrderId 
                                                                     ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
                                                                     : order.picking
@@ -806,8 +790,8 @@ export default function Packing() {
                                                 )}
                                                 {selectedRetailPack && findOrdersWithRetailPack(selectedRetailPack).length === 0 && !isRefreshing && (
                                                     <tr>
-                                                        <td colSpan={5} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
-                                                            <div className="flex flex-col items-center justify-center h-full text-black">
+                                                        <td colSpan={5} className="px-6 py-10 text-center">
+                                                            <div className="flex flex-col items-center justify-center h-40 text-black">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                                 </svg>
@@ -1015,7 +999,7 @@ export default function Packing() {
                                 </div>
                             ) : (
                                 <div className="flex flex-col h-full">
-                                    <div className="overflow-y-auto flex-1">
+                                    <div className="flex-1 overflow-y-auto min-h-[400px]">
                                         <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto">
                                             <thead className="bg-gray-100/90 sticky top-0">
                                                 <tr>
@@ -1040,8 +1024,8 @@ export default function Packing() {
                                                     //Render Retail Packs and their quantities for Table A
                                                     getTableARetailPacks().length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={2} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
-                                                                <div className="flex flex-col items-center justify-center h-full text-black">
+                                                            <td colSpan={2} className="px-6 py-10 text-center">
+                                                                <div className="flex flex-col items-center justify-center h-60 text-black">
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                                     </svg>
@@ -1054,7 +1038,7 @@ export default function Packing() {
                                                         getTableARetailPacks().map(([itemName, quantity], index) => (
                                                             <tr 
                                                                 key={itemName} 
-                                                                className={`transition-colors duration-150 
+                                                                className={`transition-colors duration-150 h-14
                                                                     ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
                                                                     hover:bg-blue-50 cursor-pointer shadow-sm`}
                                                                 onClick={() => handleRetailPackClick(itemName)}
@@ -1126,7 +1110,7 @@ export default function Packing() {
                                 </div>
                             ) : (
                                 <div className="flex flex-col h-full">
-                                    <div className="overflow-y-auto flex-1">
+                                    <div className="flex-1 overflow-y-auto min-h-[400px]">
                                         <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto">
                                             <thead className="bg-gray-100/90 sticky top-0">
                                                 <tr>
@@ -1151,8 +1135,8 @@ export default function Packing() {
                                                     //Render Retail Packs and their quantities for Table B
                                                     getTableBRetailPacks().length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={2} className="px-6 py-10 text-center h-[calc(75vh-270px)]">
-                                                                <div className="flex flex-col items-center justify-center h-full text-black">
+                                                            <td colSpan={2} className="px-6 py-10 text-center">
+                                                                <div className="flex flex-col items-center justify-center h-60 text-black">
                                                                     {getFilteredRetailPacks().length <= retailPacksPerPage ? (
                                                                         <>
                                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1177,7 +1161,7 @@ export default function Packing() {
                                                         getTableBRetailPacks().map(([itemName, quantity], index) => (
                                                             <tr 
                                                                 key={itemName} 
-                                                                className={`transition-colors duration-150 
+                                                                className={`transition-colors duration-150 h-14
                                                                     ${selectedRetailPack === itemName ? 'bg-blue-50' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')} 
                                                                     hover:bg-blue-50 cursor-pointer shadow-sm`}
                                                                 onClick={() => handleRetailPackClick(itemName)}

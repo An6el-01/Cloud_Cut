@@ -16,6 +16,7 @@ import DeleteCompletedOrder from '@/components/DeleteCompletedOrder';
 import * as Sentry from '@sentry/nextjs';
 import { fetchArchivedOrders } from '@/redux/thunks/ordersThunks';
 import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
+import { useRouter } from 'next/navigation';
 
 // Define types used by the dropdown component
 type SortField = 'order_id' | 'order_date' | 'customer_name';
@@ -231,6 +232,7 @@ export default function Admin() {
     const selectedRowRef = useRef<HTMLTableRowElement>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [currentSlide, setCurrentSlide] = useState(0);
+    const router = useRouter();
     
     // New state to track editing state
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -273,14 +275,14 @@ export default function Admin() {
         {name: 'Einhell', image: '/einhell.png'},
         {name: 'Magnusson', image: '/magnusson.png'},
         {name: 'OX', image: '/ox.png'},
-        {name: 'Klein Tools', image: '/klein.png'},
+        {name: 'Klein', image: '/klein.png'},
         {name: 'Craftsman', image: '/craftsman.png'},
         {name: 'Trend', image: '/trend.png'},
         {name: 'Ryobi', image: '/ryobi.png'},
         {name: 'Nuprol', image: '/nuprol.png'},
         {name: 'Hikoki', image: '/hikoki.png'},
         {name: 'Ridgid', image: '/ridgid.png'},
-        {name: 'ThoughBuilt', image: '/toughbilt.png'},
+        {name: 'Toughbuilt', image: '/toughbilt.png'},
         {name: 'Facom', image: '/facom.png'},
         {name: 'AEG', image: '/AEG.png'},
         {name: 'Tanos', image: '/tanos.png'},
@@ -289,19 +291,20 @@ export default function Admin() {
         {name: 'Flex', image: '/flex.png'},
         {name: 'Sortimo', image: '/sortimo.png'},
         {name: 'Reisser', image: '/reisser.png'},
-        {name: 'QBrick', image: '/qbrick.png'},
+        {name: 'QBRICK', image: '/qbrick.png'},
         {name: 'Rothenberger', image: '/rothenberger.png'},
-        {name: 'V-Tuf', image: '/vtuf.png'},
-        {name: 'Strauss', image: '/strauss.png'},
+        {name: 'V-TUF', image: '/vtuf.png'},
+        {name: 'Engelbert Strauss', image: '/strauss.png'},
         {name: 'Metabo', image: '/metabo.png'},
-        {name: 'Industrial', image: '/industrial.png'},
+        {name: 'Industrial by Hornbach', image: '/industrial.png'},
         {name: 'Keter', image: '/keter.png'},
         {name: 'Hart', image: '/hart.png'},
         {name: 'Worx', image: '/worx.png'},
         {name: 'Wisent', image: '/wisent.png'},
-        {name: 'Wurth', image: '/wurth.png'},
-        {name: 'Hasta', image: '/hasta.png'},
+        {name: 'Würth', image: '/wurth.png'},
+        {name: 'HASTA', image: '/hasta.png'},
     ]
+
 
     //Data for Pie Chart
     const data= [
@@ -937,7 +940,13 @@ export default function Admin() {
                                 {Array.from({ length: Math.ceil(brands.length / 2) }, (_, i) => brands.slice(i * 2, (i + 1) * 2)).map((brandPair, index) => (
                                     <div key={index} className="min-w-full h-full flex justify-around items-center px-4">
                                         {brandPair.map((brand, brandIndex) => (
-                                            <div key={`${index}-${brandIndex}`} className="w-1/2 h-full flex items-center justify-center relative px-2">
+                                            <div 
+                                                key={`${index}-${brandIndex}`} 
+                                                className="w-1/2 h-full flex items-center justify-center relative px-2 cursor-pointer hover:scale-105 transition-transform duration-200"
+                                                onClick={() => {
+                                                    router.push(`/inserts?brand=${encodeURIComponent(brand.name)}`);
+                                                }}
+                                            >
                                                 <Image
                                                     src={brand.image}
                                                     alt={`${brand.name} logo`}
@@ -976,7 +985,9 @@ export default function Admin() {
                         </div>
                         {/**View More Button */}
                         <div className="flex justify-center py-4">
-                            <button className="bg-gradient-to-r from-red-800 to-red-600 text-white px-6 py-2 rounded-full flex items-center space-x-2 hover:from-red-700 hover:to-red-500 ">
+                            <button className="bg-gradient-to-r from-red-800 to-red-600 text-white px-6 py-2 rounded-full flex items-center space-x-2 hover:from-red-700 hover:to-red-500 " onClick={() => {
+                                router.push('/inserts');
+                            }}>
                                 <span>View More</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M5 12h14"/>

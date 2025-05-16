@@ -1,5 +1,4 @@
-// utils/despatchCloud.ts
-import { DespatchCloudOrder, OrderDetails, InventoryItem } from '@/types/despatchCloud';
+import { DespatchCloudOrder, OrderDetails, InventoryItem, InventoryResponse as TypedInventoryResponse } from '@/types/despatchCloud';
 import { getFoamSheetFromSKU } from './skuParser';
 import { getPriorityLevel, isAmazonOrder, calculateDayNumber } from './priority';
 import { optimizeItemName } from './optimizeItemName';
@@ -104,8 +103,11 @@ export async function getAuthToken(): Promise<string> {
 
 export async function fetchOrders(page: number = 1, perPage: number = 15): Promise<OrdersResponse> {
   const now = new Date();
-  const fiveDaysAgo = new Date(now.getTime() - (5 * 24 * 60 * 60 * 1000)); // 5 days ago in milliseconds
-  const dateRange = `${Math.floor(fiveDaysAgo.getTime() / 1000)},${Math.floor(now.getTime() / 1000)}`;
+  const localOffset = now.getTimezoneOffset() * 60000; // Time zone offset in milliseconds
+  const localNow = new Date(now.getTime() - localOffset); // Adjusted current time in local time zone
+
+  const twoDaysAgo = new Date(localNow.getTime() - (2 * 24 * 60 * 60 * 1000)); // 2 days ago in local time
+  const dateRange = `${Math.floor(twoDaysAgo.getTime() / 1000)},${Math.floor(localNow.getTime() / 1000)}`;
 
   const normalizedPerPage = Math.min(Math.max(perPage, 5), 20);
   const url = `${BASE_URL}/api/despatchCloud/proxy?path=orders&page=${page}&per_page=${normalizedPerPage}&filters[date_range]=${dateRange}`;
@@ -145,7 +147,6 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
       return priority;
     });
 
-    //Check if this needs to be updated
     const highestPriority = itemPriorities.length > 0 ? Math.max(...itemPriorities) : 0;
     console.log(`Highest priority for order: ${highestPriority}`);
 
@@ -163,6 +164,7 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
     per_page: response.per_page || normalizedPerPage,
   };
 }
+
 
 export async function fetchOrderDetails(orderId: string): Promise<OrderDetails> {
   const url = `${BASE_URL}/api/despatchCloud/proxy?path=order/${orderId}`;
@@ -278,7 +280,10 @@ export async function fetchInventory(
 
         const fetchUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory&${queryParamsAll.toString()}`;
         console.log(`Fetching page ${currentPage} from:`, fetchUrl);
-        const response = await fetchWithAuth<InventoryResponse>(fetchUrl);
+        const response = await fetchWithAuth<TypedInventoryResponse>(fetchUrl);
+        
+        console.log(`Raw inventory data from DespatchCloud (page ${currentPage}):`, response);
+        console.log(`Items count on page ${currentPage}:`, response.data?.length || 0);
 
         allItems = allItems.concat(response.data || []);
         currentPage++;
@@ -291,16 +296,20 @@ export async function fetchInventory(
         last_page: lastPage,
         total: allItems.length,
         per_page: perPage,
-      };
+      } as InventoryResponse;
     } else {
-      const response = await fetchWithAuth<InventoryResponse>(url);
+      const response = await fetchWithAuth<TypedInventoryResponse>(url);
+      
+      console.log(`Raw inventory data from DespatchCloud:`, response);
+      console.log(`Items count:`, response.data?.length || 0);
+      
       return {
         data: response.data || [],
         current_page: response.current_page || page,
         last_page: response.last_page || 1,
         total: response.total || 0,
-        per_page: response.per_page || perPage,
-      };
+        per_page: Number(response.per_page) || perPage,
+      } as InventoryResponse;
     }
   } catch (error) {
     console.error('Error fetching inventory:', error);

@@ -136,26 +136,13 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         console.log('Raw data from Supabase:', typedItems);
         console.log(`Fetched ${typedItems.length} items from Supabase`);
         
-        // Debug log for yellow medium sheets
-        const yellowSheets = typedItems.filter(item => item.sku?.includes('Y'));
-        console.log('Yellow sheets found in raw data:', yellowSheets);
-        
+
         // Filter medium sheet items with case-insensitive SKU check
         const mediumSheetItems = typedItems.filter(item => {
             const sku = item.sku?.toUpperCase() || '';
             // Check for specific medium sheet patterns
             const validPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
             const isMediumSheet = validPatterns.some(pattern => sku.includes(pattern));
-            
-            // Debug log for each item being filtered
-            if (sku.includes('Y')) {
-                console.log('Processing sheet:', {
-                    sku,
-                    isMediumSheet,
-                    item_name: item.item_name,
-                    stock: item.stock
-                });
-            }
             
             return isMediumSheet;
         });
@@ -197,10 +184,6 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         console.log('Medium sheet items after filtering and sorting:', sortedMediumSheetItems);
         console.log(`Found ${sortedMediumSheetItems.length} medium sheet items`);
         
-        // Debug log specifically for yellow medium sheets in filtered results
-        const yellowMediumSheets = sortedMediumSheetItems.filter(item => item.sku?.includes('Y'));
-        console.log('Yellow medium sheets in filtered results:', yellowMediumSheets);
-
         return sortedMediumSheetItems;
      }
 );

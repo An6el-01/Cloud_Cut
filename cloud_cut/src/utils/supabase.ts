@@ -3,6 +3,7 @@ import { createBrowserClient } from '@supabase/ssr';
 import { UserMetadata } from "@supabase/supabase-js";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { createUser, deleteUser as deleteUserAction } from '@/app/actions';
+import { InsertItem } from "@/types/despatchCloud";
 
 let supabaseInstance: ReturnType<typeof createBrowserClient> | null = null;
 
@@ -261,3 +262,10 @@ export const subscribeToFinishedStock = (callback: (payload:
       .on('postgres_changes', { event: '*', schema: 'public', table:"orders"}, callback )
       .subscribe();
   }
+
+export const subscribeToInserts = (callback: (payload: RealtimePostgresChangesPayload<InsertItem>) => void) => {
+  return supabase
+    .channel('inserts')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'inserts'}, callback)
+    .subscribe();
+}

@@ -2,10 +2,28 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useSelector } from 'react-redux';
+import { useEffect, useState } from 'react';
+
+interface RootState {
+  auth: {
+    userProfile: {
+      role: string;
+      email: string;
+    } | null;
+  };
+}
 
 const Navbar = () => {
   const pathname = usePathname();
+  const router = useRouter();
+  const userProfile = useSelector((state: RootState) => state.auth.userProfile);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   
   const getPageTitle = () => {
     if (!pathname) return 'Home';
@@ -13,13 +31,28 @@ const Navbar = () => {
     return pathname.slice(1).charAt(0).toUpperCase() + pathname.slice(2);
   };
 
+  const isPackerRole = isClient && userProfile?.role === 'Packer';
+
+  // Redirect if a Packer tries to access unauthorized routes directly
+  useEffect(() => {
+    if (isPackerRole && pathname && 
+        pathname !== '/packing' && 
+        pathname !== '/profile' && 
+        pathname !== '/' && 
+        pathname !== '/resetPassword' && 
+        !pathname.startsWith('/api/')) {
+      console.log('NavBar - Redirecting Packer from unauthorized path:', pathname);
+      router.push('/packing');
+    }
+  }, [isPackerRole, pathname, router]);
+
   return (
-    <nav className="shadow-md fixed w-full top-10 z-50">
+    <nav className="shadow-md fixed w-full p-5 z-50 bg-black">
       <div className="max-w-78l mx-auto px-4 sm:px-6 lg:px-8 ">
         <div className="flex justify-between h-16 ">
           {/* Logo and Brand */}
           <div className="flex items-center">
-            <Link href="/manufacturing" className="flex items-center">
+            <Link href={isPackerRole ? "/packing" : "/manufacturing"} className="flex items-center">
               <Image
                 src="/sfLogo.png"
                 alt="Shadow Foam Logo"
@@ -36,13 +69,16 @@ const Navbar = () => {
 
           {/* Navigation Links */}
           <div className="flex items-center space-x-4">
-            <Link
-              href="/manufacturing"
-              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-            >
-              Manufacturing
-            </Link>
+            {!isPackerRole && (
+              <Link
+                href="/manufacturing"
+                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+              >
+                Manufacturing
+              </Link>
+            )}
 
+            {/* Packing link is available to all users */}
             <Link
               href="/packing"
               className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
@@ -50,28 +86,34 @@ const Navbar = () => {
               Packing
             </Link>
 
-            <Link
-              href="/team"
-              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"  
-            >
-              My Team
-            </Link>
+            {!isPackerRole && (
+              <Link
+                href="/team"
+                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"  
+              >
+                My Team
+              </Link>
+            )}
 
-            <Link
-              href="/stock"
-              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-            >
-              Stock
-            </Link>
+            {!isPackerRole && (
+              <Link
+                href="/stock"
+                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+              >
+                Stock
+              </Link>
+            )}
 
-            <Link
-              href="/admin"
-              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-            >
-              Admin
-            </Link>
+            {!isPackerRole && (
+              <Link
+                href="/admin"
+                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+              >
+                Admin
+              </Link>
+            )}
             
-            {/* Profile Section */}
+            {/* Profile Section - always available */}
             <div className="relative">
               <Link href="/profile" className="flex flex-col items-center">
                 <div className="w-16 h-16 relative overflow-hidden rounded-full bg-white p-1 flex items-center justify-center">

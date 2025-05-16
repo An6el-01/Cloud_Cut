@@ -28,6 +28,16 @@ export default function Home() {
     setMounted(true);
   }, []);
 
+  // Function to redirect based on user role
+  const redirectBasedOnRole = (role: string) => {
+    console.log('Redirecting based on role:', role);
+    if (role === 'Packer') {
+      router.push("/packing");
+    } else {
+      router.push("/manufacturing");
+    }
+  };
+
   // Check if already authenticated on mount
   useEffect(() => {
     const checkSession = async () => {
@@ -54,8 +64,10 @@ export default function Home() {
                 role: profile.role as string,
                 email: profile.email as string
               }));
+              
+              // Redirect based on user role
+              redirectBasedOnRole(profile.role as string);
             }
-            router.push("/manufacturing");
           }
         }
       } catch (error) {
@@ -107,8 +119,10 @@ export default function Home() {
               email: profile.email
             }
           }));
+          
+          // Redirect based on user role
+          redirectBasedOnRole(profile.role as string);
         }
-        router.push("/manufacturing");
       }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred during sign-in");

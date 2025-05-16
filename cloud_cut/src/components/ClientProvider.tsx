@@ -4,6 +4,7 @@ import { Provider } from 'react-redux';
 import { store } from '@/redux/store';
 import { ReactNode, useEffect } from "react";
 import { syncOrders } from '@/redux/thunks/ordersThunks';
+import { setUser, setUserProfile } from '@/redux/slices/authSlice';
 
 interface ClientProviderProps {
     children: ReactNode;
@@ -11,6 +12,23 @@ interface ClientProviderProps {
 
 export default function ClientProvider({ children }: ClientProviderProps) {
     useEffect(() => {
+        // Load auth state from localStorage if available
+        try {
+            const savedAuthState = localStorage.getItem('authState');
+            if (savedAuthState) {
+                const authState = JSON.parse(savedAuthState);
+                if (authState.user) {
+                    store.dispatch(setUser(authState.user));
+                }
+                if (authState.userProfile) {
+                    store.dispatch(setUserProfile(authState.userProfile));
+                    console.log('Loaded user profile from localStorage:', authState.userProfile);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading auth state from localStorage:', error);
+        }
+
         // Initial sync
         store.dispatch(syncOrders());
 
