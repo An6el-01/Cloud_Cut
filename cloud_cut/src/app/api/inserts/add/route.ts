@@ -40,13 +40,19 @@ async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify({ dxf: base64Data }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Python API error response:', errorText);
+      console.error('Python API error response:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: errorText
+      });
       throw new Error(`Python API responded with status: ${response.status} - ${errorText}`);
     }
 

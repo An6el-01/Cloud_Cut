@@ -5,14 +5,19 @@
       "use": "@vercel/next"
     },
     {
-      "src": "cloud_cut/src/app/api/convert/route.py",
+      "src": "src/app/api/convert/route.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/api/convert",
-      "dest": "cloud_cut/src/app/api/convert/route.py"
+      "dest": "src/app/api/convert/route.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
     }
   ],
   "functions": {
