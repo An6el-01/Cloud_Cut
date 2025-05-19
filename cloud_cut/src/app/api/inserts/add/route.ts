@@ -16,6 +16,21 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
+// Function to get the correct Python executable path
+function getPythonPath() {
+  // In production (Vercel), use the system Python
+  if (process.env.VERCEL) {
+    return '/usr/bin/python3';
+  }
+  // In development, try to use the virtual environment Python
+  const venvPython = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
+  if (fs.existsSync(venvPython)) {
+    return venvPython;
+  }
+  // Fallback to system Python
+  return 'python';
+}
+
 // Function to convert DXF to SVG using Python script
 async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -32,9 +47,10 @@ async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
 
     console.log('Starting Python conversion with script:', scriptPath);
     console.log('Input file:', inputPath);
+    console.log('Using Python executable:', getPythonPath());
 
-    // Spawn Python process
-    const pythonProcess = spawn('python', [scriptPath, inputPath]);
+    // Spawn Python process with the correct Python path
+    const pythonProcess = spawn(getPythonPath(), [scriptPath, inputPath]);
 
     let svgData = '';
     let errorData = '';

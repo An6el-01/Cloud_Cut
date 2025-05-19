@@ -1,0 +1,16 @@
+{
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "functions": {
+    "src/app/api/inserts/add/route.ts": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "env": {
+    "PYTHONPATH": "/usr/bin/python3"
+  }
+} 
