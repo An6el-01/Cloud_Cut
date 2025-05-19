@@ -12,14 +12,31 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
+// Function to get the base URL for API calls
+function getBaseUrl() {
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  if (process.env.NEXT_PUBLIC_VERCEL_URL) {
+    return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  }
+  return 'http://localhost:3000';
+}
+
 // Function to convert DXF to SVG using the Python API
 async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
   try {
     // Convert ArrayBuffer to base64
     const base64Data = Buffer.from(dxfBuffer).toString('base64');
     
+    // Construct the full URL
+    const baseUrl = getBaseUrl();
+    const apiUrl = `${baseUrl}/api/convert`;
+    
+    console.log('Calling Python API at:', apiUrl);
+    
     // Call the Python API
-    const response = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || ''}/api/convert`, {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -28,13 +45,20 @@ async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
     });
 
     if (!response.ok) {
-      throw new Error(`Python API responded with status: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Python API error response:', errorText);
+      throw new Error(`Python API responded with status: ${response.status} - ${errorText}`);
     }
 
     const result = await response.json();
+    console.log('Python API response:', { success: result.success, error: result.error });
     
     if (!result.success) {
       throw new Error(result.error || 'Conversion failed');
+    }
+
+    if (!result.svg) {
+      throw new Error('No SVG data received from conversion');
     }
 
     return result.svg;
