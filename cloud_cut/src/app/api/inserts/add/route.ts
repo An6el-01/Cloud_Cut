@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { spawn } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
 
 // Create a direct Supabase client with admin privileges for API routes
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -16,90 +12,36 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-// Function to get the correct Python executable path
-function getPythonPath() {
-  // In production (Vercel), use the system Python
-  if (process.env.VERCEL) {
-    return '/usr/bin/python3';
-  }
-  // In development, try to use the virtual environment Python
-  const venvPython = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
-  if (fs.existsSync(venvPython)) {
-    return venvPython;
-  }
-  // Fallback to system Python
-  return 'python';
-}
-
-// Function to convert DXF to SVG using Python script
+// Function to convert DXF to SVG using the Python API
 async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // Create a temporary directory for the conversion
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dxf-convert-'));
-    const inputPath = path.join(tempDir, 'input.dxf');
-    const outputPath = path.join(tempDir, 'output.svg');
-
-    // Write the DXF buffer to a temporary file
-    fs.writeFileSync(inputPath, Buffer.from(dxfBuffer));
-
-    // Get the path to the Python script
-    const scriptPath = path.join(process.cwd(), '..', 'dxfToSvg', 'index.py');
-
-    console.log('Starting Python conversion with script:', scriptPath);
-    console.log('Input file:', inputPath);
-    console.log('Using Python executable:', getPythonPath());
-
-    // Spawn Python process with the correct Python path
-    const pythonProcess = spawn(getPythonPath(), [scriptPath, inputPath]);
-
-    let svgData = '';
-    let errorData = '';
-
-    pythonProcess.stdout.on('data', (data) => {
-      const chunk = data.toString();
-      console.log('Python stdout chunk:', chunk.substring(0, 100) + '...');
-      svgData += chunk;
+  try {
+    // Convert ArrayBuffer to base64
+    const base64Data = Buffer.from(dxfBuffer).toString('base64');
+    
+    // Call the Python API
+    const response = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || ''}/api/convert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ dxf: base64Data }),
     });
 
-    pythonProcess.stderr.on('data', (data) => {
-      const chunk = data.toString();
-      console.error('Python stderr:', chunk);
-      errorData += chunk;
-    });
+    if (!response.ok) {
+      throw new Error(`Python API responded with status: ${response.status}`);
+    }
 
-    pythonProcess.on('close', (code) => {
-      // Clean up temporary files
-      try {
-        fs.unlinkSync(inputPath);
-        fs.rmdirSync(tempDir);
-      } catch (err) {
-        console.error('Error cleaning up temporary files:', err);
-      }
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Conversion failed');
+    }
 
-      if (code !== 0) {
-        console.error('Python process failed with code:', code);
-        console.error('Error output:', errorData);
-        reject(new Error(`Python process failed: ${errorData}`));
-        return;
-      }
-
-      if (!svgData) {
-        console.error('No SVG data received from Python process');
-        reject(new Error('No SVG data received from conversion process'));
-        return;
-      }
-
-      // Validate SVG data
-      if (!svgData.trim().startsWith('<?xml') || !svgData.includes('<svg')) {
-        console.error('Invalid SVG data format');
-        reject(new Error('Invalid SVG data format'));
-        return;
-      }
-
-      console.log('SVG data length:', svgData.length);
-      resolve(svgData);
-    });
-  });
+    return result.svg;
+  } catch (error) {
+    console.error('Error converting DXF to SVG:', error);
+    throw error;
+  }
 }
 
 export async function POST(request: NextRequest) {
