@@ -36,6 +36,9 @@ export default function Inserts() {
     const brandsContainerRef = useRef<HTMLDivElement>(null);
     const [selectedDXF, setSelectedDXF] = useState<File | null>(null);
     const dxfInputRef = useRef<HTMLInputElement>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [selectedDXFFiles, setSelectedDXFFiles] = useState<File[]>([]);
 
     // Effect to handle URL parameter
     useEffect(() => {
@@ -289,13 +292,90 @@ export default function Inserts() {
         dxfInputRef.current?.click();
     };
     const handleDXFChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setSelectedDXF(e.target.files[0]);
+        if (e.target.files && e.target.files.length > 0) {
+            const files = Array.from(e.target.files);
+            setSelectedDXFFiles(files);
         }
     };
-    const handleRemoveDXF = () => {
-        setSelectedDXF(null);
-        if (dxfInputRef.current) dxfInputRef.current.value = '';
+    const handleRemoveDXF = (index?: number) => {
+        if (typeof index === 'number') {
+            setSelectedDXFFiles(prev => prev.filter((_, i) => i !== index));
+        } else {
+            setSelectedDXFFiles([]);
+            if (dxfInputRef.current) dxfInputRef.current.value = '';
+        }
+    };
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        setSubmitMessage(null);
+
+        const form = e.currentTarget;
+        const formData = new FormData(form);
+
+        // Validate form
+        const brand = formData.get('brand') as string;
+        const sku = formData.get('sku') as string;
+
+        if (!brand || !sku || selectedDXFFiles.length === 0) {
+            setSubmitMessage({
+                type: 'error',
+                text: 'Please fill in all fields and select at least one DXF file'
+            });
+            setIsSubmitting(false);
+            return;
+        }
+
+        // Validate SKU format
+        if (!sku.toUpperCase().startsWith('SFI')) {
+            setSubmitMessage({
+                type: 'error',
+                text: 'SKU must start with SFI'
+            });
+            setIsSubmitting(false);
+            return;
+        }
+
+        try {
+            // Add each DXF file to the form data
+            selectedDXFFiles.forEach(file => {
+                formData.append('dxf', file);
+            });
+
+            const response = await fetch('/api/inserts/add', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                setSubmitMessage({
+                    type: 'success',
+                    text: result.message
+                });
+                // Reset form
+                form.reset();
+                setSelectedDXFFiles([]);
+                // Refresh inserts list if the brand is selected
+                if (selectedBrand === brand) {
+                    fetchInsertsForBrand(brand);
+                }
+            } else {
+                setSubmitMessage({
+                    type: 'error',
+                    text: result.message
+                });
+            }
+        } catch (error) {
+            setSubmitMessage({
+                type: 'error',
+                text: 'Failed to add insert. Please try again.'
+            });
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -451,7 +531,7 @@ export default function Inserts() {
                         <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                             <h1 className="text-2xl font-bold text-white">Add A New Insert</h1>
                         </div>
-                        <form className="flex-1 flex flex-col justify-between bg-white rounded-b-xl p-6">
+                        <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between bg-white rounded-b-xl p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 {/* Left: Brand and SKU */}
                                 <div className="flex flex-col gap-4">
@@ -461,6 +541,7 @@ export default function Inserts() {
                                         name="brand"
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
                                         defaultValue=""
+                                        required
                                     >
                                         <option value="" disabled>Brand...</option>
                                         {brands.map((brand) => (
@@ -474,6 +555,9 @@ export default function Inserts() {
                                         type="text"
                                         placeholder="Sku..."
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        required
+                                        pattern="SFI.*"
+                                        title="SKU must start with SFI"
                                     />
                                 </div>
                                 {/* Right: DXF Upload */}
@@ -497,29 +581,54 @@ export default function Inserts() {
                                             ref={dxfInputRef}
                                             onChange={handleDXFChange}
                                             onClick={e => e.stopPropagation()}
+                                            multiple
+                                            required
                                         />
-                                        <div className="flex items-center justify-between w-full mt-2 text-xs text-gray-500">
-                                            <span>{selectedDXF ? selectedDXF.name : 'No selected file -'}</span>
-                                            <button
-                                                type="button"
-                                                className="ml-2 text-gray-400 hover:text-red-500"
-                                                onClick={e => { e.stopPropagation(); handleRemoveDXF(); }}
-                                                tabIndex={-1}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
+                                        <div className="w-full mt-4">
+                                            {selectedDXFFiles.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    {selectedDXFFiles.map((file, index) => (
+                                                        <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
+                                                            <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                                                            <button
+                                                                type="button"
+                                                                className="ml-2 text-gray-400 hover:text-red-500"
+                                                                onClick={e => { e.stopPropagation(); handleRemoveDXF(index); }}
+                                                                tabIndex={-1}
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm text-gray-500">No files selected</div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                            {/* Submit message */}
+                            {submitMessage && (
+                                <div className={`mt-4 p-3 rounded-lg ${
+                                    submitMessage.type === 'success' 
+                                        ? 'bg-green-100 text-green-700' 
+                                        : 'bg-red-100 text-red-700'
+                                }`}>
+                                    {submitMessage.text}
+                                </div>
+                            )}
                             <div className="flex justify-center mt-8">
                                 <button
                                     type="submit"
-                                    className="px-8 py-2 rounded-full font-semibold text-white bg-gradient-to-r from-gray-800 to-red-700 hover:from-red-800 hover:to-red-600 transition-colors shadow-md"
+                                    disabled={isSubmitting}
+                                    className={`px-8 py-2 rounded-full font-semibold text-white bg-gradient-to-r from-gray-800 to-red-700 hover:from-red-800 hover:to-red-600 transition-colors shadow-md ${
+                                        isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
+                                    }`}
                                 >
-                                    Upload
+                                    {isSubmitting ? 'Uploading...' : 'Upload'}
                                 </button>
                             </div>
                         </form>

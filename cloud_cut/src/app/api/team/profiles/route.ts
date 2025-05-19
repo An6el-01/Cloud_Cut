@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin, getSupabaseRouteHandlerClient } from '@/utils/supabaseServer';
 
-//DONT DELETE THIS AS THIS MAKE THE API ROUTE WORK IN VERCEL AND LOCALHOST
+//DON'T DELETE THIS AS THIS MAKE THE API ROUTE WORK IN VERCEL AND LOCALHOST
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 

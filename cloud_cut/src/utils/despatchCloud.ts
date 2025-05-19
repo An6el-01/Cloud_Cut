@@ -106,7 +106,7 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
   const localOffset = now.getTimezoneOffset() * 60000; // Time zone offset in milliseconds
   const localNow = new Date(now.getTime() - localOffset); // Adjusted current time in local time zone
 
-  const twoDaysAgo = new Date(localNow.getTime() - (2 * 24 * 60 * 60 * 1000)); // 2 days ago in local time
+  const twoDaysAgo = new Date(localNow.getTime() - (4 * 24 * 60 * 60 * 1000)); // 4 days ago in local time
   const dateRange = `${Math.floor(twoDaysAgo.getTime() / 1000)},${Math.floor(localNow.getTime() / 1000)}`;
 
   const normalizedPerPage = Math.min(Math.max(perPage, 5), 20);
