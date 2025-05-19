@@ -28,7 +28,10 @@ async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
     fs.writeFileSync(inputPath, Buffer.from(dxfBuffer));
 
     // Get the path to the Python script
-    const scriptPath = path.join(process.cwd(), 'dxfTosvg', 'index.py');
+    const scriptPath = path.join(process.cwd(), '..', 'dxfToSvg', 'index.py');
+
+    console.log('Starting Python conversion with script:', scriptPath);
+    console.log('Input file:', inputPath);
 
     // Spawn Python process
     const pythonProcess = spawn('python', [scriptPath, inputPath]);
@@ -37,11 +40,15 @@ async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
     let errorData = '';
 
     pythonProcess.stdout.on('data', (data) => {
-      svgData += data.toString();
+      const chunk = data.toString();
+      console.log('Python stdout chunk:', chunk.substring(0, 100) + '...');
+      svgData += chunk;
     });
 
     pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
+      const chunk = data.toString();
+      console.error('Python stderr:', chunk);
+      errorData += chunk;
     });
 
     pythonProcess.on('close', (code) => {
@@ -54,10 +61,26 @@ async function convertDxfToSvg(dxfBuffer: ArrayBuffer): Promise<string> {
       }
 
       if (code !== 0) {
-        reject(new Error(`Python process exited with code ${code}: ${errorData}`));
+        console.error('Python process failed with code:', code);
+        console.error('Error output:', errorData);
+        reject(new Error(`Python process failed: ${errorData}`));
         return;
       }
 
+      if (!svgData) {
+        console.error('No SVG data received from Python process');
+        reject(new Error('No SVG data received from conversion process'));
+        return;
+      }
+
+      // Validate SVG data
+      if (!svgData.trim().startsWith('<?xml') || !svgData.includes('<svg')) {
+        console.error('Invalid SVG data format');
+        reject(new Error('Invalid SVG data format'));
+        return;
+      }
+
+      console.log('SVG data length:', svgData.length);
       resolve(svgData);
     });
   });
@@ -91,10 +114,8 @@ export async function POST(request: NextRequest) {
       const dxfFile = dxfFiles[i];
       const fileExtension = dxfFile.name.split('.').pop()?.toLowerCase() || 'dxf';
       
-      // Create filename using the exact SKU (append -01, -02, etc. for multiple files)
-      const fileName = dxfFiles.length > 1 
-        ? `${sku.toUpperCase()}-${String(i + 1).padStart(2, '0')}.${fileExtension}`
-        : `${sku.toUpperCase()}.${fileExtension}`;
+      // Create filename using the exact SKU
+      const fileName = `${sku.toUpperCase()}.${fileExtension}`;
 
       // Convert file to buffer
       const fileBuffer = await dxfFile.arrayBuffer();
@@ -103,6 +124,25 @@ export async function POST(request: NextRequest) {
       let svgData;
       try {
         svgData = await convertDxfToSvg(fileBuffer);
+        console.log('SVG conversion successful, data length:', svgData.length);
+        
+        // Validate SVG data
+        if (!svgData.startsWith('<?xml') || !svgData.includes('<svg')) {
+          console.error('Invalid SVG data format');
+          return NextResponse.json(
+            { success: false, message: 'Invalid SVG data format' },
+            { status: 500 }
+          );
+        }
+
+        // Ensure SVG has proper structure
+        if (!svgData.includes('viewBox=')) {
+          console.error('SVG missing viewBox attribute');
+          return NextResponse.json(
+            { success: false, message: 'Invalid SVG structure' },
+            { status: 500 }
+          );
+        }
       } catch (error) {
         console.error('Error converting DXF to SVG:', error);
         return NextResponse.json(
@@ -112,17 +152,46 @@ export async function POST(request: NextRequest) {
       }
 
       // Upload SVG to storage
-      const { error: uploadError } = await supabase.storage
-        .from('inserts')
-        .upload(fileName.replace('.dxf', '.svg'), svgData, {
-          contentType: 'image/svg+xml',
-          upsert: true
-        });
+      const svgFileName = fileName.replace('.dxf', '.svg');
+      console.log('Uploading SVG to storage:', svgFileName);
+      
+      try {
+        // Convert SVG data to Buffer for upload
+        const svgBuffer = Buffer.from(svgData, 'utf-8');
+        
+        const { error: uploadError } = await supabase.storage
+          .from('inserts')
+          .upload(svgFileName, svgBuffer, {
+            contentType: 'image/svg+xml',
+            upsert: true
+          });
 
-      if (uploadError) {
-        console.error('Error uploading file:', uploadError);
+        if (uploadError) {
+          console.error('Error uploading file:', uploadError);
+          return NextResponse.json(
+            { success: false, message: 'Failed to upload file' },
+            { status: 500 }
+          );
+        }
+
+        // Verify the upload by trying to get the file
+        const { data: fileData, error: getError } = await supabase.storage
+          .from('inserts')
+          .download(svgFileName);
+
+        if (getError || !fileData) {
+          console.error('Error verifying upload:', getError);
+          return NextResponse.json(
+            { success: false, message: 'Failed to verify file upload' },
+            { status: 500 }
+          );
+        }
+
+        console.log('SVG file uploaded and verified successfully');
+      } catch (error) {
+        console.error('Error in upload process:', error);
         return NextResponse.json(
-          { success: false, message: 'Failed to upload file' },
+          { success: false, message: 'Error in upload process' },
           { status: 500 }
         );
       }

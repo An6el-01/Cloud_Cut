@@ -173,11 +173,11 @@ export default function Inserts() {
                 if (matchedSvg) {
                     const { data: urlData } = supabase.storage
                         .from('inserts')
-                        .getPublicUrl(`${matchedSvg}.svg`);
+                        .getPublicUrl('/' + matchedSvg + '.svg');
                     svgUrl = urlData?.publicUrl || null;
                     allInsertsWithSvg.push({
                         ...insert,
-                        sku: skuOriginal,
+                        sku: matchedSvg, // Display the matched SVG filename
                         stock_available,
                         svgUrl,
                     });
@@ -192,12 +192,12 @@ export default function Inserts() {
                         partSvgs.forEach((svgName, idx) => {
                             const { data: urlData } = supabase.storage
                                 .from('inserts')
-                                .getPublicUrl(`${svgName}.svg`);
+                                .getPublicUrl('/' + svgName + '.svg');
                             const svgUrl = urlData?.publicUrl || null;
                             console.log('DEBUG: Adding part', idx + 1, 'for', skuOriginal, 'SVG:', svgName);
                             allInsertsWithSvg.push({
                                 ...insert,
-                                sku: `${skuOriginal}-0${idx + 1}`,
+                                sku: svgName, // Display the matched SVG filename
                                 stock_available,
                                 svgUrl,
                             });
@@ -360,7 +360,7 @@ export default function Inserts() {
                 setSelectedDXFFiles([]);
                 // Refresh inserts list if the brand is selected
                 if (selectedBrand === brand) {
-                    fetchInsertsForBrand(brand);
+                    await fetchInsertsForBrand(brand);
                 }
             } else {
                 setSubmitMessage({
