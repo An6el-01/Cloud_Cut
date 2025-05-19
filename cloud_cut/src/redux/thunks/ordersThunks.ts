@@ -7,7 +7,7 @@ import { DespatchCloudOrder } from '@/types/despatchCloud';
 import { getPriorityLevel, isAmazonOrder, calculateDayNumber } from '@/utils/priority'; 
 import { optimizeItemName } from '@/utils/optimizeItemName';
 import { downloadCSV, generateCSV } from '@/utils/exportCSV';
-import { processItemsForOrders } from '../utils/orderUtils';
+import { processItemsForOrders, OrderItemData } from '../utils/orderUtils';
 import { setSyncStatus } from '../slices/ordersSlice';
 import { shouldOrderBeManufactured } from '@/utils/manufacturingUtils';
 
@@ -89,63 +89,6 @@ export const syncOrders = createAsyncThunk(
       const invalidOrders = orders.filter(order => order.status === null);
       console.log(`Filtered out ${invalidOrders.length} invalid orders out of ${orders.length} total orders`);
 
-      console.log('Processing order items...');
-      const orderItems: Record<string, OrderItem[]> = allOrders.reduce((acc, order) => {
-        const inventory = order.inventory || [];
-
-        // Skip orders with null status or no order_id
-        if (!order.status || !order.channel_order_id) {
-          return acc;
-        }
-
-        // Calculate parameters needed for getPriorityLevel
-        const dayNumber = calculateDayNumber(order.date_received);
-        const isAmazon = isAmazonOrder(order);
-        const isOnHold = order.status.toLowerCase().includes('hold');
-        const orderStatus = order.status;
-
-        // Use trimmed order ID
-        const trimmedOrderId = order.channel_order_id.trim();
-
-        acc[trimmedOrderId] = inventory.map((item, index) => {
-          const foamSheet = getFoamSheetFromSKU(item.sku) || 'N/A';
-
-          //Optimize the item name
-          const optimizedName = optimizeItemName(
-            {sku: item.sku, name: item.name, options: item.options },
-            orderStatus
-          )
-
-          // Calculate individual priority for this item
-          const priority = getPriorityLevel(
-            optimizedName.toLowerCase(),
-            foamSheet,
-            dayNumber,
-            isAmazon,
-            isOnHold
-          );
-
-          return {
-            id: `${order.id}-${index + 1}`,
-            order_id: trimmedOrderId,
-            sku_id: item.sku || 'N/A',
-            item_name: optimizedName || 'Unknown',
-            quantity: item.quantity || 0,
-            completed: order.status_description === 'Despatched',
-            foamsheet: foamSheet,
-            extra_info: item.options || 'N/A',
-            priority,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        });
-        return acc;
-      }, {} as Record<string, OrderItem[]>);
-
-      const totalOrderItems = Object.values(orderItems).reduce((sum, items) => sum + items.length, 0);
-      
-      console.log(`Total order items to process: ${totalOrderItems}`);
-
       //********* STEP 1: Fetch existing orders from Supabase *********
       console.log('STEP 1: Fetching all existing orders from Supabase...');
       
@@ -201,12 +144,11 @@ export const syncOrders = createAsyncThunk(
             
             ordersToUpdate.push({
               id: activeOrderMap.get(order_id) as number | undefined,
-              order_id: order_id, // Important: include order_id field
+              order_id: order_id,
               status: updatedStatus,
               updated_at: new Date().toISOString()
             });
           }
-          // Don't track active orders as newly added since they already exist
         }
         // CASE 2: Order is in archived table - skip it entirely
         else if (existingArchivedOrderIds.has(order_id)) {
@@ -234,11 +176,6 @@ export const syncOrders = createAsyncThunk(
         for (let i = 0; i < ordersToUpdate.length; i += batchSize) {
           const batch = ordersToUpdate.slice(i, i + batchSize);
           
-          // Log a sample of what we're updating
-          if (i === 0) {
-            console.log('Update sample:', batch[0]);
-          }
-          
           const { error: updateError } = await supabase
             .from('orders')
             .upsert(batch as unknown as Record<string, unknown>[], {
@@ -263,24 +200,13 @@ export const syncOrders = createAsyncThunk(
       if (ordersToInsert.length > 0) {
         console.log(`Inserting ${ordersToInsert.length} new orders...`);
         
-        // We'll use upsert instead of insert to handle any potential race conditions
-        // where orders might have been added in between our checks
-        console.log('Using upsert strategy to prevent duplicates and conflicts');
-        
-        // Track successful insertions
         let successfulInsertions = 0;
         
         for (let i = 0; i < ordersToInsert.length; i += batchSize) {
           const batch = ordersToInsert.slice(i, i + batchSize);
           
-          // Log a sample of what we're inserting
-          if (i === 0) {
-            console.log('Insert sample:', batch[0]);
-          }
-          
           try {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { data, error } = await supabase
+            const { error } = await supabase
               .from('orders')
               .upsert(batch as unknown as Record<string, unknown>[], { 
                 onConflict: 'order_id',
@@ -289,7 +215,6 @@ export const syncOrders = createAsyncThunk(
             
             if (error) {
               console.error(`Error inserting batch ${Math.floor(i/batchSize) + 1}:`, error);
-              // Continue with next batch instead of failing completely
             } else {
               successfulInsertions += batch.length;
               console.log(`Successfully inserted batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(ordersToInsert.length/batchSize)}`);
@@ -313,23 +238,54 @@ export const syncOrders = createAsyncThunk(
       
       //********* STEP 4: Process order items for newly added orders *********
       console.log('STEP 4: Processing order items for newly added orders...');
-      console.log(`Found ${newlyAddedOrderIds.length} new order IDs for item processing`);
       
       // Only process items for newly added orders
       if (newlyAddedOrderIds.length > 0) {
-        // We'll fetch all existing orders regardless of isArchived flag 
-        // to properly distribute items to the correct tables
-        console.log(`Fetching all order information for proper item distribution...`);
+        // Create a map of order items to process
+        const orderItemsToProcess: Record<string, OrderItemData[]> = {};
+        
+        // Only process items for newly added orders
+        newlyAddedOrderIds.forEach(orderId => {
+          const order = allOrders.find(o => o.channel_order_id.trim() === orderId);
+          if (order && order.inventory) {
+            const dayNumber = calculateDayNumber(order.date_received);
+            const isAmazon = isAmazonOrder(order);
+            const isOnHold = order.status.toLowerCase().includes('hold');
+            
+            orderItemsToProcess[orderId] = order.inventory.map(item => {
+              const foamSheet = getFoamSheetFromSKU(item.sku) || 'N/A';
+              const optimizedName = optimizeItemName(
+                { sku: item.sku, name: item.name, options: item.options },
+                order.status
+              );
+              
+              const priority = getPriorityLevel(
+                optimizedName.toLowerCase(),
+                foamSheet,
+                dayNumber,
+                isAmazon,
+                isOnHold
+              );
+              
+              return {
+                sku_id: item.sku || 'N/A',
+                item_name: optimizedName,
+                quantity: item.quantity || 0,
+                foamsheet: foamSheet,
+                extra_info: item.options || 'N/A',
+                priority
+              };
+            });
+          }
+        });
         
         // Process items using the optimized orderUtils function
         try {
-          // We intentionally set isArchived to false here as the processItemsForOrders function
-          // will automatically check both tables and insert items appropriately
           const itemsInserted = await processItemsForOrders(
-            supabase, 
-            newlyAddedOrderIds, 
-            orderItems, 
-            false // isArchived flag is not needed anymore as the function checks both tables
+            supabase,
+            newlyAddedOrderIds,
+            orderItemsToProcess,
+            false
           );
           
           console.log(`Finished processing items for ${newlyAddedOrderIds.length} orders: inserted approximately ${itemsInserted} items`);
@@ -401,59 +357,7 @@ export const syncOrders = createAsyncThunk(
         }
       }
       
-      //********* STEP 5: Verify the orders were properly inserted *********
-      console.log('STEP 5: Verifying orders in the database...');
-      
-      // Add a delay to ensure everything is committed
-      console.log('Waiting for orders to be committed...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      // Get updated counts from Supabase for both active and archived orders
-      const { data: updatedActiveOrders, error: updatedActiveError } = await supabase
-        .from('orders')
-        .select('order_id');
-        
-      if (updatedActiveError) {
-        console.error('Error fetching updated active orders:', updatedActiveError);
-        throw new Error(`Failed to verify active orders: ${updatedActiveError.message}`);
-      }
-      
-      const { data: updatedArchivedOrders, error: updatedArchivedError } = await supabase
-        .from('archived_orders')
-        .select('order_id');
-        
-      if (updatedArchivedError) {
-        console.error('Error fetching updated archived orders:', updatedArchivedError);
-        throw new Error(`Failed to verify archived orders: ${updatedArchivedError.message}`);
-      }
-      
-      const updatedActiveOrderIds = new Set(updatedActiveOrders?.map(o => o.order_id) || []);
-      const updatedArchivedOrderIds = new Set(updatedArchivedOrders?.map(o => o.order_id) || []);
-      
-      console.log(`Verification: Found ${updatedActiveOrderIds.size} active orders and ${updatedArchivedOrderIds.size} archived orders in the database`);
-      
-      // Check if the newly added orders are actually in either the active or archived database
-      const missingOrderIds = newlyAddedOrderIds.filter(id => 
-        !updatedActiveOrderIds.has(id) && !updatedArchivedOrderIds.has(id)
-      );
-      
-      if (missingOrderIds.length > 0) {
-        console.error(`Warning: ${missingOrderIds.length} of ${newlyAddedOrderIds.length} new orders were not found in either database after insertion`);
-        if (missingOrderIds.length <= 20) {
-          console.error('Missing order IDs:', missingOrderIds);
-        } else {
-          console.error('First 20 missing order IDs:', missingOrderIds.slice(0, 20));
-        }
-      } else if (newlyAddedOrderIds.length > 0) {
-        console.log(`Success: All ${newlyAddedOrderIds.length} newly added orders were found in the database`);
-      }
-      
-      // Count how many orders are in active vs archived
-      const foundInActive = newlyAddedOrderIds.filter(id => updatedActiveOrderIds.has(id)).length;
-      const foundInArchived = newlyAddedOrderIds.filter(id => updatedArchivedOrderIds.has(id)).length;
-      console.log(`New orders found: ${foundInActive} in active table, ${foundInArchived} in archived table`);
-      
-      //********* STEP 6: Fetch final data for the Redux store *********
+      //********* STEP 5: Fetch final data for the Redux store *********
       console.log('STEP 6: Fetching final data for Redux store...');
       
       // Fetch pending orders for the Redux store 
