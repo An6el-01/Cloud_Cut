@@ -91,7 +91,7 @@ export default function StartPacking({
                     completed 
                 }));
             });
-        }, 300);
+        }, 2000); // 2 second delay
     }, [pendingUpdates, dispatch, selectedOrder?.order_id]);
 
     // Process updates when pendingUpdates changes

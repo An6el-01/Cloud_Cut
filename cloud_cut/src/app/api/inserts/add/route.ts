@@ -35,7 +35,7 @@ function dxfToSvg(parsed: any): string {
             return null;
           }
           
-          return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${-y2}" stroke="red" stroke-width="1" />`;
+          return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${-y2}" stroke="black" stroke-width="1" />`;
         } else if (entity.type === 'LWPOLYLINE') {
           // Handle LWPOLYLINE entities
           if (!entity.vertices || !Array.isArray(entity.vertices) || entity.vertices.length < 2) {
@@ -59,8 +59,8 @@ function dxfToSvg(parsed: any): string {
             return null;
           }
 
-          // Create a polyline element with red stroke
-          return `<polyline points="${points}" fill="none" stroke="red" stroke-width="1" />`;
+          // Create a polyline element with black stroke
+          return `<polyline points="${points}" fill="none" stroke="black" stroke-width="1" />`;
         }
         return null;
       })
@@ -91,7 +91,6 @@ function dxfToSvg(parsed: any): string {
     if (allCoords.length === 0) {
       return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-<rect width="100%" height="100%" fill="#23272f"/>
 <text x="50" y="50" text-anchor="middle" fill="red">No valid geometry found</text>
 </svg>`;
     }
@@ -107,10 +106,9 @@ function dxfToSvg(parsed: any): string {
 
     const viewBox = `${minX - padding} ${-maxY - padding} ${width + 2 * padding} ${height + 2 * padding}`;
 
-    // Add a grey background only
+    // No background, just geometry
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
-  <rect x="${minX - padding}" y="${-maxY - padding}" width="${width + 2 * padding}" height="${height + 2 * padding}" fill="#23272f"/>
 ${lines}
 </svg>`;
 

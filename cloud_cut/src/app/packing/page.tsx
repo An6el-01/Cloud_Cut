@@ -44,6 +44,7 @@ export default function Packing() {
     const selectedOrder = orders.find((o) => o.order_id === selectedOrderId)
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showOrderFinishedDialog, setShowOrderFinishedDialog] = useState(false);
+    const [showStartPackingModal, setShowStartPackingModal] = useState(false);
     const [pendingItemToComplete, setPendingItemToComplete] = useState<{ orderId: string;itemId: string;completed: boolean; } | null>(null);
     const [showWarning, setShowWarning] = useState(false);
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -328,7 +329,7 @@ export default function Packing() {
         });
     };
 
-    // Function to handle the "" button click
+    // Function to handle the "Start Picking" button click
     const handleStartPackingClick = () => {
         Sentry.startSpan({
             name: 'handleStartPackingClick-Packing',
@@ -366,8 +367,8 @@ export default function Packing() {
                 console.log(`Order User Picking Status: ${updatedOrder?.user_picking}`);
             }, 1000);
             
-            // Show the OrderFinished dialog
-            setShowOrderFinishedDialog(true);
+            // Show the StartPacking modal
+            setShowStartPackingModal(true);
         });        
     };
 
@@ -1219,6 +1220,21 @@ export default function Packing() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Add StartPacking Modal */}
+            {showStartPackingModal && selectedOrder && (
+                <StartPacking
+                    isOpen={showStartPackingModal}
+                    onClose={() => setShowStartPackingModal(false)}
+                    onConfirm={(orderId) => {
+                        setShowStartPackingModal(false);
+                        handleMarkCompleted(orderId);
+                    }}
+                    selectedOrder={selectedOrder}
+                    selectedOrderItems={selectedOrderItems}
+                    id={String(selectedOrder.id)}
+                />
             )}
         </div>
     )
