@@ -526,7 +526,7 @@ export default function Inserts() {
                                                 key={insert.sku + '-' + idx}
                                                 className="bg-white rounded-lg shadow flex flex-col items-center p-3 border border-gray-200"
                                             >
-                                                <div className="flex items-center justify-center w-24 h-20 bg-black rounded mb-2 overflow-hidden">
+                                                <div className="flex items-center justify-center w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden">
                                                     {insert.svgUrl ? (
                                                         <img
                                                             src={insert.svgUrl}

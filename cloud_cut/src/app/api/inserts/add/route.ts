@@ -17,10 +17,14 @@ const supabaseAdmin = createClient(
 
 function dxfToSvg(parsed: any): string {
   try {
+    console.log('Parsed DXF entities:', parsed.entities?.length || 0);
+    
     // Process both LINE and LWPOLYLINE entities
     const lines = (parsed.entities || [])
       .filter((e: any) => {
         const isValid = e.type === 'LINE' || e.type === 'LWPOLYLINE';
+        if (!isValid) {
+        }
         return isValid;
       })
       .map((entity: any) => {
@@ -35,7 +39,7 @@ function dxfToSvg(parsed: any): string {
             return null;
           }
           
-          return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${-y2}" stroke="black" stroke-width="1" />`;
+          return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${-y2}" stroke="white" stroke-width="1" />`;
         } else if (entity.type === 'LWPOLYLINE') {
           // Handle LWPOLYLINE entities
           if (!entity.vertices || !Array.isArray(entity.vertices) || entity.vertices.length < 2) {
@@ -59,14 +63,15 @@ function dxfToSvg(parsed: any): string {
             return null;
           }
 
-          // Create a polyline element with black stroke
-          return `<polyline points="${points}" fill="none" stroke="black" stroke-width="1" />`;
+          // Create a polyline element with white stroke
+          return `<polyline points="${points}" fill="none" stroke="white" stroke-width="1" />`;
         }
         return null;
       })
       .filter(Boolean) // Remove any null entries
       .join('\n');
 
+    
     // Calculate viewBox based on all coordinates
     const allCoords = (parsed.entities || [])
       .filter((e: any) => e.type === 'LINE' || e.type === 'LWPOLYLINE')
@@ -91,7 +96,7 @@ function dxfToSvg(parsed: any): string {
     if (allCoords.length === 0) {
       return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-<text x="50" y="50" text-anchor="middle" fill="red">No valid geometry found</text>
+<text x="50" y="50" text-anchor="middle" fill="white">No valid geometry found</text>
 </svg>`;
     }
 
@@ -106,14 +111,15 @@ function dxfToSvg(parsed: any): string {
 
     const viewBox = `${minX - padding} ${-maxY - padding} ${width + 2 * padding} ${height + 2 * padding}`;
 
-    // No background, just geometry
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
-${lines}
+  <rect x="${minX - padding}" y="${-maxY - padding}" width="${width + 2 * padding}" height="${height + 2 * padding}" fill="#23282e" stroke="#b22222" stroke-width="2"/>
+  ${lines}
 </svg>`;
 
     return svg;
   } catch (error) {
+    console.error('Error in dxfToSvg:', error);
     throw error;
   }
 }
@@ -123,6 +129,7 @@ async function fileToBuffer(file: File): Promise<Buffer> {
     const arrayBuffer = await file.arrayBuffer();
     return Buffer.from(arrayBuffer);
   } catch (error) {
+    console.error('Error in fileToBuffer:', error);
     throw error;
   }
 }
@@ -154,8 +161,10 @@ export async function POST(request: NextRequest) {
 
     // Ensure SVG is properly formatted
     const formattedSvg = svg.trim();
+
     // Convert SVG to buffer with proper encoding
     const svgBuffer = Buffer.from(formattedSvg, 'utf8');
+
     const svgFileName = `${sku}.svg`;
     
     // First, try to insert the record into the database using admin client
@@ -168,6 +177,7 @@ export async function POST(request: NextRequest) {
       }]);
 
     if (dbError) {
+      console.error('Database insert error:', dbError);
       return NextResponse.json({ 
         error: 'Failed to insert record',
         details: dbError.message 
@@ -184,11 +194,13 @@ export async function POST(request: NextRequest) {
       });
 
     if (uploadError) {
+      console.error('Storage upload error:', uploadError);
       // If upload fails, try to delete the database record
       await supabaseAdmin
         .from('inserts')
         .delete()
         .eq('sku', sku);
+        
       return NextResponse.json({ 
         error: 'Failed to upload SVG',
         details: uploadError.message 
@@ -200,12 +212,14 @@ export async function POST(request: NextRequest) {
       .from('inserts')
       .getPublicUrl(svgFileName);
     
+
     return NextResponse.json({ 
       success: true, 
       message: 'Insert added and SVG uploaded successfully!',
       svgUrl: urlData.publicUrl
     });
   } catch (error) {
+    console.error('Error processing request:', error);
     return NextResponse.json({ 
       error: 'Internal server error', 
       details: error instanceof Error ? error.message : 'Unknown error' 
