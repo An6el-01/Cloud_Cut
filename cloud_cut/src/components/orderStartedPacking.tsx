@@ -510,25 +510,25 @@ export default function StartPacking({
                                                                         const newCheckedState = e.target.checked;
                                                                         setAllItemsPacked(newCheckedState);
                                                                         
-                                                                        // Update all items' completed state
+                                                                        // Create a batch of updates for all items
+                                                                        const newUpdates: Record<string, boolean> = {};
                                                                         selectedOrderItems.forEach(item => {
-                                                                            dispatch(updateItemCompleted({
-                                                                                orderId: selectedOrder.order_id,
-                                                                                itemId: item.id,
-                                                                                completed: newCheckedState
-                                                                            }));
+                                                                            newUpdates[item.id] = newCheckedState;
                                                                             
                                                                             // Update the checked items set
                                                                             setCheckedItems(prev => {
                                                                                 const newSet = new Set(prev);
                                                                                 if (newCheckedState) {
-                                                                                    newSet.add(item.id);
+                                                                                    newSet.add(item.sku_id);
                                                                                 } else {
-                                                                                    newSet.delete(item.id);
+                                                                                    newSet.delete(item.sku_id);
                                                                                 }
                                                                                 return newSet;
                                                                             });
                                                                         });
+                                                                        
+                                                                        // Queue all updates together
+                                                                        setPendingUpdates(prev => ({...prev, ...newUpdates}));
                                                                     }}
                                                                     className="sr-only peer"
                                                                     aria-label="Mark all items as packed"
