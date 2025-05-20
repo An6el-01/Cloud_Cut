@@ -34,11 +34,11 @@ export default function Inserts() {
     const [isLoadingInserts, setIsLoadingInserts] = useState(false);
     const selectedBrandRef = useRef<HTMLDivElement>(null);
     const brandsContainerRef = useRef<HTMLDivElement>(null);
-    const [selectedDXF, setSelectedDXF] = useState<File | null>(null);
     const dxfInputRef = useRef<HTMLInputElement>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [selectedDXFFiles, setSelectedDXFFiles] = useState<File[]>([]);
+    const [svgPreview, setSvgPreview] = useState<string | null>(null);
 
     // Effect to handle URL parameter
     useEffect(() => {
@@ -295,6 +295,10 @@ export default function Inserts() {
         if (e.target.files && e.target.files.length > 0) {
             const files = Array.from(e.target.files);
             setSelectedDXFFiles(files);
+            // Convert the first file for preview
+            convertDXFToSVG(files[0]);
+        } else {
+            setSvgPreview(null);
         }
     };
     const handleRemoveDXF = (index?: number) => {
@@ -375,6 +379,24 @@ export default function Inserts() {
             });
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const convertDXFToSVG = async(file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try{
+            const response = await fetch('/api/inserts/add', {
+                method: 'POST',
+                body: formData,
+            });
+            if(!response.ok) throw new Error('Failed to convert DXF');
+            const svgText = await response.text();
+            setSvgPreview(svgText);
+        } catch (err) {
+            setSvgPreview(null);
+            //Optionally handle error
         }
     };
 
@@ -567,9 +589,9 @@ export default function Inserts() {
                                         className="w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg p-6 bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors"
                                         onClick={handleDXFClick}
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-2" width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-2" width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-8m0 0l-4 4m4-4l4 4" />
-                                            <rect x="3" y="17" width="18" height="4" rx="2" fill="#e5e7eb" />
+                                            <rect x="3" y="17" width="18" height="4" rx="2" fill="#fcfafa" />
                                         </svg>
                                         <span className="text-gray-700">Browse files to upload</span>
                                         <input
@@ -635,6 +657,16 @@ export default function Inserts() {
                     </div>
                 </div>
             </div>
+
+            {svgPreview && (
+                <div className="mt-4 border rounded bg-white p-2">
+                    <div className="text-xs text-gray-500 mb-1">SVG Preview:</div>
+                    <div
+                        className="w-full flex justify-center"
+                        dangerouslySetInnerHTML={{ __html: svgPreview }}
+                    />
+                </div>
+            )}
         </div>
     )
 }

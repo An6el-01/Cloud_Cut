@@ -409,6 +409,80 @@ export default function Packing() {
         }, {});
     });
 
+    // Add verification function
+    const verifyRetailPackQuantities = async () => {
+        try {
+            // Fetch all pending orders with their items
+            const { data: orders, error: ordersError } = await supabase
+                .from('orders')
+                .select(`
+                    order_id,
+                    order_items (
+                        item_name,
+                        quantity,
+                        completed
+                    )
+                `)
+                .eq('status', 'Pending')
+                .eq('manufactured', true)
+                .eq('packed', false);
+
+            if (ordersError) {
+                console.error('Error fetching orders for verification:', ordersError);
+                return;
+            }
+
+            // Calculate actual quantities from database
+            const actualQuantities = (orders || []).reduce((acc: Record<string, number>, order: any) => {
+                if (order.order_items && Array.isArray(order.order_items)) {
+                    order.order_items.forEach((item: { item_name: string; quantity: number; completed: boolean }) => {
+                        if (item.item_name.includes('Retail Pack') && !item.completed) {
+                            acc[item.item_name] = (acc[item.item_name] || 0) + item.quantity;
+                        }
+                    });
+                }
+                return acc;
+            }, {});
+
+            // Compare with Redux store quantities
+            const discrepancies = Object.entries(itemsByRetailPack).map(([packName, storeQuantity]) => {
+                const actualQuantity = actualQuantities[packName] || 0;
+                if (storeQuantity !== actualQuantity) {
+                    return {
+                        packName,
+                        storeQuantity,
+                        actualQuantity,
+                        difference: actualQuantity - storeQuantity
+                    };
+                }
+                return null;
+            }).filter(Boolean);
+
+            // Log any discrepancies
+            if (discrepancies.length > 0) {
+                console.warn('Retail pack quantity discrepancies found:', discrepancies);
+                // Optionally dispatch an action to update the store
+                dispatch({ 
+                    type: 'orders/updateRetailPackQuantities', 
+                    payload: actualQuantities 
+                });
+            }
+        } catch (error) {
+            console.error('Error in verifyRetailPackQuantities:', error);
+        }
+    };
+
+    // Add useEffect to run verification periodically
+    useEffect(() => {
+        // Run verification every 5 minutes
+        const verificationInterval = setInterval(verifyRetailPackQuantities, 5 * 60 * 1000);
+        
+        // Run initial verification
+        verifyRetailPackQuantities();
+
+        return () => clearInterval(verificationInterval);
+    }, [dispatch]);
+
     const handleRetailPackClick = (retailPack: string) => {
         setSelectedRetailPack(retailPack);
         // Switch to orders tab
