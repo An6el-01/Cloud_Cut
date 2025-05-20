@@ -7,10 +7,11 @@ const ADMIN_ROLES = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
 export async function middleware(request: NextRequest) {
   console.log('Middleware - Request path:', request.nextUrl.pathname);
   
-  // Special case: bypass middleware for profiles API endpoint
+  // Special case: bypass middleware for certain API endpoints
   // This prevents cookies() errors in Vercel deployment
-  if (request.nextUrl.pathname === '/api/team/profiles') {
-    console.log('Middleware - Bypassing auth check for profiles endpoint');
+  if (request.nextUrl.pathname === '/api/team/profiles' || 
+      request.nextUrl.pathname === '/api/inserts/add') {
+    console.log('Middleware - Bypassing auth check for endpoint:', request.nextUrl.pathname);
     return NextResponse.next();
   }
   
