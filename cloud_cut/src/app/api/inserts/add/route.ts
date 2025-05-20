@@ -17,15 +17,10 @@ const supabaseAdmin = createClient(
 
 function dxfToSvg(parsed: any): string {
   try {
-    console.log('Parsed DXF entities:', parsed.entities?.length || 0);
-    
     // Process both LINE and LWPOLYLINE entities
     const lines = (parsed.entities || [])
       .filter((e: any) => {
         const isValid = e.type === 'LINE' || e.type === 'LWPOLYLINE';
-        if (!isValid) {
-          console.log('Skipping unsupported entity:', e.type);
-        }
         return isValid;
       })
       .map((entity: any) => {
@@ -37,7 +32,6 @@ function dxfToSvg(parsed: any): string {
           const y2 = Number(entity.end.y);
           
           if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) {
-            console.log('Invalid coordinates in line:', entity);
             return null;
           }
           
@@ -45,7 +39,6 @@ function dxfToSvg(parsed: any): string {
         } else if (entity.type === 'LWPOLYLINE') {
           // Handle LWPOLYLINE entities
           if (!entity.vertices || !Array.isArray(entity.vertices) || entity.vertices.length < 2) {
-            console.log('Invalid LWPOLYLINE vertices:', entity);
             return null;
           }
 
@@ -55,7 +48,6 @@ function dxfToSvg(parsed: any): string {
               const x = Number(vertex.x);
               const y = Number(vertex.y);
               if (isNaN(x) || isNaN(y)) {
-                console.log('Invalid vertex coordinates:', vertex);
                 return null;
               }
               return `${x},${-y}`; // Invert Y coordinate for SVG
@@ -75,8 +67,6 @@ function dxfToSvg(parsed: any): string {
       .filter(Boolean) // Remove any null entries
       .join('\n');
 
-    console.log('Generated SVG elements:', lines.length > 0 ? 'Yes' : 'No');
-    
     // Calculate viewBox based on all coordinates
     const allCoords = (parsed.entities || [])
       .filter((e: any) => e.type === 'LINE' || e.type === 'LWPOLYLINE')
@@ -99,7 +89,6 @@ function dxfToSvg(parsed: any): string {
       .filter((n: number) => !isNaN(n));
 
     if (allCoords.length === 0) {
-      console.log('No valid coordinates found in DXF file');
       return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
 <rect width="100%" height="100%" fill="#23272f"/>
@@ -125,10 +114,8 @@ function dxfToSvg(parsed: any): string {
 ${lines}
 </svg>`;
 
-    console.log('Generated SVG length:', svg.length);
     return svg;
   } catch (error) {
-    console.error('Error in dxfToSvg:', error);
     throw error;
   }
 }
@@ -138,7 +125,6 @@ async function fileToBuffer(file: File): Promise<Buffer> {
     const arrayBuffer = await file.arrayBuffer();
     return Buffer.from(arrayBuffer);
   } catch (error) {
-    console.error('Error in fileToBuffer:', error);
     throw error;
   }
 }
@@ -155,36 +141,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (!brand || !sku || !dxfFile) {
-      console.log('Missing required fields:', { brand, sku, hasFile: !!dxfFile });
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
     // Validate SKU format
     if (!sku.toUpperCase().startsWith('SFI')) {
-      console.log('Invalid SKU format:', sku);
       return NextResponse.json({ error: 'SKU must start with SFI' }, { status: 400 });
     }
 
-    console.log('Processing DXF file:', dxfFile.name);
     const buffer = await fileToBuffer(dxfFile);
-    console.log('DXF file buffer size:', buffer.length);
-
     const parser = new Parser();
     const parsed = parser.parseSync(buffer.toString('utf8'));
-    console.log('Parsed DXF file successfully');
-
     const svg = dxfToSvg(parsed);
-    console.log('Generated SVG content');
 
     // Ensure SVG is properly formatted
     const formattedSvg = svg.trim();
-    console.log('SVG size:', formattedSvg.length, 'bytes');
-    console.log('SVG preview:', formattedSvg.slice(0, 200));
-
     // Convert SVG to buffer with proper encoding
     const svgBuffer = Buffer.from(formattedSvg, 'utf8');
-    console.log('SVG buffer size:', svgBuffer.length);
-
     const svgFileName = `${sku}.svg`;
     
     // First, try to insert the record into the database using admin client
@@ -197,7 +170,6 @@ export async function POST(request: NextRequest) {
       }]);
 
     if (dbError) {
-      console.error('Database insert error:', dbError);
       return NextResponse.json({ 
         error: 'Failed to insert record',
         details: dbError.message 
@@ -214,35 +186,28 @@ export async function POST(request: NextRequest) {
       });
 
     if (uploadError) {
-      console.error('Storage upload error:', uploadError);
       // If upload fails, try to delete the database record
       await supabaseAdmin
         .from('inserts')
         .delete()
         .eq('sku', sku);
-        
       return NextResponse.json({ 
         error: 'Failed to upload SVG',
         details: uploadError.message 
       }, { status: 500 });
     }
 
-    console.log('SVG size:', svg.length, 'bytes');
-    console.log('SVG preview:', svg.slice(0, 200));
     // Verify the upload by getting the public URL
     const { data: urlData } = supabaseAdmin.storage
       .from('inserts')
       .getPublicUrl(svgFileName);
     
-    console.log('SVG uploaded successfully. Public URL:', urlData.publicUrl);
-
     return NextResponse.json({ 
       success: true, 
       message: 'Insert added and SVG uploaded successfully!',
       svgUrl: urlData.publicUrl
     });
   } catch (error) {
-    console.error('Error processing request:', error);
     return NextResponse.json({ 
       error: 'Internal server error', 
       details: error instanceof Error ? error.message : 'Unknown error' 
