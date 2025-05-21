@@ -30,6 +30,8 @@ export const processItemsForOrders = async (
   const itemsToInsert: Omit<OrderItem, 'id'>[] = [];
   const archivedItemsToInsert: Omit<OrderItem, 'id'>[] = [];
   let skippedCount = 0;
+  let duplicateCount = 0;
+  let failedVerificationCount = 0;
   
   console.log(`Processing items for ${orderIds.length} orders (isArchived=${isArchived})...`);
   
@@ -85,7 +87,7 @@ export const processItemsForOrders = async (
     console.error(`Error fetching existing archived items:`, archivedItemsError);
   }
 
-  // Create a map of existing items for quick lookup
+  // Create a map of existing items for quick lookup using a composite key
   const existingItemsMap = new Map();
   
   // Add active items to the map
@@ -104,13 +106,6 @@ export const processItemsForOrders = async (
 
   // Process items for active orders
   for (const orderId of activeOrderIds) {
-    // Skip this order if it already has any items in the database (active or archived)
-    const hasActiveItems = existingActiveItems?.some(item => item.order_id === orderId);
-    const hasArchivedItems = existingArchivedItems?.some(item => item.order_id === orderId);
-    if (hasActiveItems || hasArchivedItems) {
-      console.log(`Skipping order ${orderId}: items already exist in the database.`);
-      continue;
-    }
     const items = orderItemsByOrderId[orderId];
     if (!items) continue;
     
@@ -119,12 +114,20 @@ export const processItemsForOrders = async (
       
       // Skip if item already exists in either table
       if (existingItemsMap.has(key)) {
-        skippedCount++;
+        console.log(`Skipping duplicate item for order ${orderId}: ${item.item_name}`);
+        duplicateCount++;
         return;
       }
+      
       // Double-check: Prevent adding the same item twice in this run
-      if (itemsToInsert.some(existing => existing.order_id === orderId && existing.sku_id === item.sku_id && existing.item_name === item.item_name && existing.quantity === item.quantity)) {
-        skippedCount++;
+      if (itemsToInsert.some(existing => 
+        existing.order_id === orderId && 
+        existing.sku_id === item.sku_id && 
+        existing.item_name === item.item_name && 
+        existing.quantity === item.quantity
+      )) {
+        console.log(`Skipping duplicate item in current batch for order ${orderId}: ${item.item_name}`);
+        duplicateCount++;
         return;
       }
       
@@ -147,13 +150,6 @@ export const processItemsForOrders = async (
   
   // Process items for archived orders
   for (const orderId of archivedOrderIds) {
-    // Skip this order if it already has any items in the database (active or archived)
-    const hasActiveItems = existingActiveItems?.some(item => item.order_id === orderId);
-    const hasArchivedItems = existingArchivedItems?.some(item => item.order_id === orderId);
-    if (hasActiveItems || hasArchivedItems) {
-      console.log(`Skipping archived order ${orderId}: items already exist in the database.`);
-      continue;
-    }
     const items = orderItemsByOrderId[orderId];
     if (!items) continue;
     
@@ -162,12 +158,20 @@ export const processItemsForOrders = async (
       
       // Skip if item already exists in either table
       if (existingItemsMap.has(key)) {
-        skippedCount++;
+        console.log(`Skipping duplicate archived item for order ${orderId}: ${item.item_name}`);
+        duplicateCount++;
         return;
       }
+      
       // Double-check: Prevent adding the same item twice in this run
-      if (archivedItemsToInsert.some(existing => existing.order_id === orderId && existing.sku_id === item.sku_id && existing.item_name === item.item_name && existing.quantity === item.quantity)) {
-        skippedCount++;
+      if (archivedItemsToInsert.some(existing => 
+        existing.order_id === orderId && 
+        existing.sku_id === item.sku_id && 
+        existing.item_name === item.item_name && 
+        existing.quantity === item.quantity
+      )) {
+        console.log(`Skipping duplicate archived item in current batch for order ${orderId}: ${item.item_name}`);
+        duplicateCount++;
         return;
       }
       
@@ -188,19 +192,8 @@ export const processItemsForOrders = async (
     });
   }
   
-  // Process missing orders - collect items for orders that don't exist in either table
-  const missingOrderIds = orderIds.filter(id => !activeOrderIds.has(id) && !archivedOrderIds.has(id));
-  let missingItemsCount = 0;
-  
-  for (const orderId of missingOrderIds) {
-    const items = orderItemsByOrderId[orderId];
-    if (items) {
-      missingItemsCount += items.length;
-    }
-  }
-  
-  console.log(`Summary: ${itemsToInsert.length} items for active orders, ${archivedItemsToInsert.length} items for archived orders`);
-  console.log(`Skipped ${skippedCount} duplicate items and ${missingItemsCount} items for orders not found in database`);
+  console.log(`Summary before insertion: ${itemsToInsert.length} items for active orders, ${archivedItemsToInsert.length} items for archived orders`);
+  console.log(`Skipped ${duplicateCount} duplicate items`);
   
   let successCount = 0;
   let failedCount = 0;
@@ -217,9 +210,10 @@ export const processItemsForOrders = async (
       console.log(`Processing active batch ${i+1}/${batches.length} (${batch.length} items)`);
       
       try {
-        const { error } = await supabase
+        const { data: insertedItems, error } = await supabase
           .from('order_items')
-          .insert(batch);
+          .insert(batch)
+          .select();
           
         if (error) {
           console.error(`Error inserting items into order_items:`, error.message);
@@ -229,7 +223,19 @@ export const processItemsForOrders = async (
             console.log('Example problematic item:', batch[0]);
           }
         } else {
-          successCount += batch.length;
+          // Verify that all items were actually inserted
+          const insertedIds = new Set(insertedItems?.map(item => item.id) || []);
+          const expectedCount = batch.length;
+          const actualCount = insertedIds.size;
+          
+          if (actualCount !== expectedCount) {
+            console.error(`Verification failed: Expected ${expectedCount} items, but only ${actualCount} were inserted`);
+            failedVerificationCount += (expectedCount - actualCount);
+            failedCount += (expectedCount - actualCount);
+          } else {
+            successCount += actualCount;
+            console.log(`Successfully inserted and verified ${actualCount} items`);
+          }
         }
         
         // Add a small delay between batches to avoid rate limiting
@@ -255,9 +261,10 @@ export const processItemsForOrders = async (
       console.log(`Processing archived batch ${i+1}/${archivedBatches.length} (${batch.length} items)`);
       
       try {
-        const { error } = await supabase
+        const { data: insertedItems, error } = await supabase
           .from('archived_order_items')
-          .insert(batch);
+          .insert(batch)
+          .select();
           
         if (error) {
           console.error(`Error inserting items into archived_order_items:`, error.message);
@@ -267,7 +274,19 @@ export const processItemsForOrders = async (
             console.log('Example problematic archived item:', batch[0]);
           }
         } else {
-          successCount += batch.length;
+          // Verify that all items were actually inserted
+          const insertedIds = new Set(insertedItems?.map(item => item.id) || []);
+          const expectedCount = batch.length;
+          const actualCount = insertedIds.size;
+          
+          if (actualCount !== expectedCount) {
+            console.error(`Verification failed: Expected ${expectedCount} archived items, but only ${actualCount} were inserted`);
+            failedVerificationCount += (expectedCount - actualCount);
+            failedCount += (expectedCount - actualCount);
+          } else {
+            successCount += actualCount;
+            console.log(`Successfully inserted and verified ${actualCount} archived items`);
+          }
         }
         
         // Add a small delay between batches to avoid rate limiting
@@ -281,7 +300,11 @@ export const processItemsForOrders = async (
     }
   }
   
-  console.log(`Insertion results: ${successCount} successful, ${failedCount} failed`);
+  console.log(`Final insertion results:`);
+  console.log(`- Successfully inserted: ${successCount} items`);
+  console.log(`- Failed to insert: ${failedCount} items`);
+  console.log(`- Failed verification: ${failedVerificationCount} items`);
+  console.log(`- Skipped duplicates: ${duplicateCount} items`);
   
   return successCount;
 };

@@ -124,11 +124,11 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
     const inventory = order.inventory || [];
 
     console.log(`\nProcessing order ${order.channel_order_id}:`);
-    console.log(`Order ${order.channel_order_id} - Inventory: ${inventory.length}`);
-    console.log(`Day number: ${dayNumber}`);
-    console.log(`Is Amazon: ${isAmazon}`);
-    console.log(`Is on hold: ${isOnHold}`);
-    console.log(`Number of items (inventory array): ${inventory.length}`);
+    // console.log(`Order ${order.channel_order_id} - Inventory: ${inventory.length}`);
+    // console.log(`Day number: ${dayNumber}`);
+    // console.log(`Is Amazon: ${isAmazon}`);
+    // console.log(`Is on hold: ${isOnHold}`);
+    // console.log(`Number of items (inventory array): ${inventory.length}`);
 
     const itemPriorities = inventory.map(item => {
       const foamSheet = getFoamSheetFromSKU(item.sku);
@@ -140,9 +140,9 @@ export async function fetchOrders(page: number = 1, perPage: number = 15): Promi
         isOnHold
       );
 
-      console.log(`Item: ${item.name}`);
-      console.log(`Foam Sheet: ${foamSheet}`);
-      console.log(`Priority: ${priority}`);
+      // console.log(`Item: ${item.name}`);
+      // console.log(`Foam Sheet: ${foamSheet}`);
+      // console.log(`Priority: ${priority}`);
 
       return priority;
     });
