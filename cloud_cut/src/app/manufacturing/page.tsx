@@ -54,6 +54,7 @@ export default function Manufacturing() {
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isNesting, setIsNesting] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingItemToComplete, setPendingItemToComplete] = useState<{
     orderId: string;
@@ -1239,6 +1240,10 @@ export default function Manufacturing() {
     fetchFinishedStock();
   }, []);
 
+  const handleTriggerNesting = () => {
+    console.log('handleTriggerNesting');
+  }
+
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -1325,6 +1330,7 @@ export default function Manufacturing() {
 
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-4">
+                      {/** Refresh Button */}
                       <button
                         onClick={async () => Sentry.startSpan({
                           name: 'handleRefresh-Orders',
@@ -1345,6 +1351,7 @@ export default function Manufacturing() {
                         </span>
                         <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
                       </button>
+                      {/** Export CSV Button */}
                       <button
                         onClick={async () => Sentry.startSpan({
                           name: 'handleExportCSV-Orders',
@@ -1364,6 +1371,33 @@ export default function Manufacturing() {
                         </span>
                         <span>{isExporting ? "Exporting..." : "Export CSV"}</span>
                       </button>
+                      {/** Nesting Button */}
+                      <button
+                        onClick={async () => Sentry.startSpan({
+                          name: 'handleExportCSV-Orders',
+                        }, async () => {
+                          handleTriggerNesting();
+                        })}
+                        className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
+                        disabled={isNesting || orders.length === 0}
+                        aria-label={isNesting ? "Nesting orders..." : "Start Nesting"}
+                      >
+                        <span className={`${isNesting ? "animate-spin" : ""} text-white`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 3v3" />
+                            <path d="M12 18v3" />
+                            <path d="M3 12h3" />
+                            <path d="M18 12h3" />
+                            <path d="M4.93 4.93l2.12 2.12" />
+                            <path d="M16.95 16.95l2.12 2.12" />
+                            <path d="M4.93 19.07l2.12-2.12" />
+                            <path d="M16.95 7.05l2.12-2.12" />
+                          </svg>
+                        </span>
+                        <span>{isExporting ? "Nesting..." : "Start Nesting"}</span>
+                      </button>
+
                     </div>
                   </div>
                 </div>

@@ -8,6 +8,21 @@ const nextConfig = {
     domains: ['shadowfoam.despatchcloud.net'],
     unoptimized: true
   },
+  webpack: (config, { isServer }) => {
+    // Configure webpack to handle .js files as modules
+    config.module.rules.push({
+      test: /\.js$/,
+      include: /src\/nesting/,
+      use: {
+        loader: 'babel-loader',
+        options: {
+          presets: ['@babel/preset-env'],
+          plugins: ['@babel/plugin-transform-modules-commonjs']
+        }
+      }
+    });
+    return config;
+  },
   experimental: {
     optimizeCss: true,
     turbo: {
@@ -73,7 +88,7 @@ const nextConfig = {
         ]
       }
     ];
-  }
+  },
 }
 
 module.exports = nextConfig 
