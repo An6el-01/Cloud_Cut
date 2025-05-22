@@ -22,7 +22,7 @@ import {
   selectCurrentViewTotal,
 } from "@/redux/slices/ordersSelectors";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
-import { OrderItem, Order } from "@/types/redux";
+import { OrderItem, Order, NestingItem } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
@@ -31,6 +31,7 @@ import { getSupabaseClient } from "@/utils/supabase";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
+
 
 export default function Manufacturing() {
   const dispatch = useDispatch<AppDispatch>();
@@ -75,10 +76,11 @@ export default function Manufacturing() {
   const [currentOrderProgress, setCurrentOrderProgress] = useState<string | undefined>(undefined);
   const [selectedMediumSheetQuantity, setSelectedMediumSheetQuantity] = useState<number>(0);
   const [selectedMediumSheet, setSelectedMediumSheet] = useState<string>();
+  const [selectedNestingRow, setSelectedNestingRow] = useState<string | null>(null);
   const [firstColTab, setFirstColTab] = useState<'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue'>(
     'Orders Queue'
   );
-
+  const [nestingQueueData, setNestingQueueData] = useState<Record<string, NestingItem[]>>({});
   // Improved function for tab changes that completely prevents changes for operators
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
     // Operators can ONLY have 'Orders Queue'
@@ -89,6 +91,15 @@ export default function Manufacturing() {
     // Allow tab changes for other roles
     setFirstColTab(tab);
   };
+  // Get all order items from the state
+  const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
+  // State to track orders with medium sheets
+  const [ordersWithMediumSheets, setOrdersWithMediumSheets] = useState<Record<string, Order[]>>({});
+  const [loadingMediumSheetOrders, setLoadingMediumSheetOrders] = useState(false);
+  // Get the current view from Redux store
+  const currentView = useSelector((state: RootState) => state.orders.currentView);
+  // State for finished_stock values by SKU
+  const [finishedStockBySku, setFinishedStockBySku] = useState<Record<string, number>>({});
 
   // Add this useEffect to enforce 'Orders Queue' for operators on component mount
   // and whenever user role changes
@@ -206,13 +217,6 @@ export default function Manufacturing() {
     // Fallback color if no match is found
     return 'bg-gray-400';
   };
-
-  // Get all order items from the state
-  const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
-
-  // State to track orders with medium sheets
-  const [ordersWithMediumSheets, setOrdersWithMediumSheets] = useState<Record<string, Order[]>>({});
-  const [loadingMediumSheetOrders, setLoadingMediumSheetOrders] = useState(false);
 
   // Function to find orders that contain a specific medium sheet
   const findOrdersWithMediumSheet = (sku: string | null) => {
@@ -514,9 +518,6 @@ export default function Manufacturing() {
       return () => clearTimeout(timer);
     }
   }, [orders, orderItemsById]);
-
-  // Get the current view from Redux store
-  const currentView = useSelector((state: RootState) => state.orders.currentView);
 
   // Run auto-processing when view is set to manufacturing
   useEffect(() => {
@@ -1217,8 +1218,6 @@ export default function Manufacturing() {
     fetchOrders();
   }, [dispatch, currentPage, ordersPerPage]);
 
-  // State for finished_stock values by SKU
-  const [finishedStockBySku, setFinishedStockBySku] = useState<Record<string, number>>({});
 
   // Fetch finished_stock values for all SKUs on mount
   useEffect(() => {
@@ -1240,10 +1239,123 @@ export default function Manufacturing() {
     fetchFinishedStock();
   }, []);
 
+  // Update handleTriggerNesting to set the state
   const handleTriggerNesting = () => {
     console.log('handleTriggerNesting');
+    
+    // Get all orders with manufacturing items
+    const manufacturingOrders = orders.filter((order: Order) => {
+      const items = orderItemsById[order.order_id] || [];
+      return items.some(item => item.sku_id.startsWith('SFI') && !item.completed);
+    });
+
+    // Create a map to store items by foam sheet
+    const itemsByFoamSheet: Record<string, NestingItem[]> = {};
+
+    // Process each order
+    manufacturingOrders.forEach((order: Order) => {
+      const items = orderItemsById[order.order_id] || [];
+      
+      // Filter for SFI items that aren't completed
+      const manufacturingItems = items.filter(item => 
+        item.sku_id.startsWith('SFI') && !item.completed
+      );
+
+      // Group items by foam sheet
+      manufacturingItems.forEach(item => {
+        if (!itemsByFoamSheet[item.foamsheet]) {
+          itemsByFoamSheet[item.foamsheet] = [];
+        }
+
+        itemsByFoamSheet[item.foamsheet].push({
+          sku: item.sku_id,
+          itemName: item.item_name,
+          quantity: item.quantity,
+          orderId: order.order_id,
+          customerName: order.customer_name
+        });
+      });
+    });
+
+    // Log the organized data
+    console.log('Items organized by foam sheet:', itemsByFoamSheet);
+
+    // Set the state with the nesting queue data
+    setNestingQueueData(itemsByFoamSheet);
+
+    // You can now use this data structure for nesting
+    // Each foam sheet has an array of items that need to be cut
+    return itemsByFoamSheet;
   }
 
+  // Add this function to calculate total items for a foam sheet
+  const calculateTotalItems = (items: NestingItem[]): number => {
+    return items.reduce((total, item) => total + item.quantity, 0);
+  };
+
+  // Update the table content in the first section
+  const renderNestingQueueTable = () => {
+    if (Object.keys(nestingQueueData).length === 0) {
+      return (
+        <tr>
+          <td colSpan={3} className="px-6 py-10 text-center">
+            <div className="flex flex-col items-center justify-center text-gray-800">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-lg font-medium">No items in nesting queue</p>
+              <p className="text-sm text-gray-500 mt-1">Click "Start Nesting" to process items</p>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+
+    return Object.entries(nestingQueueData).map(([foamSheet, items], index) => (
+      <tr
+        key={foamSheet}
+        onClick={() => {
+          setSelectedNestingRow(foamSheet);
+          setSelectedMediumSheet(formatMediumSheetName(foamSheet));
+        }}
+        className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
+          selectedNestingRow === foamSheet 
+            ? 'bg-blue-200 border-l-4 border-blue-500' 
+            : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+        }`}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setSelectedNestingRow(foamSheet);
+            setSelectedMediumSheet(formatMediumSheetName(foamSheet));
+          }
+        }}
+        aria-selected={selectedNestingRow === foamSheet}
+      >
+        <td className="px-6 py-4 text-left">
+          <div className="flex items-center">
+            <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
+            <span className="text-black text-lg">
+              {formatMediumSheetName(foamSheet)}
+            </span>
+          </div>
+        </td>
+        <td className="px-6 py-4 text-center">No Data</td>
+        <td className="px-6 py-4 text-center">
+          <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+            {calculateTotalItems(items)}
+          </span>
+        </td>
+        <td className="px-6 py-4 text-center">No Data</td>
+        <td className="px-6 py-4 text-center">No Data</td>
+        <td className="px-6 py-4 text-center">No Data</td>
+      </tr>
+    ));
+  };
+
+  // Update the table in the first section to show nesting queue data
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -1397,7 +1509,6 @@ export default function Manufacturing() {
                         </span>
                         <span>{isExporting ? "Nesting..." : "Start Nesting"}</span>
                       </button>
-
                     </div>
                   </div>
                 </div>
@@ -1442,9 +1553,67 @@ export default function Manufacturing() {
                 </div>
               </div>
               <div className="overflow-x-auto bg-white h-[calc(93vh-300px)] flex flex-col">
-                {firstColTab !== 'Orders Queue' ? (
-                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
-                    <p className="text-gray-700 font-medium text-lg">No data</p>
+                {firstColTab == 'Nesting Queue' ? (
+                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-2">
+                    <table className="w-full bg-white/90 backdrop-blur-sm table-auto h-full">
+                    <thead className="bg-gray-100/90 sticky top-0">
+                        <tr>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Foam Sheet</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Nesting ID</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Pieces</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Priority</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {renderNestingQueueTable()}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : firstColTab == "Completed Cuts" ? (
+                  <div className= "flex-1 flex flex-col items-center justify-center bg-gray-50 p-2">
+                    <table className="w-full bg-white/90 backdrop-blur-sm table-auto h-full">
+                      <thead className="bg-gray-100/90 sticky top-0">
+                        <tr>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Foam Sheet</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Nesting ID</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Pieces</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                ) : firstColTab == "Work In Progress" ? (
+                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-2">
+                    <table className="w-full bg-white/90 backdrop-blur-sm table-auto h-full">
+                      <thead className="bg-gray-100/90 sticky top-0">
+                        <tr>
+                          <th className = "px-6 py-4 text-center text-lg font-semibold text-black">Order ID</th>
+                          <th className = "px-6 py-4 text-center text-lg font-semibold text-black">Order Date</th>
+                          <th className = "px-6 py-4 text-center text-lg font-semibold text-black"> Trolley</th>
+                          <th className = "px-6 py-4 text-center text-lg font-semibold text-black">Priority</th>
+                          <th className = "px-6 py-4 text-center text-lg font-semibold text-black"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                          <td className="px-6 py-4 text-center">No Data</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 ) : loading ? (
                   <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
@@ -1622,16 +1791,70 @@ export default function Manufacturing() {
               </div>
               <div className="bg-black/70 border border-gray-200 p-6 h-[calc(100vh-300px)] overflow-y-auto">
                 {firstColTab === 'Nesting Queue' ? (
-                  <div className="overflow-x-auto h-full flex flex-col justify-start">
+                  <div className="overflow-x-auto h-full flex flex-col bg-black/70 rounded-xl shadow-xl">
                     <table className="w-full text-white border-separate border-spacing-y-2">
                       <thead>
                         <tr>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">Customer Name</th>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">Order Id</th>
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {/* No data rows for now */}
+                        {(() => {
+                          // Get the selected foam sheet from the nesting queue table
+                          const selectedFoamSheet = Object.keys(nestingQueueData).find(sheet => 
+                            formatMediumSheetName(sheet) === selectedMediumSheet
+                          );
+
+                          if (!selectedFoamSheet || !nestingQueueData[selectedFoamSheet]) {
+                            return (
+                              <tr>
+                                <td colSpan={2} className="px-6 py-4 text-center text-lg font-semibold text-white">
+                                  Select a foam sheet to view details
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          // Get items for the selected foam sheet
+                          const items = nestingQueueData[selectedFoamSheet];
+
+                          // Group items by order ID and customer name
+                          const groupedItems = items.reduce((acc, item) => {
+                            const key = `${item.orderId}-${item.customerName}`;
+                            if (!acc[key]) {
+                              acc[key] = {
+                                orderId: item.orderId,
+                                customerName: item.customerName || '(No Name in Order)'
+                              };
+                            }
+                            return acc;
+                          }, {} as Record<string, { orderId: string; customerName: string }>);
+
+                          // Convert grouped items to array
+                          const uniqueOrders = Object.values(groupedItems);
+
+                          if (uniqueOrders.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={2} className="px-6 py-4 text-center text-lg font-semibold text-white">
+                                  No orders found for this foam sheet
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return uniqueOrders.map((order, index) => (
+                            <tr key={`${order.orderId}-${index}`} className="hover:bg-gray-800/30 transition-colors">
+                              <td className="px-6 py-4 text-center text-lg font-semibold text-white">
+                                {order.customerName || '(No Name in Order)'}
+                              </td>
+                              <td className="px-6 py-4 text-center text-lg font-semibold text-white">
+                                {order.orderId}
+                              </td>
+                            </tr>
+                          ));
+                        })() as React.ReactNode}
                       </tbody>
                     </table>
                   </div>
@@ -1640,10 +1863,10 @@ export default function Manufacturing() {
                     <table className="w-full text-white border-separate border-spacing-y-2">
                       <thead>
                         <tr>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">
                             Customer Name
                           </th>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">
                             Order Id
                           </th>
                         </tr>
@@ -1655,13 +1878,13 @@ export default function Manufacturing() {
                     <table className="w-full text-white border-separate border-spacing-y-2">
                       <thead>
                         <tr>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">
                             Foam Sheet
                           </th>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">
                             Item Name
                           </th>
-                          <th className="px-6 py-3 text-center text-md font-semibold text-white underline">
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">
                             Status
                           </th>
                         </tr>

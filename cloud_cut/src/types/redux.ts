@@ -76,3 +76,12 @@ export interface StockState {
         updated_at: string;
     }>;
 }
+
+
+export interface NestingItem {
+    sku: string;
+    itemName: string;
+    quantity: number;
+    orderId: string;
+    customerName: string;
+};
