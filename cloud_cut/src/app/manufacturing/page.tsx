@@ -1272,7 +1272,8 @@ export default function Manufacturing() {
           itemName: item.item_name,
           quantity: item.quantity,
           orderId: order.order_id,
-          customerName: order.customer_name
+          customerName: order.customer_name,
+          priority: item.priority,
         });
       });
     });
@@ -1298,7 +1299,7 @@ export default function Manufacturing() {
     if (Object.keys(nestingQueueData).length === 0) {
       return (
         <tr>
-          <td colSpan={3} className="px-6 py-10 text-center">
+          <td colSpan={6} className="px-6 py-10 text-center">
             <div className="flex flex-col items-center justify-center text-gray-800">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1311,48 +1312,57 @@ export default function Manufacturing() {
       );
     }
 
-    return Object.entries(nestingQueueData).map(([foamSheet, items], index) => (
-      <tr
-        key={foamSheet}
-        onClick={() => {
-          setSelectedNestingRow(foamSheet);
-          setSelectedMediumSheet(formatMediumSheetName(foamSheet));
-        }}
-        className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
-          selectedNestingRow === foamSheet 
-            ? 'bg-blue-200 border-l-4 border-blue-500' 
-            : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-        }`}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
+    return Object.entries(nestingQueueData).map(([foamSheet, items], index) => {
+      // Calculate the lowest priority from all items in this foam sheet
+      const lowestPriority = Math.min(...items.map(item => item.priority || 10));
+
+      return (
+        <tr
+          key={foamSheet}
+          onClick={() => {
             setSelectedNestingRow(foamSheet);
             setSelectedMediumSheet(formatMediumSheetName(foamSheet));
-          }
-        }}
-        aria-selected={selectedNestingRow === foamSheet}
-      >
-        <td className="px-6 py-4 text-left">
-          <div className="flex items-center">
-            <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
-            <span className="text-black text-lg">
-              {formatMediumSheetName(foamSheet)}
+          }}
+          className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
+            selectedNestingRow === foamSheet 
+              ? 'bg-blue-200 border-l-4 border-blue-500' 
+              : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+          }`}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSelectedNestingRow(foamSheet);
+              setSelectedMediumSheet(formatMediumSheetName(foamSheet));
+            }
+          }}
+          aria-selected={selectedNestingRow === foamSheet}
+        >
+          <td className="px-6 py-4 text-center">
+            <div className="flex items-center justify-center">
+              <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
+              <span className="text-black text-lg">
+                {formatMediumSheetName(foamSheet)}
+              </span>
+            </div>
+          </td>
+          <td className="px-6 py-4 text-center">No Data</td>
+          <td className="px-6 py-4 text-center">
+            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+              {calculateTotalItems(items)}
             </span>
-          </div>
-        </td>
-        <td className="px-6 py-4 text-center">No Data</td>
-        <td className="px-6 py-4 text-center">
-          <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-            {calculateTotalItems(items)}
-          </span>
-        </td>
-        <td className="px-6 py-4 text-center">No Data</td>
-        <td className="px-6 py-4 text-center">No Data</td>
-        <td className="px-6 py-4 text-center">No Data</td>
-      </tr>
-    ));
+          </td>
+          <td className="px-6 py-4 text-center">
+            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+              {lowestPriority}
+            </span>
+          </td>
+          <td className="px-6 py-4 text-center">0%</td>
+          <td className="px-6 py-4 text-center">0 mins</td>
+        </tr>
+      );
+    });
   };
 
   // Update the table in the first section to show nesting queue data
@@ -1583,12 +1593,15 @@ export default function Manufacturing() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                        </tr>
+                        <td colSpan={6} className="px-6 py-10 text-center">
+                          <div className="flex flex-col items-center justify-center text-gray-800">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                              <p className="text-lg font-medium">No completed cuts found</p>
+                              <p className="text-sm text-gray-500 mt-1">Mark nests as completed in the nesting queue to see them here.</p>
+                          </div>
+                        </td>
                       </tbody>
                     </table>
                   </div>
@@ -1606,12 +1619,15 @@ export default function Manufacturing() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                          <td className="px-6 py-4 text-center">No Data</td>
-                        </tr>
+                        <td colSpan={6} className="px-6 py-10 text-center">
+                          <div className="flex flex-col items-center justify-center text-gray-800">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p className="text-lg font-medium">No work in progress orders available</p>
+                            <p className="text-sm text-gray-500 mt-1">Mark orders as manufactured in the orders queue to see them here.</p>
+                          </div>
+                        </td>
                       </tbody>
                     </table>
                   </div>
@@ -1809,8 +1825,10 @@ export default function Manufacturing() {
                           if (!selectedFoamSheet || !nestingQueueData[selectedFoamSheet]) {
                             return (
                               <tr>
-                                <td colSpan={2} className="px-6 py-4 text-center text-lg font-semibold text-white">
-                                  Select a foam sheet to view details
+                                <td colSpan={2} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
+                                  <div className="flex items-center justify-center h-full">
+                                    <p className="text-white text-lg">No nest selected. Please choose a nest from the nesting queue.</p>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1871,6 +1889,15 @@ export default function Manufacturing() {
                           </th>
                         </tr>
                       </thead>
+                      <tbody>
+                        <tr>
+                          <td colSpan={2} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
+                            <div className="flex items-center justify-center h-full">
+                              <p className="text-white text-lg">No completed cuts found. Please mark cuts as completed in the nesting queue.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
                     </table>
                   </div>
                 ) : firstColTab === 'Work In Progress' ? (
@@ -1889,6 +1916,15 @@ export default function Manufacturing() {
                           </th>
                         </tr>
                       </thead>
+                      <tbody>
+                        <tr>
+                          <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
+                            <div className="flex items-center justify-center h-full">
+                              <p className="text-white text-lg">No completed cuts found. Please mark cuts as completed in the nesting queue.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
                     </table>
                   </div>
                 ) : firstColTab !== 'Orders Queue' ? (

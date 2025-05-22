@@ -84,4 +84,5 @@ export interface NestingItem {
     quantity: number;
     orderId: string;
     customerName: string;
+    priority: number;
 };
