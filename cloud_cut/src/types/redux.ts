@@ -85,4 +85,5 @@ export interface NestingItem {
     orderId: string;
     customerName: string;
     priority: number;
+    svgUrl?: string[];
 };

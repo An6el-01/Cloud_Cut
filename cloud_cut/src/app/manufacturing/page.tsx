@@ -5,17 +5,8 @@ import ManuConfirm from "@/components/manuConfirm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
-import {
-  setSelectedOrderId,
-  updateItemCompleted,
-  updateOrderManufacturedStatus,
-  setCurrentView,
-} from "@/redux/slices/ordersSlice";
-import {
-  fetchOrdersFromSupabase,
-  syncOrders,
-  exportPendingOrdersCSV,
-} from "@/redux/thunks/ordersThunks";
+import { setSelectedOrderId, updateItemCompleted, updateOrderManufacturedStatus, setCurrentView } from "@/redux/slices/ordersSlice";
+import { fetchOrdersFromSupabase, syncOrders, exportPendingOrdersCSV } from "@/redux/thunks/ordersThunks";
 import {
   selectManufacturingOrders,
   selectOrderItemsById,
@@ -32,7 +23,6 @@ import { getSupabaseClient } from "@/utils/supabase";
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
 
-
 export default function Manufacturing() {
   const dispatch = useDispatch<AppDispatch>();
   const orders = useSelector(selectManufacturingOrders); // Use manufacturing-specific selector
@@ -41,17 +31,13 @@ export default function Manufacturing() {
   // Get user profile to check for role
   const userProfile = useSelector((state: RootState) => state.auth.userProfile);
   const isOperatorRole = userProfile?.role === 'Operator';
-
   const selectedItemsSelector = useMemo(() => selectOrderItemsById(selectedOrderId || ''), [selectedOrderId]);
   const selectedOrderItems = useSelector(selectedItemsSelector);
-
   const { currentPage, loading, error, } = useSelector((state: RootState) => state.orders);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
-
   // No need to filter orders since fetchOrdersFromSupabase already filters by "Completed"
   const totalPages = Math.ceil(totalOrders / ordersPerPage);
-
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -1240,7 +1226,7 @@ export default function Manufacturing() {
   }, []);
 
   // Update handleTriggerNesting to set the state
-  const handleTriggerNesting = () => {
+  const handleTriggerNesting = async () => {
     console.log('handleTriggerNesting');
     
     // Get all orders with manufacturing items
@@ -1274,19 +1260,117 @@ export default function Manufacturing() {
           orderId: order.order_id,
           customerName: order.customer_name,
           priority: item.priority,
+          svgUrl: ['noMatch']  // Changed from string to string[]
         });
       });
     });
 
     // Log the organized data
-    console.log('Items organized by foam sheet:', itemsByFoamSheet);
+    console.log('Items have been organized by foam sheet');
 
-    // Set the state with the nesting queue data
-    setNestingQueueData(itemsByFoamSheet);
+    // Process each foam sheet's items to add SVG URLs
+    const processedItemsByFoamSheet: Record<string, NestingItem[]> = {};
+    
+    for (const [foamSheet, items] of Object.entries(itemsByFoamSheet)) {
+      try {
+        const itemsWithSvgs = await fetchSvgFiles(items);
+        processedItemsByFoamSheet[foamSheet] = itemsWithSvgs;
+      } catch (error) {
+        console.error(`Error processing SVGs for foam sheet ${foamSheet}:`, error);
+        // If there's an error, use the original items
+        processedItemsByFoamSheet[foamSheet] = items.map(item => ({
+          ...item,
+          svgUrl: ['noMatch']
+        }));
+      }
+    }
 
-    // You can now use this data structure for nesting
-    // Each foam sheet has an array of items that need to be cut
-    return itemsByFoamSheet;
+    // Set the state with the processed nesting queue data
+    setNestingQueueData(processedItemsByFoamSheet);
+    console.log('Processed nesting queue data with SVGs:', processedItemsByFoamSheet);
+
+    // Return the processed data
+    return processedItemsByFoamSheet;
+  }
+
+  // Function that fetches the svg files from the storage bucket depending on the sku
+  const fetchSvgFiles = async (itemsByFoamSheet: NestingItem[]) => {
+    try {
+      // List all SVG files in the bucket
+      console.log('Attempting to list files from storage bucket...');
+      const { data: svgList, error: svgListError } = await supabase.storage
+        .from('inserts')
+        .list('', { 
+          limit: 1000,
+          sortBy: { column: 'name', order: 'asc' }
+        });
+      
+      if (svgListError) {
+        console.error('Storage bucket error:', svgListError);
+        throw svgListError;
+      }
+
+      // Get all SVG file names (without .svg), lowercased and trimmed
+      const svgNames = (svgList || [])
+        .filter(file => file.name.endsWith('.svg'))
+        .map(file => file.name.replace(/\.svg$/, '').trim());
+
+      // Process each item in itemsByFoamSheet
+      const itemsWithSvg = itemsByFoamSheet.map(item => {
+        const skuOriginal = String(item.sku);
+        const sku = skuOriginal.toLowerCase().trim();
+        // Remove last three characters from SKU for matching and convert to uppercase
+        const shortenedSku = (sku.length > 3 ? sku.slice(0, -3) : sku).toUpperCase();
+        
+        // Find all SVGs that are a prefix of the shortened SKU
+        const matchingSvgs = svgNames.filter(svgName => shortenedSku.startsWith(svgName));
+        
+        // Pick the longest prefix (most specific match)
+        let matchedSvg = null;
+        if (matchingSvgs.length > 0) {
+          matchedSvg = matchingSvgs.reduce((a, b) => (a.length > b.length ? a : b));
+        }
+
+        let svgUrls: string[] = [];
+        if (matchedSvg) {
+          const { data: urlData } = supabase.storage
+            .from('inserts')
+            .getPublicUrl('/' + matchedSvg + '.svg');
+          if (urlData?.publicUrl) {
+            svgUrls.push(urlData.publicUrl);
+          }
+        } else {
+          //No match, try trimmed version (first 8 characters of shortenedSku)
+          const trimmedShortenedSku = shortenedSku.slice(0, -1);
+          //Find all SVGs that start with the trimmed shortened SKU
+          const partSvgs = svgNames.filter(svgName => svgName.startsWith(trimmedShortenedSku));
+          if (partSvgs.length > 0) {
+            partSvgs.forEach((svgName) => {
+              const { data: urlData } = supabase.storage
+                .from('inserts')
+                .getPublicUrl('/' + svgName + '.svg');
+              if (urlData?.publicUrl) {
+                svgUrls.push(urlData.publicUrl);
+              }
+            });
+          }
+        }
+
+        return {
+          ...item,
+          svgUrl: svgUrls.length > 0 ? svgUrls : ['noMatch']
+        };
+      });
+
+      return itemsWithSvg;
+    } catch (error) {
+      console.error('Error fetching SVG files:', error);
+      // Return original items with 'noMatch' for svgUrl
+      return itemsByFoamSheet.map(item => ({
+        ...item,
+        svgUrl: ['noMatch']
+      }));
+    }
   }
 
   // Add this function to calculate total items for a foam sheet
@@ -1790,8 +1874,62 @@ export default function Manufacturing() {
                     Nesting Visualization
                   </h1>
                 </div>
-                <div className=" border border-gray-200 p-6 h-full overflow-y-auto">
-                  {/* Visualization content here */}
+                <div className="border border-gray-200 p-6 h-full overflow-y-auto">
+                  {selectedNestingRow ? (
+                    <div className="space-y-6">
+                      {/* Display foam sheet name */}
+                      <div className="text-center">
+                        <h2 className="text-xl font-semibold text-white mb-2">
+                          {formatMediumSheetName(selectedNestingRow)}
+                        </h2>
+                       
+                      </div>
+
+                      {/* Display SVGs */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {nestingQueueData[selectedNestingRow]?.map((item, index) => (
+                          <div 
+                            key={`${item.sku}-${index}`}
+                            className="bg-gray-800/50 rounded-lg p-4 flex flex-col items-center"
+                          >
+                            <div className="w-full aspect-square relative mb-2">
+                              {item.svgUrl && item.svgUrl[0] !== 'noMatch' ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                  {item.svgUrl.map((url, urlIndex) => (
+                                    <img
+                                      key={`${item.sku}-svg-${urlIndex}`}
+                                      src={url}
+                                      alt={`SVG ${urlIndex + 1} for ${item.sku}`}
+                                      className="w-full h-full object-contain"
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-gray-700/50 rounded">
+                                  <span className="text-gray-400 text-sm">No SVG available</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-center">
+                              <p className="text-white font-medium break-words w-full">{item.itemName}</p>
+                              <div className="flex items-center justify-center gap-2 mt-1">
+                                <p className="text-white text-sm">Order ID: {item.orderId}</p>
+                                <p className="text-white text-sm">Quantity: {item.quantity}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-lg font-medium">No nest selected</p>
+                      <p className="text-sm mt-1">Select a nest from the nesting queue to view its visualization</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
