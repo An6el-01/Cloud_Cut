@@ -521,27 +521,89 @@ export default function Inserts() {
                             ) : (
                                 <div className="flex-1 overflow-y-auto p-2">
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                        {inserts.map((insert, idx) => (
-                                            <div
-                                                key={insert.sku + '-' + idx}
-                                                className="bg-white rounded-lg shadow flex flex-col items-center p-3 border border-gray-200"
-                                            >
-                                                <div className="flex items-center justify-center w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden">
-                                                    {insert.svgUrl ? (
-                                                        <img
-                                                            src={insert.svgUrl}
-                                                            alt={insert.sku}
-                                                            className="object-contain w-20 h-16"
-                                                        />
-                                                    ) : (
-                                                        <span className="text-gray-400 text-xs">No image</span>
-                                                    )}
+                                        {(() => {
+                                            // First, separate SKUs into single and multi-part
+                                            const { singleParts, multiParts } = inserts.reduce<{
+                                                singleParts: Insert[],
+                                                multiParts: Record<string, Insert[]>
+                                            }>((acc, insert) => {
+                                                // Check if SKU has a part number (ends with -XX)
+                                                const hasPartNumber = /-\d{2}$/.test(insert.sku);
+                                                if (hasPartNumber) {
+                                                    // Get base SKU by removing the part number
+                                                    const baseSku = insert.sku.replace(/-\d{2}$/, '');
+                                                    if (!acc.multiParts[baseSku]) {
+                                                        acc.multiParts[baseSku] = [];
+                                                    }
+                                                    acc.multiParts[baseSku].push(insert);
+                                                } else {
+                                                    acc.singleParts.push(insert);
+                                                }
+                                                return acc;
+                                            }, { singleParts: [], multiParts: {} });
+
+                                            // Render single-part SKUs
+                                            const singlePartCards = singleParts.map((insert) => (
+                                                <div
+                                                    key={insert.sku}
+                                                    className="bg-white rounded-lg shadow flex flex-col items-center p-3 border border-gray-200"
+                                                >
+                                                    <div className="flex items-center justify-center w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden">
+                                                        {insert.svgUrl ? (
+                                                            <img
+                                                                src={insert.svgUrl}
+                                                                alt={insert.sku}
+                                                                className="object-contain w-20 h-16"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">No image</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-center font-bold text-black text-sm mt-1">
+                                                        {insert.sku}
+                                                    </div>
                                                 </div>
-                                                <div className="text-center font-bold text-black text-sm mt-1">
-                                                    {insert.sku}
+                                            ));
+
+                                            // Render multi-part SKUs
+                                            const multiPartCards = Object.entries(multiParts).map(([baseSku, groupedInserts]) => (
+                                                <div
+                                                    key={baseSku}
+                                                    className="bg-white rounded-lg shadow flex flex-col items-center p-3 border border-gray-200"
+                                                >
+                                                    <div className="flex items-center justify-center w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden">
+                                                        {groupedInserts[0].svgUrl ? (
+                                                            <img
+                                                                src={groupedInserts[0].svgUrl}
+                                                                alt={baseSku}
+                                                                className="object-contain w-20 h-16"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">No image</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-center font-bold text-black text-sm mt-1">
+                                                        {baseSku}
+                                                    </div>
+                                                    <div className="mt-2 w-full">
+                                                        <details className="w-full">
+                                                            <summary className="text-sm text-gray-600 cursor-pointer hover:text-blue-600">
+                                                                {groupedInserts.length} parts
+                                                            </summary>
+                                                            <div className="mt-2 pl-2 border-l-2 border-gray-200">
+                                                                {groupedInserts.map((insert: Insert, idx: number) => (
+                                                                    <div key={idx} className="text-xs text-gray-600 py-1">
+                                                                        {insert.sku}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </details>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ));
+
+                                            return [...singlePartCards, ...multiPartCards];
+                                        })()}
                                     </div>
                                 </div>
                             )}
