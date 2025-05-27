@@ -13,12 +13,13 @@ import {
   selectCurrentViewTotal,
 } from "@/redux/slices/ordersSelectors";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
-import { OrderItem, Order, NestingItem } from "@/types/redux";
+import { OrderItem, Order, NestingItem, ProcessedNestingData } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
 import { getSupabaseClient } from "@/utils/supabase";
+import { NestingProcessor } from '@/nesting/nestingProcessor';
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -66,7 +67,7 @@ export default function Manufacturing() {
   const [firstColTab, setFirstColTab] = useState<'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue'>(
     'Orders Queue'
   );
-  const [nestingQueueData, setNestingQueueData] = useState<Record<string, NestingItem[]>>({});
+  const [nestingQueueData, setNestingQueueData] = useState<Record<string, ProcessedNestingData>>({});
   // Improved function for tab changes that completely prevents changes for operators
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
     // Operators can ONLY have 'Orders Queue'
@@ -1260,7 +1261,7 @@ export default function Manufacturing() {
           orderId: order.order_id,
           customerName: order.customer_name,
           priority: item.priority,
-          svgUrl: ['noMatch']  // Changed from string to string[]
+          svgUrl: ['noMatch']
         });
       });
     });
@@ -1268,26 +1269,39 @@ export default function Manufacturing() {
     // Log the organized data
     console.log('Items have been organized by foam sheet');
 
-    // Process each foam sheet's items to add SVG URLs
-    const processedItemsByFoamSheet: Record<string, NestingItem[]> = {};
+    // Process each foam sheet's items to add SVG URLs and run nesting
+    const processedItemsByFoamSheet: Record<string, ProcessedNestingData> = {};
+    const nestingProcessor = new NestingProcessor();
     
     for (const [foamSheet, items] of Object.entries(itemsByFoamSheet)) {
       try {
+        // First fetch SVGs
         const itemsWithSvgs = await fetchSvgFiles(items);
-        processedItemsByFoamSheet[foamSheet] = itemsWithSvgs;
+        
+        // Then run nesting
+        const nestingResult = await nestingProcessor.processNesting(itemsWithSvgs);
+        
+        // Store both items and nesting result
+        processedItemsByFoamSheet[foamSheet] = {
+          items: itemsWithSvgs,
+          nestingResult: nestingResult
+        };
       } catch (error) {
-        console.error(`Error processing SVGs for foam sheet ${foamSheet}:`, error);
-        // If there's an error, use the original items
-        processedItemsByFoamSheet[foamSheet] = items.map(item => ({
+        console.error(`Error processing foam sheet ${foamSheet}:`, error);
+        // If there's an error, use the original items with no nesting result
+        processedItemsByFoamSheet[foamSheet] = {
+          items: items.map(item => ({
           ...item,
           svgUrl: ['noMatch']
-        }));
+          })),
+          nestingResult: null
+        };
       }
     }
 
     // Set the state with the processed nesting queue data
     setNestingQueueData(processedItemsByFoamSheet);
-    console.log('Processed nesting queue data with SVGs:', processedItemsByFoamSheet);
+    console.log('Processed nesting queue data with SVGs and nesting results:', processedItemsByFoamSheet);
 
     // Return the processed data
     return processedItemsByFoamSheet;
@@ -1396,9 +1410,9 @@ export default function Manufacturing() {
       );
     }
 
-    return Object.entries(nestingQueueData).map(([foamSheet, items], index) => {
+    return Object.entries(nestingQueueData).map(([foamSheet, data], index) => {
       // Calculate the lowest priority from all items in this foam sheet
-      const lowestPriority = Math.min(...items.map(item => item.priority || 10));
+      const lowestPriority = Math.min(...data.items.map((item: NestingItem) => item.priority || 10));
 
       return (
         <tr
@@ -1434,7 +1448,7 @@ export default function Manufacturing() {
           <td className="px-6 py-4 text-center">No Data</td>
           <td className="px-6 py-4 text-center">
             <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-              {calculateTotalItems(items)}
+              {calculateTotalItems(data.items)}
             </span>
           </td>
           <td className="px-6 py-4 text-center">
@@ -1887,15 +1901,14 @@ export default function Manufacturing() {
 
                       {/* Display SVGs */}
                       <div className="grid grid-cols-2 gap-4">
-                        {nestingQueueData[selectedNestingRow]?.map((item, index) => (
+                        {nestingQueueData[selectedNestingRow]?.items.map((item: NestingItem, index: number) => (
                           <div 
                             key={`${item.sku}-${index}`}
                             className="bg-gray-800/50 rounded-lg p-4 flex flex-col items-center"
                           >
-                            <div className="w-full aspect-square relative mb-2">
                               {item.svgUrl && item.svgUrl[0] !== 'noMatch' ? (
                                 <div className="grid grid-cols-2 gap-2">
-                                  {item.svgUrl.map((url, urlIndex) => (
+                                {item.svgUrl.map((url: string, urlIndex: number) => (
                                     <img
                                       key={`${item.sku}-svg-${urlIndex}`}
                                       src={url}
@@ -1909,7 +1922,6 @@ export default function Manufacturing() {
                                   <span className="text-gray-400 text-sm">No SVG available</span>
                                 </div>
                               )}
-                            </div>
                             <div className="text-center">
                               <p className="text-white font-medium break-words w-full">{item.itemName}</p>
                               <div className="flex items-center justify-center gap-2 mt-1">
@@ -1976,19 +1988,20 @@ export default function Manufacturing() {
                           const items = nestingQueueData[selectedFoamSheet];
 
                           // Group items by order ID and customer name
-                          const groupedItems = items.reduce((acc, item) => {
+                          const groupedItems = items.items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
                             const key = `${item.orderId}-${item.customerName}`;
                             if (!acc[key]) {
                               acc[key] = {
                                 orderId: item.orderId,
-                                customerName: item.customerName || '(No Name in Order)'
+                                customerName: item.customerName,
+                                items: []
                               };
                             }
+                            acc[key].items.push(item);
                             return acc;
-                          }, {} as Record<string, { orderId: string; customerName: string }>);
+                          }, {});
 
-                          // Convert grouped items to array
-                          const uniqueOrders = Object.values(groupedItems);
+                          const uniqueOrders = Object.values(groupedItems) as Array<{ orderId: string; customerName: string; items: NestingItem[] }>;
 
                           if (uniqueOrders.length === 0) {
                             return (
@@ -2000,7 +2013,7 @@ export default function Manufacturing() {
                             );
                           }
 
-                          return uniqueOrders.map((order, index) => (
+                          return uniqueOrders.map((order: { orderId: string; customerName: string; items: NestingItem[] }, index: number) => (
                             <tr key={`${order.orderId}-${index}`} className="hover:bg-gray-800/30 transition-colors">
                               <td className="px-6 py-4 text-center text-lg font-semibold text-white">
                                 {order.customerName || '(No Name in Order)'}

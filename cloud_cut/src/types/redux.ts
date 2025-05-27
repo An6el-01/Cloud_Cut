@@ -86,4 +86,34 @@ export interface NestingItem {
     customerName: string;
     priority: number;
     svgUrl?: string[];
-};
+}
+
+export interface NestingPart {
+    x: number;
+    y: number;
+    rotation: number;
+    id: string;
+    source: NestingItem;
+    filename: string;
+    children?: NestingPart[];
+    itemName?: string;
+    orderId?: string;
+    customerName?: string;
+    priority?: number;
+}
+
+export interface NestingPlacement {
+    sheet: number;
+    sheetid: string;
+    parts: NestingPart[];
+}
+
+export interface NestingResult {
+    fitness: number;
+    placements: NestingPlacement[];
+}
+
+export interface ProcessedNestingData {
+    items: NestingItem[];
+    nestingResult: NestingResult | null;
+}

@@ -49,17 +49,17 @@ export const syncFinishedStock = createAsyncThunk(
                 };
             });
 
-            // Filter for only medium sheets (SKUs starting with SFS-)
-            const mediumSheetItems = inventoryItems.filter(item => 
-                item.sku?.toUpperCase().startsWith('SFS-')
+            // Filter for medium sheets and  2 X 1)
+            const stockItems = inventoryItems.filter(item => 
+                item.sku?.toUpperCase().startsWith('SFS')
             );
 
-            console.log('Filtered medium sheet items:', mediumSheetItems);
-            console.log(`Found ${mediumSheetItems.length} medium sheet items`);
+            console.log('Filtered medium sheet and 2 X 1 items:', stockItems);
+            console.log(`Found ${stockItems.length} medium sheet and 2 X 1 items`);
 
             // Use SKU as unique identifier and combine stock levels for items with the same SKU
             const uniqueItems = new Map();
-            mediumSheetItems.forEach(item => {
+            stockItems.forEach(item => {
                 if (uniqueItems.has(item.sku)) {
                     // If item exists, add stock levels
                     const existingItem = uniqueItems.get(item.sku);
@@ -136,15 +136,17 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         console.log('Raw data from Supabase:', typedItems);
         console.log(`Fetched ${typedItems.length} items from Supabase`);
         
-
-        // Filter medium sheet items with case-insensitive SKU check
-        const mediumSheetItems = typedItems.filter(item => {
+        // Filter for both medium sheets and 2 X 1 items
+        const filteredItems = typedItems.filter(item => {
             const sku = item.sku?.toUpperCase() || '';
-            // Check for specific medium sheet patterns
-            const validPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
-            const isMediumSheet = validPatterns.some(pattern => sku.includes(pattern));
+            // Check for medium sheet patterns
+            const mediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
+            const isMediumSheet = mediumSheetPatterns.some(pattern => sku.includes(pattern));
             
-            return isMediumSheet;
+            // Check for 2 X 1 pattern (SFS followed by numbers, no hyphen)
+            const isTwoByOne = /^SFS\d+[A-Z]$/.test(sku);
+            
+            return isMediumSheet || isTwoByOne;
         });
 
         // Define color order for sorting
@@ -162,8 +164,8 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
             'YELLOW': 10
         };
 
-        // Sort medium sheet items by color
-        const sortedMediumSheetItems = mediumSheetItems.sort((a, b) => {
+        // Sort items by color
+        const sortedItems = filteredItems.sort((a, b) => {
             const colorA = Object.keys(colorOrder).find(color => 
                 a.item_name.toUpperCase().includes(color)
             ) || 'OTHER';
@@ -181,9 +183,9 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
             return orderA - orderB;
         });
         
-        console.log('Medium sheet items after filtering and sorting:', sortedMediumSheetItems);
-        console.log(`Found ${sortedMediumSheetItems.length} medium sheet items`);
+        console.log('Filtered and sorted items:', sortedItems);
+        console.log(`Found ${sortedItems.length} total items`);
         
-        return sortedMediumSheetItems;
+        return sortedItems;
      }
 );

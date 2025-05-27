@@ -51,6 +51,8 @@ export default function Stock() {
     const [editingItem, setEditingItem] = useState<StockItem | null>(null);
     const [editValue, setEditValue] = useState<number>(0);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
+    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1'>('Medium Sheets');
+
 
     // Filter items to only show medium sheets and apply search filter
     console.log('All items before filtering:', items);
@@ -62,23 +64,37 @@ export default function Stock() {
             item.stock.toString().includes(searchQuery)
         );
     console.log('Filtered medium sheet items:', mediumSheetItems);
+
+    const twoByOneItems = items
+        .filter(item => /^SFS\d+[A-Z]$/.test(item.sku?.toUpperCase() || ''))
+        .filter(item => 
+            item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.stock.toString().includes(searchQuery)
+        );
+    console.log('Filtered 2 X 1 items:', twoByOneItems);
+        
     
     // Calculate pagination
     const totalPages = Math.ceil(mediumSheetItems.length / itemsPerPage);
+    const totalTwoByOnePages = Math.ceil(twoByOneItems.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const currentItems = mediumSheetItems.slice(startIndex, endIndex);
+    const currentMediumSheetItems = mediumSheetItems.slice(startIndex, endIndex);
+    const currentTwoByOneItems = twoByOneItems.slice(startIndex, endIndex);
 
     // Add debug logging
     useEffect(() => {
         console.log('All stock items:', items);
         console.log('Filtered medium sheet items:', items.filter((item: StockItem) => item.sku.startsWith('SFS-')));
+        console.log('Filtered 2 X 1 items:', items.filter((item: StockItem) => item.sku.startsWith('SFS')));
     }, [items]);
 
     // Debug log for table rendering
     useEffect(() => {
-        console.log('Rendering table with items:', currentItems);
-    }, [currentItems]);
+        console.log('Rendering table with medium sheets:', currentMediumSheetItems);
+        console.log('Rendering table with 2 X 1 items:', currentTwoByOneItems);
+    }, [currentMediumSheetItems, currentTwoByOneItems]);
 
     const handleRefresh = () => {
         setIsRefreshing(true);
@@ -107,7 +123,6 @@ export default function Stock() {
     const handlePageChange = (newPage: number) => {
         setCurrentPage(newPage);
     };
-
 
     const handleEdit = async (item: StockItem) => {
         try { 
@@ -239,6 +254,15 @@ export default function Stock() {
         setDeleteConfirmItem(null);
     }
 
+    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1') => {
+        setTableTab(tab);
+        setCurrentPage(1);  // Reset to page 1 when switching tabs
+    };
+
+    const handleSubmit = () => {
+        console.log('Report Damage Form Submitted');
+    }
+
     return (
         <div className="min-h-screen">
             {/**NavBar */}
@@ -295,14 +319,16 @@ export default function Stock() {
                     </div>
                 </div>
             </div>
-
-            <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
+            
+            {/**Stock Management Tab */}
+            {activeTab === 'StockManagement' && (
+                <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
                 {/**Medium Sheet Stock Table */}
                 <div className="flex-1 max-w-8xl">
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                             <h1 className="text-white text-3xl font-semibold">
-                                Medium Sheet Stock
+                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : '2 X 1 Stock'}
                             </h1>
 
                             <div className="flex flex-wrap items-center gap-3">
@@ -329,6 +355,7 @@ export default function Stock() {
                                             />
                                         </svg>
                                     </div>
+                                    {/**Refresh Button */}
                                     <button
                                         onClick={async () => {
                                             try {
@@ -356,6 +383,7 @@ export default function Stock() {
                                         </span>
                                         <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
                                     </button>
+                                    {/**Add New Item Button */}
                                     <button
                                         className="flex items-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow transition-all duration-200
                                             bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
@@ -368,9 +396,180 @@ export default function Stock() {
                                 </div>
                             </div>
                         </div>
+
+                        {/**Navigation Tools */}
+                        <div className="mt-4 mb-2">
+                            <div>
+                                <button
+                                    className={`px-4 py-2 text-md font-medium ${tableTab === 'Medium Sheets' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                    style={{ marginBottom: '-1px' }}
+                                    onClick={() => handleTableTabChange('Medium Sheets')}
+                                >
+                                    Medium Sheets
+                                </button>
+                                <button
+                                    className={`px-4 py-2 text-md font-medium ${tableTab === '2 X 1' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                    style={{ marginBottom: '-1px' }}
+                                    onClick={() => handleTableTabChange('2 X 1')}
+                                >
+                                    2 X 1
+                                </button>
+                            </div>
+                        </div>
+
                     </div>
-                    <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
-                        {loading ? (
+                    <div className="overflow-x-auto bg-white h-[calc(94vh-300px)] flex flex-col">
+                        {tableTab === '2 X 1' ? (
+                            <div className="flex-1 flex flex-col">
+                                <div className="flex-1 overflow-y-auto">
+                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-20 table-auto">
+                                        <thead className="bg-gray-100/90 sticky top-0">
+                                            <tr>
+                                                <th className="px-4 py-4 text-left text-black text-md">2 X 1</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">SKU</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Edit</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {currentTwoByOneItems.length > 0 ? (
+                                                currentTwoByOneItems.map((item: StockItem) => (
+                                                    <tr
+                                                        key={item.id}
+                                                        className="transition-all duration-200 text-center h-16"
+                                                    >
+                                                        <td className= 'px-4 py-2 text-left'>
+                                                            <div className="flex items-center">
+                                                                <span className={`w-8 h-4 rounded-full mr-3 ${getSheetColorClass(item.item_name)}`}></span>
+                                                                <span className="text-black text-lg">
+                                                                    {item.item_name}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center">
+                                                            <span className="text-black text-lg">
+                                                                {item.sku}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            {editingItem?.id === item.id ? (
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editValue}
+                                                                        onChange={(e) => setEditValue(Number(e.target.value))}
+                                                                        className="w-20 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        min='0'
+                                                                    />
+                                                                    <button
+                                                                        onClick={handleSave}
+                                                                        className="p-1 text-green-600 hover:text-green-700"
+                                                                        aria-label="Save Changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={handleCancel}
+                                                                        className="p-1 text-red-600 hover:text-red-700"
+                                                                        aria-label="Cancel Changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                {item.stock}
+                                                            </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            <button
+                                                                className="flex justify-center items-center h-full w-full hover: bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleEdit(item);
+                                                                }}
+                                                                aria-label="Edit an item"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <Image
+                                                                    src="/editPencil.png"
+                                                                    alt=""
+                                                                    width={15}
+                                                                    height={15}
+                                                                />
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            <button
+                                                                className="flex justify-center items-center h-full w-full hover: bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDelete(item);
+                                                                }}
+                                                                aria-label="Delete an item"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <Image
+                                                                    src="/binClosed.png"
+                                                                    alt=""
+                                                                    width={15}
+                                                                    height={15}
+                                                                />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                                                        No 2 X 1 items found
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {/** 2 X 1 Pagination Controls */}
+                                <div className="sticky bottom-0 flex justify-center items-center gap-4 py-4 bg-white border-t border-gray-200">
+                                    <button
+                                        onClick={() => handlePageChange(currentPage - 1)}
+                                        disabled={currentPage === 1}
+                                        className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {Array.from({ length: totalTwoByOnePages }, (_, i) => i + 1).map((pageNum) => (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => handlePageChange(pageNum)}
+                                                className={`w-8 h-8 rounded-md ${
+                                                    currentPage === pageNum
+                                                        ? 'bg-red-600 text-white'
+                                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                } transition-colors`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => handlePageChange(currentPage + 1)}
+                                        disabled={currentPage === totalTwoByOnePages}
+                                        className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                                                    
+                        ) : loading ? (
                             <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
                                 <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
                                 <p className="text-gray-700 font-medium">Loading Stock Data...</p>
@@ -394,8 +593,8 @@ export default function Stock() {
                                             </tr> 
                                         </thead>
                                         <tbody>
-                                            {currentItems.length > 0 ? (
-                                                currentItems.map((item: StockItem) => (
+                                            {currentMediumSheetItems.length > 0 ? (
+                                                currentMediumSheetItems.map((item: StockItem) => (
                                                     <tr
                                                         key={item.id}
                                                         className="transition-all duration-200 text-center h-16"
@@ -534,6 +733,50 @@ export default function Stock() {
                     </div>
                 </div>
             </div>
+            )}
+            
+            {/**Damage Tracking Tab */}
+            {activeTab === 'DamageTracking' && (
+                <div className="container mx-auto pt-6 ob-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
+                    {/**Report Damage Section*/}
+                    <div className="flex-1 min-w-0 max-w-[600px] flex flex-col bg-[#1d1d1d]/90 rounded-xl shadow-xl mb-8">
+                        <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
+                            <h1 className="text-2xl font-bold text-white">Report A Damage</h1>
+                        </div>
+                        <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between bg-white rounded-b-xl p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="flex flex-col gap-4">
+                                    <label className="font-semibold text-black" htmlFor="Type">
+                                        Type:
+                                    </label>
+                                    <select
+                                        id="type"
+                                        name="type"
+                                        className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        defaultValue=""
+                                        required
+                                    >
+                                        <option value="" disabled>Type...</option>
+                                        <option value="Cutting">Cutting</option>
+                                        <option value="Printing">Printing</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                    <label className="font-semibold text-black mt-2" htmlFor="description">Description:</label>
+                                    <input
+                                        id="description"
+                                        name="description"
+                                        type="text"
+                                        placeholder="Description..."
+                                        className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        required
+                                    />
+                                </div>
+
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Delete Confirmation Modal */}
             {deleteConfirmItem && (

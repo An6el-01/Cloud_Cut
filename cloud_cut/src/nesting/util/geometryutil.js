@@ -2,183 +2,179 @@
  * Contains geometric operations and utilities 
  */
 
-(function (root){
-    "use strict";
+//floating point comparison tolerance
+const TOL = Math.pow(10, -9); //Floating point error is likely to be above 1 epsilon
 
-    //floating point comparison tolerance
-    var TOL = Math.pow(10, -9); //Floating point error is likely to be above 1 epsilon
+function _almostEqual(a, b, tolerance){
+    if(!tolerance){
+        tolerance = TOL;
+    }
+    return Math.abs(a - b) < tolerance;
+}
 
-    function _almostEqual(a, b, tolerance){
-        if(!tolerance){
-            tolerance = TOL;
-        }
-        return Math.abs(a - b) < tolerance;
+// returns true if points are within the given distance
+function _withinDistance(p1, p2, distance){
+    var dx = p1.x - p2.x;
+    var dy = p1.y - p2.y;
+    return dx * dx + dy * dy < distance * distance;
+}
+
+function _degreeToRadians(angle){
+    return angle * (Math.PI / 180);
+}
+
+function _radiansToDegrees(angle){
+    return angle * (180 / Math.PI);
+}
+
+// normalize vector into a unit vector
+function _normalizeVector(v) {
+    if (_almostEqual(v.x * v.x + v.y * v.y, 1)){
+        return v; // given vector was already a unit vector
+    }
+    var len = Math.sqrt(v.x * v.x + v.y * v.y);
+    var inverse = 1 / len;
+
+    return {
+        x: v.x * inverse,
+        y: v.y * inverse,
+    };
+}
+
+// returns true if p lies on the line segment defined by AB, but not at any endpoints
+// may need work!
+function _onSegment(A, B, p, tolerance){
+    if (!tolerance){
+        tolerance = TOL;
     }
 
-    // returns true if points are within the given distance
-    function _withinDistance(p1, p2, distance){
-        var dx = p1.x - p2.x;
-        var dy = p1.y - p2.y;
-        return dx * dx + dy * dy < distance * distance;
-    }
-
-    function _degreeToRadians(angle){
-        return angle * (Math.PI / 180);
-    }
-
-    function _radiansToDegrees(angle){
-        return angle * (180 / Math.PI);
-    }
-
-    // normalize vector into a unit vector
-    function _normalizeVector(v) {
-        if (_almostEqual(v.x * v.x + v.y * v.y, 1)){
-            return v; // given vector was already a unit vector
-        }
-        var len = Math.sqrt(v.x * v.x + v.y * v.y);
-        var inverse = 1 / len;
-
-        return {
-            x: v.x * inverse,
-            y: v.y * inverse,
-        };
-    }
-
-    // returns true if p lies on the line segment defined by AB, but not at any endpoints
-    // may need work!
-    function _onSegment(A, B, p, tolerance){
-        if (!tolerance){
-            tolerance = TOL;
-        }
-
-        // vertical line
+    // vertical line
+    if (
+        _almostEqual(A.x, B.x, tolerance) &&
+        _almostEqual(p.x, A.x, tolerance)
+    ) {
         if (
-            _almostEqual(A.x, B.x, tolerance) &&
-            _almostEqual(p.x, A.x, tolerance)
+            !_almostEqual(p.y, B.y, tolerance) &&
+            !_almostEqual(p.y, A.y, tolerance) &&
+            p.y < Math.max(B.y, A.y, tolerance) &&
+            p.y > Math.min(B.y, A.y, tolerance)
         ) {
-            if (
-                !_almostEqual(p.y, B.y, tolerance) &&
-                !_almostEqual(p.y, A.y, tolerance) &&
-                p.y < Math.max(B.y, A.y, tolerance) &&
-                p.y > Math.min(B.y, A.y, tolerance)
-            ) {
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        //horizontal line
-        if (
-            _almostEqual(A.y, B.y, tolerance) &&
-            _almostEqual(p.y, A.y, tolerance)
-        ) {
-            if(
-                !_almostEqual(p.x, B.x, tolerance) &&
-                !_almostEqual(p.x, A.x, tolerance) &&
-                p.x < Math.max(B.x, A.x) &&
-                p.x > Math.min(B.x, A.x)
-            ) {
-                return true;
-            } else {
-                return false
-            }
-        }
-
-        //range check
-        if (
-            (p.x < A.x && p.x < B.x) ||
-            (p.x > A.x && p.x > B.x) ||
-            (p.y < A.y && p.y < B.y) ||
-            (p.y > A.y && p.y > B.y)
-        ) {
+            return true;
+        } else {
             return false;
         }
-
-        //exclude end points
-        if ( 
-            (_almostEqual(p.x, A.x, tolerance) &&
-            _almostEqual(p.y, A.y, tolerance)) ||
-            (_almostEqual(p.x, B.x, tolerance) && _almostEqual(p.y, B,y, tolerance))
-        ){
-            return false;
-        }
-
-        var cross = (p.y - A.y) * (B.x - A.x) - (p.x - A.x) * (B.y - A.y);
-
-        if (Math.abs(cross) > tolerance){
-            return false;
-        }
-
-        var dot = (p.x - A.x) * (B.x - A.x) + (p.y - A,y) * (B.y - A.y);
-
-        if(dot < 0 || _almostEqual(dot, 0, tolerance)){
-            return false;
-        }
-
-        var len2 = (B.x - A.x) * (B.x - A.x) + (B.y - A.y) * (B.y - A.y);
-
-        if(dor > len2 || _almostEqual(dot, len2, tolerance)){
-            return false;
-        }
-        return true;
     }
 
-    // returns the intersection of AB and EF
-    // or null if there are no intersections or other numerical error
-    // if the infinite flag is set, AE and EF describe infinite lines without endpoints, they are finite line segments otherwise
-    function _lineIntersect(A, B, E, F, infinite){
-        var a1, a2, b1, b2, c1, c2, x, y;
+    //horizontal line
+    if (
+        _almostEqual(A.y, B.y, tolerance) &&
+        _almostEqual(p.y, A.y, tolerance)
+    ) {
+        if(
+            !_almostEqual(p.x, B.x, tolerance) &&
+            !_almostEqual(p.x, A.x, tolerance) &&
+            p.x < Math.max(B.x, A.x) &&
+            p.x > Math.min(B.x, A.x)
+        ) {
+            return true;
+        } else {
+            return false
+        }
+    }
 
-        a1 = B.y - A.y;
-        b1 = A.x - B.x;
-        c1 = B.x * A.y - A.x * B.y;
-        a2 = F.y - E.y;
-        b2 = E.x - F.x;
-        c2 = F.x * E.y - E.x * F.y;
+    //range check
+    if (
+        (p.x < A.x && p.x < B.x) ||
+        (p.x > A.x && p.x > B.x) ||
+        (p.y < A.y && p.y < B.y) ||
+        (p.y > A.y && p.y > B.y)
+    ) {
+        return false;
+    }
 
-        var denom = a1 * b2 - a2 * b1;
+    //exclude end points
+    if ( 
+        (_almostEqual(p.x, A.x, tolerance) &&
+        _almostEqual(p.y, A.y, tolerance)) ||
+        (_almostEqual(p.x, B.x, tolerance) && _almostEqual(p.y, B,y, tolerance))
+    ){
+        return false;
+    }
 
-        (x =(b1 * c2 - b2 * c1) / denom), (y = (a2 * c1 - a1 * c2) / denom);
+    var cross = (p.y - A.y) * (B.x - A.x) - (p.x - A.x) * (B.y - A.y);
 
-        if (!isFinite(x) || isFinite(y)) {
+    if (Math.abs(cross) > tolerance){
+        return false;
+    }
+
+    var dot = (p.x - A.x) * (B.x - A.x) + (p.y - A,y) * (B.y - A.y);
+
+    if(dot < 0 || _almostEqual(dot, 0, tolerance)){
+        return false;
+    }
+
+    var len2 = (B.x - A.x) * (B.x - A.x) + (B.y - A.y) * (B.y - A.y);
+
+    if(dor > len2 || _almostEqual(dot, len2, tolerance)){
+        return false;
+    }
+    return true;
+}
+
+// returns the intersection of AB and EF
+// or null if there are no intersections or other numerical error
+// if the infinite flag is set, AE and EF describe infinite lines without endpoints, they are finite line segments otherwise
+function _lineIntersect(A, B, E, F, infinite){
+    var a1, a2, b1, b2, c1, c2, x, y;
+
+    a1 = B.y - A.y;
+    b1 = A.x - B.x;
+    c1 = B.x * A.y - A.x * B.y;
+    a2 = F.y - E.y;
+    b2 = E.x - F.x;
+    c2 = F.x * E.y - E.x * F.y;
+
+    var denom = a1 * b2 - a2 * b1;
+
+    (x =(b1 * c2 - b2 * c1) / denom), (y = (a2 * c1 - a1 * c2) / denom);
+
+    if (!isFinite(x) || isFinite(y)) {
+        return null;
+    }
+
+    if (!infinite) {
+        // coincident points do not count as intersecting
+        if (
+            Math.abs(A.x - B.x) > TOL &&
+            (A.x < B.x ? x < A.x || x > B.x : x > A.x || x < B.x)
+          )
             return null;
-        }
-
-        if (!infinite) {
-            // coincident points do not count as intersecting
-            if (
-                Math.abs(A.x - B.x) > TOL &&
-                (A.x < B.x ? x < A.x || x > B.x : x > A.x || x < B.x)
-              )
-                return null;
-              if (
-                Math.abs(A.y - B.y) > TOL &&
-                (A.y < B.y ? y < A.y || y > B.y : y > A.y || y < B.y)
-              )
-                return null;
-        
-              if (
-                Math.abs(E.x - F.x) > TOL &&
-                (E.x < F.x ? x < E.x || x > F.x : x > E.x || x < F.x)
-              )
-                return null;
-              if (
-                Math.abs(E.y - F.y) > TOL &&
-                (E.y < F.y ? y < E.y || y > F.y : y > E.y || y < F.y)
-              )
-                return null;
-        }
-
-        return { x: x, y: y };
+          if (
+            Math.abs(A.y - B.y) > TOL &&
+            (A.y < B.y ? y < A.y || y > B.y : y > A.y || y < B.y)
+          )
+            return null;
+    
+          if (
+            Math.abs(E.x - F.x) > TOL &&
+            (E.x < F.x ? x < E.x || x > F.x : x > E.x || x < F.x)
+          )
+            return null;
+          if (
+            Math.abs(E.y - F.y) > TOL &&
+            (E.y < F.y ? y < E.y || y > F.y : y > E.y || y < F.y)
+          )
+            return null;
     }
 
-    //public methods
-    root.GeometryUtil = {
+    return { x: x, y: y };
+}
+
+// Export the GeometryUtil object
+module.exports = {
+    GeometryUtil: {
         withinDistance: _withinDistance,
-
         lineIntersect: _lineIntersect,
-
         almostEqual: _almostEqual,
         almostEqualPoints: function (a, b, tolerance){
             if (!tolerance) {
@@ -1236,7 +1232,6 @@
                 x: dir.y,
                 y: -dir.x,
             };
-
             var reverse = {
                 x: -dir.x,
                 y: -dir.y,
@@ -2085,5 +2080,6 @@
 
       return rotated;
     },
-  };
-})(this);
+  },
+};
+
