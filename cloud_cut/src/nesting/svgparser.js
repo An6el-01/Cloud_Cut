@@ -848,9 +848,9 @@ SvgParser.prototype.isClosed = function(p, tolerance){
     if(p.tagName == 'path'){
         // First check if pathSegList exists
         if (p.pathSegList && p.pathSegList.numberOfItems) {
-            for(var j = 0; j < p.pathSegList.numberOfItems; j++){
-                var c = p.pathSegList.getItem(j);
-                if(c.pathSegTypeAsLetter == 'z' || c.pathSegTypeAsLetter == 'Z'){
+        for(var j = 0; j < p.pathSegList.numberOfItems; j++){
+            var c = p.pathSegList.getItem(j);
+            if(c.pathSegTypeAsLetter == 'z' || c.pathSegTypeAsLetter == 'Z'){
                     return true;
                 }
             }
@@ -1606,7 +1606,7 @@ SvgParser.prototype.polygonifyPath = function(path) {
         const command = commands[i];
         const type = command[0];
         const params = command.slice(1).trim().split(/[\s,]+/).map(Number);
-        
+
         switch(type.toLowerCase()) {
             case 'm':
                 if (type === 'm') {

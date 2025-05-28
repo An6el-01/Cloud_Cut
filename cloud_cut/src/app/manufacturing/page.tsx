@@ -13,7 +13,7 @@ import {
   selectCurrentViewTotal,
 } from "@/redux/slices/ordersSelectors";
 import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
-import { OrderItem, Order, NestingItem, ProcessedNestingData } from "@/types/redux";
+import { OrderItem, Order, NestingItem, ProcessedNestingData, NestingResult, NestingPlacement, NestingPart } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
@@ -1437,7 +1437,7 @@ export default function Manufacturing() {
           }}
           aria-selected={selectedNestingRow === foamSheet}
         >
-          <td className="px-6 py-4 text-center">
+          <td className="px-6 py-4 text-left">
             <div className="flex items-center justify-center">
               <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
               <span className="text-black text-lg">
@@ -1901,14 +1901,59 @@ export default function Manufacturing() {
 
                       {/* Display SVGs */}
                       <div className="grid grid-cols-2 gap-4">
-                        {nestingQueueData[selectedNestingRow]?.items.map((item: NestingItem, index: number) => (
-                          <div 
-                            key={`${item.sku}-${index}`}
-                            className="bg-gray-800/50 rounded-lg p-4 flex flex-col items-center"
-                          >
+                        {nestingQueueData[selectedNestingRow]?.nestingResult ? (
+                          // Display nesting result if available
+                          <div className="col-span-2 bg-gray-800/50 rounded-lg p-4">
+                            <h3 className="text-white text-lg font-semibold mb-4">Nesting Layout</h3>
+                            <div className="aspect-[4/3] bg-gray-700/50 rounded-lg overflow-hidden">
+                              <svg
+                                viewBox="0 0 1000 750"
+                                className="w-full h-full"
+                                style={{ backgroundColor: '#FFFFFF' }}
+                              >
+                                {nestingQueueData[selectedNestingRow].nestingResult?.placements.map((placement: NestingPlacement, index: number) => (
+                                  <g key={index}>
+                                    {placement.parts.map((part: NestingPart, partIndex: number) => (
+                                      <g
+                                        key={partIndex}
+                                        transform={`translate(${part.x},${part.y}) rotate(${part.rotation})`}
+                                      >
+                                        <rect
+                                          x="0"
+                                          y="0"
+                                          width="100"
+                                          height="100"
+                                          fill="none"
+                                          stroke="#4CAF50"
+                                          strokeWidth="2"
+                                        />
+                                        <text
+                                          x="50"
+                                          y="50"
+                                          textAnchor="middle"
+                                          dominantBaseline="middle"
+                                          fill="#4CAF50"
+                                          fontSize="12"
+                                        >
+                                          {part.itemName || part.filename}
+                                        </text>
+                                      </g>
+                                    ))}
+                                  </g>
+                                ))}
+                              </svg>
+                            </div>
+                          </div>
+                        ) : (
+                          // Display individual SVGs if no nesting result
+                          nestingQueueData[selectedNestingRow]?.items.map((item: NestingItem, index: number) => (
+                            <div 
+                              key={`${item.sku}-${index}`}
+                              className="bg-gray-800/50 rounded-lg p-4 flex flex-col items-center"
+                            >
                               {item.svgUrl && item.svgUrl[0] !== 'noMatch' ? (
                                 <div className="grid grid-cols-2 gap-2">
-                                {item.svgUrl.map((url: string, urlIndex: number) => (
+                                  {item.svgUrl.map((url: string, urlIndex: number) => (
                                     <img
                                       key={`${item.sku}-svg-${urlIndex}`}
                                       src={url}
@@ -1922,15 +1967,16 @@ export default function Manufacturing() {
                                   <span className="text-gray-400 text-sm">No SVG available</span>
                                 </div>
                               )}
-                            <div className="text-center">
-                              <p className="text-white font-medium break-words w-full">{item.itemName}</p>
-                              <div className="flex items-center justify-center gap-2 mt-1">
-                                <p className="text-white text-sm">Order ID: {item.orderId}</p>
-                                <p className="text-white text-sm">Quantity: {item.quantity}</p>
+                              <div className="text-center">
+                                <p className="text-white font-medium break-words w-full">{item.itemName}</p>
+                                <div className="flex items-center justify-center gap-2 mt-1">
+                                  <p className="text-white text-sm">Order ID: {item.orderId}</p>
+                                  <p className="text-white text-sm">Quantity: {item.quantity}</p>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </div>
                   ) : (

@@ -25,8 +25,11 @@ export class NestingProcessor {
 
   async processNesting(items) {
     try {
+      console.log('Starting nesting process with items:', items);
+      
       // Convert SVG URLs to polygons
       const parts = await this.convertSvgsToParts(items);
+      console.log('Converted items to parts:', parts);
       
       if (parts.length === 0) {
         console.warn('No valid parts to nest');
@@ -45,12 +48,18 @@ export class NestingProcessor {
         tournamentSize: 3,
         generations: 50
       };
+      console.log('Using nesting config:', config);
 
       // Run nesting algorithm
+      console.log('Starting deepnest.nest()...');
       const result = await this.deepNest.nest(parts, config);
+      console.log('Nesting result:', result);
 
       // Process and format the result
-      return this.formatNestingResult(result, items);
+      const formattedResult = this.formatNestingResult(result, items);
+      console.log('Formatted nesting result:', formattedResult);
+      
+      return formattedResult;
     } catch (error) {
       console.error('Error in nesting process:', error);
       return null;
@@ -169,31 +178,34 @@ export class NestingProcessor {
       return null;
     }
 
+    // Create a single sheet with all placements
+    const sheet = {
+      sheet: 1, // Changed from 'Sheet1' to 1 to match NestingPlacement type
+      sheetid: '1',
+      parts: nestingResult.placement.map((part, index) => {
+        const originalItem = originalItems.find(item => 
+          item.sku === part.source.sku
+        );
+        
+        return {
+          x: part.x || 0,
+          y: part.y || 0,
+          rotation: nestingResult.rotation[index] || 0,
+          id: part.id,
+          source: part.source,
+          filename: part.source.sku,
+          children: part.children || [],
+          itemName: originalItem?.itemName,
+          orderId: originalItem?.orderId,
+          customerName: originalItem?.customerName,
+          priority: originalItem?.priority
+        };
+      })
+    };
+
     return {
       fitness: nestingResult.fitness,
-      placements: nestingResult.placements.map(sheet => ({
-        sheet: sheet.sheet,
-        sheetid: sheet.sheetid,
-        parts: sheet.parts.map(part => {
-          const originalItem = originalItems.find(item => 
-            item.sku === part.source.sku
-          );
-          
-          return {
-            x: part.x,
-            y: part.y,
-            rotation: part.rotation,
-            id: part.id,
-            source: part.source,
-            filename: part.filename,
-            children: part.children || [],
-            itemName: originalItem?.itemName,
-            orderId: originalItem?.orderId,
-            customerName: originalItem?.customerName,
-            priority: originalItem?.priority
-          };
-        })
-      }))
+      placements: [sheet]
     };
   }
 } 

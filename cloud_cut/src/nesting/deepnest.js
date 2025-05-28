@@ -5,7 +5,7 @@
 // Import required dependencies
 import { SvgParser } from './svgparser';
 import { GeometryUtil } from './util/geometryutil';
-import { PlacementWorker } from './util/placementWorker';
+const { PlacementWorker } = require('./util/placementWorker');
 
 export class DeepNest {
     constructor(eventEmitter) {
@@ -21,7 +21,7 @@ export class DeepNest {
             spacing: 0,
             rotations: 4,
             populationSize: 10,
-            mutationRate: 10,
+            mutationRate: 0.1,
             threads: 4,
             placementType: "gravity",
             mergeLines: true,
@@ -29,6 +29,7 @@ export class DeepNest {
             scale: 72,
             simplify: false,
             overlapTolerance: 0.0001,
+            generations: 50
         };
 
         /**CHECK IF ALL THESE ARE NEEDED */
@@ -1309,6 +1310,30 @@ export class DeepNest {
             progressCallback = null;
             displayCallback = null;
         };
+
+        this.nest = async function(parts, config) {
+            try {
+                console.log('Starting nesting process with parts:', parts);
+                
+                // Validate input
+                if (!parts || parts.length === 0) {
+                    throw new Error('No parts provided for nesting');
+                }
+
+                // Initialize genetic algorithm
+                const GA = new GeneticAlgorithm(parts, config);
+                
+                // Run the genetic algorithm
+                const result = await GA.run();
+                
+                console.log('Nesting completed with result:', result);
+                
+                return result;
+            } catch (error) {
+                console.error('Error in nesting process:', error);
+                throw error;
+            }
+        };
     }
 }
 
@@ -1355,169 +1380,309 @@ DeepNest.prototype.nest = async function(parts, config) {
     };
 };
 
-function GeneticAlgorithm(adam, config) {
-    this.config = config || {
-        populationSize: 10,
-        mutationRate: 10,
-        rotations: 4,
+    function GeneticAlgorithm(adam, config) {
+        this.config = config || {
+            populationSize: 10,
+            mutationRate: 10,
+            rotations: 4,
         generations: 3,
         fitnessThreshold: 0.1  // Stop if we find a solution with fitness below this threshold
-    };
+        };
 
-    // population is an array of individuals. Each individual is an object representing the orders of insertion and the angle each part is rotated
-    var angles = [];
-    for (var i = 0; i < adam.length; i++) {
-        var angle = 
-            Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
-        angles.push(angle);
-    }
+        // population is an array of individuals. Each individual is an object representing the orders of insertion and the angle each part is rotated
+        var angles = [];
+        for (var i = 0; i < adam.length; i++) {
+            var angle = 
+                Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
+            angles.push(angle);
+        }
 
     this.population = [{ placement: adam,  rotation: angles }];
 
-    while (this.population.length < config.populationSize) {
-        var mutant = this.mutate(this.population[0]);
-        this.population.push(mutant);
+        while (this.population.length < config.populationSize) {
+            var mutant = this.mutate(this.population[0]);
+            this.population.push(mutant);
+        }
     }
-}
 
-//returns a mutated individual with the given mutation rate
-GeneticAlgorithm.prototype.mutate = function (individual) {
-    var clone = {
-        placement: individual.placement.slice(0),
-        rotation: individual.rotation.slice(0), 
-    };
-    for (var i = 0; i < clone.placement.length; i++) {
-        var rand = Math.random();
-        if (rand < 0.01 * this.config.mutationRate) {
-            //swap current part with the next part
-            var j = i + 1;
-            if (j < clone.placement.length) {
-                var temp = clone.placement[i];
-                clone.placement[i] = clone.placement[j];
-                clone.placement[j] = temp;
+    //returns a mutated individual with the given mutation rate
+    GeneticAlgorithm.prototype.mutate = function (individual) {
+        var clone = {
+            placement: individual.placement.slice(0),
+            rotation: individual.rotation.slice(0), 
+        };
+        for (var i = 0; i < clone.placement.length; i++) {
+            var rand = Math.random();
+            if (rand < 0.01 * this.config.mutationRate) {
+                //swap current part with the next part
+                var j = i + 1;
+                if (j < clone.placement.length) {
+                    var temp = clone.placement[i];
+                    clone.placement[i] = clone.placement[j];
+                    clone.placement[j] = temp;
+                }
+            }
+            rand = Math.random();
+            if (rand < 0.01 * this.config.mutationRate) {
+                clone.rotation[i] = 
+                    Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
             }
         }
-        rand = Math.random();
-        if (rand < 0.01 * this.config.mutationRate) {
-            clone.rotation[i] = 
-                Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
-        }
-    }
-    return clone;
-};
+        return clone;
+    };
 
-// single point crossover
-GeneticAlgorithm.prototype.mate = function (male, female) {
-    var cutpoint = Math.round(
-        Math.min(Math.max(Math.random(), 0.1), 0.9) * (male.placement.length - 1)
+    // single point crossover
+    GeneticAlgorithm.prototype.mate = function (male, female) {
+        var cutpoint = Math.round(
+            Math.min(Math.max(Math.random(), 0.1), 0.9) * (male.placement.length - 1)
+        );
+
+        var gene1 = male.placement.slice(0, cutpoint);
+        var rot1 = male.rotation.slice(0, cutpoint);
+
+        var gene2 = female.placement.slice(0, cutpoint);
+        var rot2 = female.rotation.slice(0, cutpoint);
+
+        var i;
+
+        for (i = 0; i < female.placement.length; i++) {
+            if (!contains(gene1, female.placement[i].id)) {
+                gene1.push(female.placement[i]);
+                rot1.push(female.rotation[i]);
+            }
+        }
+
+        for (i = 0; i < male.placement.length; i++) {
+            if (!contains(gene2, male.placement[i].id)) {
+                gene2.push(male.placement[i]);
+                rot2.push(male.rotation[i]);
+            }
+        }
+
+        function contains(gene, id) {
+            for (var i = 0; i < gene.length; i++) {
+                if (gene[i].id == id) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return [
+            { placement: gene1, rotation: rot1 },
+            { placement: gene2, rotation: rot2 },
+        ];
+    };
+
+    GeneticAlgorithm.prototype.generation = function () {
+        // Individuals with higher fitness are more likely to be selected for mating
+        this.population.sort(function (a, b) {
+            return a.fitness - b.fitness;
+        });
+    
+        // fittest individual is preserved in the new generation (elitism)
+        var newpopulation = [this.population[0]];
+
+        while (newpopulation.length < this.population.length) {
+            var male = this.randomWeightedIndividual();
+            var female = this.randomWeightedIndividual(male);
+
+            //each mating produces two children
+            var children = this.mate(male, female);
+
+            // slightly mutate children
+            newpopulation.push(this.mutate(children[0]));
+
+            if (newpopulation.length < this.population.length) {
+                newpopulation.push(this.mutate(children[1]));
+            }
+        }
+        this.population = newpopulation;
+    };
+
+    // returns a random individual from the population, weighted to the front of the list (lower fitness value is more likely to be selected)
+    GeneticAlgorithm.prototype.randomWeightedIndividual = function (exclude) {
+        var pop =  this.population.slice(0);
+
+        if (exclude && pop.indexOf(exclude) >= 0) {
+            pop.slice(pop.indexOf(exclude), 1);
+        }
+
+        var rand = Math.random();
+
+        var lower = 0;
+        var weight = 1 / pop.length;
+        var upper = weight;
+
+        for (var i = 0; i < pop.length; i++) {
+            // if the random number falls between lower and upper bands, select this individual
+            if (rand > lower && rand < upper) {
+                return pop[i];
+            }
+            lower = upper;
+            upper += 2 * weight * ((pop.length - i) / pop.length);
+        }
+        return pop[0];
+    };
+
+GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
+    console.log('Evaluating fitness for individual:', individual);
+    
+    // Create a new worker for this evaluation
+    const worker = new PlacementWorker(
+        this.binPolygon,
+        individual.placement,
+        individual.placement.map(p => p.id),
+        individual.rotation.map(r => r || 0),
+        this.config,
+        this.nfpCache
     );
 
-    var gene1 = male.placement.slice(0, cutpoint);
-    var rot1 = male.rotation.slice(0, cutpoint);
+    // Place the parts and get the result
+    const result = worker.place(individual.placement);
+    console.log('Placement result:', result);
 
-    var gene2 = female.placement.slice(0, cutpoint);
-    var rot2 = female.rotation.slice(0, cutpoint);
+    if (!result || !result.success) {
+        console.log('Placement failed, returning high fitness value');
+        return Number.MAX_VALUE;
+    }
 
-    var i;
-
-    for (i = 0; i < female.placement.length; i++) {
-        if (!contains(gene1, female.placement[i].id)) {
-            gene1.push(female.placement[i]);
-            rot1.push(female.rotation[i]);
+    // Calculate total area of all parts
+    let totalPartsArea = 0;
+    for (const part of individual.placement) {
+        const polygon = part.polygons[0];
+        if (polygon) {
+            const area = this.calculatePolygonArea(polygon);
+            totalPartsArea += area;
         }
     }
 
-    for (i = 0; i < male.placement.length; i++) {
-        if (!contains(gene2, male.placement[i].id)) {
-            gene2.push(male.placement[i]);
-            rot2.push(male.rotation[i]);
-        }
-    }
-
-    function contains(gene, id) {
-        for (var i = 0; i < gene.length; i++) {
-            if (gene[i].id == id) {
-                return true;
+    // Calculate bounding box of the entire nest
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    
+    for (const placement of result.placements) {
+        const part = individual.placement.find(p => p.id === placement.id);
+        if (part) {
+            const polygon = part.polygons[0];
+            if (polygon) {
+                for (const point of polygon) {
+                    const x = point.x + placement.x;
+                    const y = point.y + placement.y;
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
             }
         }
-        return false;
     }
 
-    return [
-        { placement: gene1, rotation: rot1 },
-        { placement: gene2, rotation: rot2 },
-    ];
-};
-
-GeneticAlgorithm.prototype.generation = function () {
-    // Individuals with higher fitness are more likely to be selected for mating
-    this.population.sort(function (a, b) {
-        return a.fitness - b.fitness;
-    });
+    const boundingBoxArea = (maxX - minX) * (maxY - minY);
     
-    // fittest individual is preserved in the new generation (elitism)
-    var newpopulation = [this.population[0]];
-
-    while (newpopulation.length < this.population.length) {
-        var male = this.randomWeightedIndividual();
-        var female = this.randomWeightedIndividual(male);
-
-        //each mating produces two children
-        var children = this.mate(male, female);
-
-        // slightly mutate children
-        newpopulation.push(this.mutate(children[0]));
-
-        if (newpopulation.length < this.population.length) {
-            newpopulation.push(this.mutate(children[1]));
+    // Calculate material usage efficiency (higher is better)
+    const materialEfficiency = totalPartsArea / boundingBoxArea;
+    
+    // Calculate average distance between parts (lower is better)
+    let totalDistance = 0;
+    let distanceCount = 0;
+    
+    for (let i = 0; i < result.placements.length; i++) {
+        for (let j = i + 1; j < result.placements.length; j++) {
+            const p1 = result.placements[i];
+            const p2 = result.placements[j];
+            
+            // Calculate center points of each part
+            const center1 = this.calculatePartCenter(p1);
+            const center2 = this.calculatePartCenter(p2);
+            
+            // Calculate distance between centers
+            const distance = Math.sqrt(
+                Math.pow(center2.x - center1.x, 2) + 
+                Math.pow(center2.y - center1.y, 2)
+            );
+            
+            totalDistance += distance;
+            distanceCount++;
         }
     }
-    this.population = newpopulation;
+    
+    const averageDistance = distanceCount > 0 ? totalDistance / distanceCount : 0;
+    
+    // Calculate fitness (lower is better)
+    // We want to maximize material efficiency and minimize average distance
+    const fitness = (1 / materialEfficiency) + (averageDistance * 0.1);
+    
+    console.log('Fitness calculation:', {
+        totalPartsArea,
+        boundingBoxArea,
+        materialEfficiency,
+        averageDistance,
+        fitness
+    });
+
+    return fitness;
+}
+
+// Helper method to calculate polygon area
+GeneticAlgorithm.prototype.calculatePolygonArea = function(polygon) {
+    let area = 0;
+    for (let i = 0; i < polygon.length; i++) {
+        const j = (i + 1) % polygon.length;
+        area += polygon[i].x * polygon[j].y;
+        area -= polygon[j].x * polygon[i].y;
+    }
+    return Math.abs(area) / 2;
 };
 
-// returns a random individual from the population, weighted to the front of the list (lower fitness value is more likely to be selected)
-GeneticAlgorithm.prototype.randomWeightedIndividual = function (exclude) {
-    var pop =  this.population.slice(0);
-
-    if (exclude && pop.indexOf(exclude) >= 0) {
-        pop.slice(pop.indexOf(exclude), 1);
+// Helper method to calculate part center
+GeneticAlgorithm.prototype.calculatePartCenter = function(placement) {
+    // Find the original part in the population
+    const originalPart = this.population[0].placement.find(p => p.id === placement.id);
+    if (!originalPart || !originalPart.polygons || !originalPart.polygons[0]) {
+        console.error('No polygon found for placement:', placement);
+        return { x: 0, y: 0 };
     }
 
-    var rand = Math.random();
-
-    var lower = 0;
-    var weight = 1 / pop.length;
-    var upper = weight;
-
-    for (var i = 0; i < pop.length; i++) {
-        // if the random number falls between lower and upper bands, select this individual
-        if (rand > lower && rand < upper) {
-            return pop[i];
-        }
-        lower = upper;
-        upper += 2 * weight * ((pop.length - i) / pop.length);
+    const polygon = originalPart.polygons[0];
+    let sumX = 0, sumY = 0;
+    
+    for (const point of polygon) {
+        sumX += point.x + placement.x;
+        sumY += point.y + placement.y;
     }
-    return pop[0];
+    
+    return {
+        x: sumX / polygon.length,
+        y: sumY / polygon.length
+    };
 };
 
 GeneticAlgorithm.prototype.run = async function() {
     // Run for the specified number of generations
     for (let i = 0; i < this.config.generations; i++) {
+        console.log(`Running generation ${i + 1}/${this.config.generations}`);
+        
+        // Evaluate fitness for all individuals
+        for (let individual of this.population) {
+            if (!individual.fitness) {
+                individual.fitness = await this.evaluateFitness(individual);
+            }
+        }
+        
         // Process current generation
         this.generation();
-        
-        // Wait for all individuals to be evaluated
-        while (this.population.some(ind => !ind.fitness)) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
         
         // Get best result
         const best = this.population.reduce((best, current) => {
             return (!best || current.fitness < best.fitness) ? current : best;
         }, null);
         
+        console.log(`Generation ${i + 1} best fitness:`, best.fitness);
+        
         // If we've found a good enough solution, stop early
         if (best && best.fitness < this.config.fitnessThreshold) {
+            console.log('Found solution meeting fitness threshold');
             break;
         }
     }
@@ -1526,4 +1691,4 @@ GeneticAlgorithm.prototype.run = async function() {
     return this.population.reduce((best, current) => {
         return (!best || current.fitness < best.fitness) ? current : best;
     }, null);
-};
+    };
