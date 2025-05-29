@@ -566,41 +566,55 @@ export default function Inserts() {
                                             ));
 
                                             // Render multi-part SKUs
-                                            const multiPartCards = Object.entries(multiParts).map(([baseSku, groupedInserts]) => (
-                                                <div
-                                                    key={baseSku}
-                                                    className="bg-white rounded-lg shadow flex flex-col items-center p-3 border border-gray-200"
-                                                >
-                                                    <div className="flex items-center justify-center w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden">
-                                                        {groupedInserts[0].svgUrl ? (
-                                                            <img
-                                                                src={groupedInserts[0].svgUrl}
-                                                                alt={baseSku}
-                                                                className="object-contain w-20 h-16"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-gray-400 text-xs">No image</span>
-                                                        )}
+                                            const multiPartCards = Object.entries(multiParts).map(([baseSku, groupedInserts]) => {
+                                                // Get the base SKU image URL
+                                                let imageFileName = baseSku;
+                                                
+                                                // Special case for SFI-HSKT
+                                                if (baseSku === 'SFI-HSKT' && selectedBrand) {
+                                                    imageFileName = `${selectedBrand}-${baseSku}`;
+                                                }
+
+                                                const baseSkuImageUrl = supabase.storage
+                                                    .from('inserts')
+                                                    .getPublicUrl('/' + imageFileName + '.png').data?.publicUrl;
+
+                                                return (
+                                                    <div
+                                                        key={baseSku}
+                                                        className="bg-white rounded-lg shadow flex flex-col items-center p-3 border border-gray-200"
+                                                    >
+                                                        <div className="flex items-center justify-center w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden">
+                                                            {baseSkuImageUrl ? (
+                                                                <img
+                                                                    src={baseSkuImageUrl}
+                                                                    alt={baseSku}
+                                                                    className="object-contain w-20 h-16"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-gray-400 text-xs">No image</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-center font-bold text-black text-sm mt-1">
+                                                            {baseSku}
+                                                        </div>
+                                                        <div className="mt-2 w-full">
+                                                            <details className="w-full">
+                                                                <summary className="text-sm text-gray-600 cursor-pointer hover:text-blue-600">
+                                                                    {groupedInserts.length} parts
+                                                                </summary>
+                                                                <div className="mt-2 pl-2 border-l-2 border-gray-200">
+                                                                    {groupedInserts.map((insert: Insert, idx: number) => (
+                                                                        <div key={idx} className="text-xs text-gray-600 py-1">
+                                                                            {insert.sku}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </details>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-center font-bold text-black text-sm mt-1">
-                                                        {baseSku}
-                                                    </div>
-                                                    <div className="mt-2 w-full">
-                                                        <details className="w-full">
-                                                            <summary className="text-sm text-gray-600 cursor-pointer hover:text-blue-600">
-                                                                {groupedInserts.length} parts
-                                                            </summary>
-                                                            <div className="mt-2 pl-2 border-l-2 border-gray-200">
-                                                                {groupedInserts.map((insert: Insert, idx: number) => (
-                                                                    <div key={idx} className="text-xs text-gray-600 py-1">
-                                                                        {insert.sku}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </details>
-                                                    </div>
-                                                </div>
-                                            ));
+                                                );
+                                            });
 
                                             return [...singlePartCards, ...multiPartCards];
                                         })()}
