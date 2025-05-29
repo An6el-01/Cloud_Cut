@@ -495,9 +495,35 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       return acc;
     }, {});
 
-    //Check if this needs to be updated
+    // Filter out orders with no manufacturing items if we're in manufacturing view
+    let filteredOrders = allOrders;
+    if (view === 'manufacturing') {
+      console.log('Filtering orders for manufacturing view. Total orders before filtering:', allOrders.length);
+      filteredOrders = allOrders.filter(order => {
+        const items = allOrderItemsMap[order.order_id as string] || [];
+        // Check for any manufacturing items (SFI, SFC) or uncompleted medium sheets
+        const hasManufacturingItems = items.some((item: OrderItem) => {
+          const isManufacturingItem = item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC');
+          const isMediumSheet = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'].some(pattern => 
+            item.sku_id.includes(pattern)
+          );
+          // Include the item if it's a manufacturing item or an uncompleted medium sheet
+          return isManufacturingItem || (isMediumSheet && !item.completed);
+        });
+
+        if (!hasManufacturingItems) {
+          console.log(`Order ${order.order_id} filtered out. Items:`, items.map(item => ({
+            sku_id: item.sku_id,
+            completed: item.completed
+          })));
+        }
+        return hasManufacturingItems;
+      });
+      console.log(`Filtered out ${allOrders.length - filteredOrders.length} orders with no manufacturing items`);
+    }
+
     // Calculate priority for each order based on its items and sort ALL orders
-    const ordersWithPriority = allOrders.map(order => {
+    const ordersWithPriority = filteredOrders.map(order => {
       const typedOrder = order as SupabaseOrderItem;
       const items = allOrderItemsMap[typedOrder.order_id] || [];
       const priority = items.length > 0 
@@ -506,13 +532,12 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       return { ...typedOrder, calculatedPriority: priority } as unknown as OrderWithPriority;
     });
 
-    //Check if this needs to be updated
     // Sort ALL orders by priority in descending order
     const sortedOrders = ordersWithPriority.sort((a, b) => 
       a.calculatedPriority - b.calculatedPriority
     );
 
-    // We still calculate pagination info for the UI, but store ALL orders in state
+    // Calculate pagination info for the UI
     const startIndex = (page - 1) * perPage;
     const endIndex = startIndex + perPage;
     const paginatedOrders = sortedOrders.slice(startIndex, endIndex);

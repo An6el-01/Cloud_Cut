@@ -1,3 +1,10 @@
+//**
+// This file contains various selector which we use to separate the orders and their respective items by case.
+// Allows the UI to quickly fetch orders for the current view.
+// Doesn't filter the items themselves just the orders.
+//  */
+
+
 import { createSelector } from '@reduxjs/toolkit';
 import { RootState } from '../store';
 import { OrderItem } from '@/types/redux';

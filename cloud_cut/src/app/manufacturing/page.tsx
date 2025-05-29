@@ -2,6 +2,7 @@
 
 import Navbar from "@/components/Navbar";
 import ManuConfirm from "@/components/manuConfirm";
+import MediumSheetConfirm from "@/components/mediumSheetConfirm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -37,13 +38,14 @@ export default function Manufacturing() {
   const { currentPage, loading, error, } = useSelector((state: RootState) => state.orders);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
-  // No need to filter orders since fetchOrdersFromSupabase already filters by "Completed"
+
   const totalPages = Math.ceil(totalOrders / ordersPerPage);
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isNesting, setIsNesting] = useState(false);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showManuConfirmDialog, setShowManuConfirmDialog] = useState(false);
+  const [showMediumSheetConfirmDialog, setShowMediumSheetConfirmDialog] = useState(false);
   const [pendingItemToComplete, setPendingItemToComplete] = useState<{
     orderId: string;
     itemId: string;
@@ -78,6 +80,7 @@ export default function Manufacturing() {
     // Allow tab changes for other roles
     setFirstColTab(tab);
   };
+
   // Get all order items from the state
   const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
   // State to track orders with medium sheets
@@ -124,22 +127,31 @@ export default function Manufacturing() {
   const itemsByMediumSheet = useSelector((state: RootState) => {
     // Get all order items from the state, not just the ones for the current page
     const allOrderItems = Object.values(state.orders.orderItems).flat();
+    console.log('All order items in Medium Sheets tab:', allOrderItems.map(item => ({
+      order_id: item.order_id,
+      sku_id: item.sku_id,
+      completed: item.completed
+    })));
 
     // Define valid medium sheet patterns
     const validMediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
 
-    return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
+    const result = allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
       // Check if this is a valid medium sheet SKU
       const isMediumSheet = validMediumSheetPatterns.some(pattern =>
         item.sku_id.startsWith('SFS-') && item.sku_id.includes(pattern) && !item.completed
       );
 
       if (isMediumSheet) {
+        console.log(`Found medium sheet item: ${item.sku_id} in order ${item.order_id}`);
         // Add the item quantity to the total for this SKU
         acc[item.sku_id] = (acc[item.sku_id] || 0) + item.quantity;
       }
       return acc;
     }, {});
+
+    console.log('Medium sheet quantities by SKU:', result);
+    return result;
   });
 
   // Format medium sheet SKU to display the actual product name from inventory
@@ -243,43 +255,29 @@ export default function Manufacturing() {
       }));
     }
 
-    // If we have order IDs, fetch them from the database
+    // If we have order IDs, get them from the Redux store
     if (orderIdsArray.length > 0) {
-      // Fetch order data from supabase in the background
       setLoadingMediumSheetOrders(true);
 
-      const fetchOrders = async () => {
-        try {
-          const { data: fetchedOrders, error } = await supabase
-            .from('orders')
-            .select('*')
-            .in('order_id', orderIdsArray)
-            .eq('status', 'Pending')
-            .eq('manufactured', false);
+      try {
+        // Get orders from Redux state instead of making a new query
+        const ordersFromStore = orders.filter(order => 
+          orderIdsArray.includes(order.order_id)
+        );
 
-          if (error) {
-            console.error('Error fetching orders for medium sheet:', error);
-            return;
-          }
+        console.log(`Found ${ordersFromStore.length} orders for medium sheet ${sku}`);
 
-          console.log(`Fetched ${fetchedOrders?.length || 0} orders for medium sheet ${sku}`);
-
-          if (fetchedOrders) {
-            // Type casting to ensure we're setting Order[] type
-            const typedOrders = fetchedOrders as unknown as Order[];
-            setOrdersWithMediumSheets(prev => ({
-              ...prev,
-              [sku]: typedOrders
-            }));
-          }
-        } catch (err) {
-          console.error('Error in findOrdersWithMediumSheet:', err);
-        } finally {
-          setLoadingMediumSheetOrders(false);
+        if (ordersFromStore.length > 0) {
+          setOrdersWithMediumSheets(prev => ({
+            ...prev,
+            [sku]: ordersFromStore
+          }));
         }
-      };
-
-      fetchOrders();
+      } catch (err) {
+        console.error('Error in findOrdersWithMediumSheet:', err);
+      } finally {
+        setLoadingMediumSheetOrders(false);
+      }
     }
 
     // Return whatever we currently have (might be empty initially)
@@ -336,16 +334,16 @@ export default function Manufacturing() {
   const filteredOrderProgress = orders.reduce((acc, order) => {
     const items = orderItemsById[order.order_id] || [];
     const filteredItems = filterItemsBySku(items);
-
     if (filteredItems.length === 0) {
       acc[order.order_id] = "N/A";
     } else {
       const completedCount = filteredItems.filter(item => item.completed).length;
       acc[order.order_id] = `${completedCount}/${filteredItems.length}`;
     }
-
     return acc;
   }, {} as Record<string, string>);
+
+  // This needs to be done on the syncOrders Thunk and not here!!!
 
   // Function to automatically mark orders with no manufacturing items as manufactured
   // Leave this as is for now (syncOrders Thunk Breaks if this is deleted)
@@ -494,18 +492,6 @@ export default function Manufacturing() {
     };
   }, [dispatch, currentPage]);
 
-  useEffect(() => {
-    // Only run this effect when orders or orderItemsById change
-    if (orders.length > 0 && Object.keys(orderItemsById).length > 0) {
-      // Debounce the function call to prevent multiple executions
-      const timer = setTimeout(() => {
-        autoMarkOrdersWithNoManufacturingItems();
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [orders, orderItemsById]);
-
   // Run auto-processing when view is set to manufacturing
   useEffect(() => {
     if (currentView === 'manufacturing' && orders.length > 0) {
@@ -517,6 +503,7 @@ export default function Manufacturing() {
       return () => clearTimeout(timer);
     }
   }, [currentView, orders.length]);
+  
   // Function to handle clicking on an order row in the 'Orders With' section
   const handleOrderClick = async (orderId: string) => {
     try {
@@ -651,21 +638,22 @@ export default function Manufacturing() {
         return;
       }
 
-      // Get the relevant items (those with SKUs starting with SFI, SFC, or SFS)
-      const relevantItems = filterItemsBySku(selectedOrderItems);
+      // Get the relevant items (they're already filtered in the store)
+      const relevantItems = selectedOrderItems;
+      const filteredItems = filterItemsBySku(relevantItems);
 
-      // Count how many items are already completed
-      const completedItems = relevantItems.filter(item =>
+      // Count how many filtered items are already completed
+      const completedFilteredItems = filteredItems.filter(item =>
         item.completed || item.id === itemId // Count the current item if it's being marked as completed
       );
 
-      // Check if this is the last item to complete
-      if (completedItems.length === relevantItems.length && completed) {
-        console.log("Manufacturing: Last item completion detected, setting up dialog", {
+      // Check if this is the last filtered item to complete
+      if (completedFilteredItems.length === filteredItems.length && completed) {
+        console.log("Manufacturing: Last filtered item completion detected, setting up dialog", {
           orderId,
           itemId,
-          relevantItems: relevantItems.length,
-          completedItems: completedItems.length
+          filteredItems: filteredItems.length,
+          completedFilteredItems: completedFilteredItems.length
         });
 
         // Store the pending item to complete
@@ -695,11 +683,61 @@ export default function Manufacturing() {
         });
 
         // Show confirmation dialog
-        setShowConfirmDialog(true);
+        setShowManuConfirmDialog(true);
       } else {
-        // Not the last item, just mark it as completed
+        // Not the last filtered item, just mark it as completed
         dispatch(updateItemCompleted({ orderId, itemId, completed }));
       }
+    });
+  };
+
+  const handleManufactureOrder = (orderId: string) => {
+    // Close the confirmation dialog immediately
+    setShowManuConfirmDialog(false);
+    setPendingItemToComplete(null);
+
+    return Sentry.startSpan({
+      name: 'handleManufactureOrder',
+      op: 'business.function'
+    }, async () => {
+      console.log("Manufacturing: handleManufactureOrder called with: ", {
+        orderId,
+      });
+
+      // Mark order as manufactured
+      setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
+
+      console.log(`Manufacturing: Marking Order ${orderId} as manufactured`);
+      // Show loading state
+      setIsRefreshing(true);
+
+      try{
+        // Update the manufactured status in Redux and Supabase
+        dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
+      } catch (error) {
+        console.error("Error marking order as manufactured (handleManufactureOrder):", error);
+      }
+
+      // Refresh the orders list after a delay to ensure updates complete
+      setTimeout(() => {
+        console.log('Refreshing orders after processing');
+
+        // Refresh orders data
+        dispatch(fetchOrdersFromSupabase({
+          page: currentPage,
+          perPage: ordersPerPage,
+          manufactured: false,
+          packed: false,
+          status: 'Pending',
+          view: 'manufacturing'
+        }))
+        .finally(() => {
+          setIsRefreshing(false);
+          // Clear pending states
+          setPendingManufacturedOrders(new Set());
+          setCheckedOrders(new Set());
+        });
+      }, 2000);
     });
   };
 
@@ -716,7 +754,7 @@ export default function Manufacturing() {
       });
 
       // Close the confirmation dialog
-      setShowConfirmDialog(false);
+      setShowManuConfirmDialog(false);
 
       // Reset the orderIds arrays immediately
       setOrderIdsToPacking([]);
@@ -737,7 +775,7 @@ export default function Manufacturing() {
           // Update the manufactured status in Redux and Supabase
           dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
         } catch (error) {
-          console.error("Error marking order as manufactured:", error);
+          console.error("Error marking order as manufactured (handleMarkManufactured):", error);
         }
       }
 
@@ -867,7 +905,11 @@ export default function Manufacturing() {
       );
     }
 
-    const ordersWithSheet = findOrdersWithMediumSheet(sku);
+    // Get orders from Redux state that have this medium sheet
+    const ordersWithSheet = orders.filter(order => {
+      const items = allOrderItems[order.order_id] || [];
+      return items.some(item => item.sku_id === sku && !item.completed);
+    });
 
     if (ordersWithSheet.length === 0) {
       return (
@@ -1026,7 +1068,7 @@ export default function Manufacturing() {
                       }
 
                       // Show the confirmation dialog for the single order
-                      setShowConfirmDialog(true);
+                      setShowMediumSheetConfirmDialog(true);
                     });
                   }}
                   className="sr-only peer"
@@ -1146,7 +1188,7 @@ export default function Manufacturing() {
               });
             }, 0);
 
-            setShowConfirmDialog(true);
+            setShowMediumSheetConfirmDialog(true);
 
             // Log that we've triggered the dialog
             console.log("Manufacturing: Batch confirmation dialog triggered");
@@ -1176,13 +1218,11 @@ export default function Manufacturing() {
   const calculateOrderProgress = (orderId: string): string => {
     // Get all items for this order from the global allOrderItems
     const items = allOrderItems[orderId] || [];
-    const filteredItems = filterItemsBySku(items);
-
-    if (filteredItems.length === 0) {
+    if (items.length === 0) {
       return "N/A";
     } else {
-      const completedCount = filteredItems.filter(item => item.completed).length;
-      return `${completedCount}/${filteredItems.length}`;
+      const completedCount = items.filter(item => item.completed).length;
+      return `${completedCount}/${items.length}`;
     }
   };
 
@@ -2561,18 +2601,32 @@ export default function Manufacturing() {
         </div>
       )}
 
-      {/* Confirmation Dialog */}
-      {showConfirmDialog && (
+      {/** Manu Confirmation Dialog */}
+      {showManuConfirmDialog && (
         <ManuConfirm
-          isOpen={showConfirmDialog}
+          isOpen={showManuConfirmDialog}
           onClose={() => {
-            console.log("Manufacturing: ManuConfirm onClose triggered, current dialog state:", {
+            console.log("Manufacturing: ManuConfirm onClose triggered");
+            setShowManuConfirmDialog(false);
+            setPendingItemToComplete(null);
+          }}
+          onConfirm={handleManufactureOrder}
+          orderId={selectedOrderId}
+        />
+      )}
+
+      {/*  Medium Sheet Confirmation Dialog */}
+      {showMediumSheetConfirmDialog && (
+        <MediumSheetConfirm
+          isOpen={showMediumSheetConfirmDialog}
+          onClose={() => {
+            console.log("Manufacturing: MediumSheetConfirm onClose triggered, current dialog state:", {
               orderIdsToPacking,
               orderIdsToMarkCompleted,
               currentOrderProgress,
               pendingItemToComplete
             });
-            setShowConfirmDialog(false);
+            setShowMediumSheetConfirmDialog(false);
             // Clear any pending item state
             setPendingItemToComplete(null);
             // Reset all checkbox states

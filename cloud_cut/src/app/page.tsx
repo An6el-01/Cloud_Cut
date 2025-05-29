@@ -8,6 +8,8 @@ import { useDispatch } from 'react-redux';
 import { setUser, setUserProfile } from '@/redux/slices/authSlice';
 import { getSupabaseClient } from '@/utils/supabase';
 import { User } from '@supabase/supabase-js';
+import { syncOrders } from '@/redux/thunks/ordersThunks';
+import { store } from '@/redux/store';
 
 interface Profile {
   role: string;
@@ -119,6 +121,9 @@ export default function Home() {
               email: profile.email
             }
           }));
+          
+          // Trigger sync on login
+          store.dispatch(syncOrders());
           
           // Redirect based on user role
           redirectBasedOnRole(profile.role as string);

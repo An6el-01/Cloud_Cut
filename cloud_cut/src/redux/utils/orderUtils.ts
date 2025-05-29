@@ -1,3 +1,9 @@
+//**
+// This file handles the processing of inserting items to their designated tables for each order.
+// Here we do various checks to avoid adding duplicate items to the tables.
+// Duplicate order items error is not in here.
+// */
+
 import { OrderItem } from '@/types/redux';
 import { SupabaseClient } from '@supabase/supabase-js';
 

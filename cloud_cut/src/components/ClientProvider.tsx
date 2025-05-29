@@ -3,8 +3,9 @@
 import { Provider } from 'react-redux';
 import { store } from '@/redux/store';
 import { ReactNode, useEffect } from "react";
-import { syncOrders } from '@/redux/thunks/ordersThunks';
+import { syncOrders, initialFetch } from '@/redux/thunks/ordersThunks';
 import { setUser, setUserProfile } from '@/redux/slices/authSlice';
+import AutoLogout from './AutoLogout';
 
 interface ClientProviderProps {
     children: ReactNode;
@@ -29,8 +30,8 @@ export default function ClientProvider({ children }: ClientProviderProps) {
             console.error('Error loading auth state from localStorage:', error);
         }
 
-        // Initial sync
-        store.dispatch(syncOrders());
+        // Initial fetch of current state
+        store.dispatch(initialFetch());
 
         // Set up interval for periodic syncs
         const intervalId = setInterval(() => {
@@ -41,5 +42,10 @@ export default function ClientProvider({ children }: ClientProviderProps) {
         return () => clearInterval(intervalId);
     }, []);
 
-    return <Provider store={store}>{children}</Provider>;
+    return (
+        <Provider store={store}>
+            <AutoLogout />
+            {children}
+        </Provider>
+    );
 }
