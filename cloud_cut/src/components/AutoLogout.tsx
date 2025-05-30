@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clearAuth } from '@/redux/slices/authSlice';
 import { signOut } from '@/utils/supabase';
 
-// Time in milliseconds (30 minutes)
+// Time in milliseconds (9 hours)
 const INACTIVITY_TIMEOUT = 9 * 60 * 60 * 1000;
 
 export default function AutoLogout() {

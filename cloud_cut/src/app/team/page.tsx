@@ -635,6 +635,7 @@ export default function Team() {
                   <option value="SiteAdmin">Site Admin</option>
                   <option value="Manager">Manager</option>
                   <option value="Operator">Operator</option>
+                  <option value="Packer">Packer</option>
                 </select>
               </div>
 

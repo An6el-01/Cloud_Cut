@@ -46,7 +46,7 @@ export default function Stock() {
     const userProfile = useSelector((state: RootState) => state.auth.userProfile);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 9;
+    const itemsPerPage = 15;
     const [searchQuery, setSearchQuery] = useState('');
     const [editingItem, setEditingItem] = useState<StockItem | null>(null);
     const [editValue, setEditValue] = useState<number>(0);

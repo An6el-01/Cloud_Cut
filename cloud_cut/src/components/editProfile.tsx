@@ -16,6 +16,10 @@ export default function EditProfile({ user, onClose, onSave } : EditProfileProps
     const [ success, setSuccess ] = useState<string | null>(null);
     const [ editedUser, setEditedUser ] = useState<User>(user);
 
+    // Update editedUser when user prop changes
+    useEffect(() => {
+        setEditedUser(user);
+    }, [user]);
 
     //Refs for accessibility
     const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -217,6 +221,7 @@ export default function EditProfile({ user, onClose, onSave } : EditProfileProps
                                     <option value="SiteAdmin">Site Admin</option>
                                     <option value="Manager">Manager</option>
                                     <option value="Operator">Operator</option>
+                                    <option value="Packer">Packer</option>
                                 </select>
                             </div>
                         </div>
