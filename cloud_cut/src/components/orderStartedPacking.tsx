@@ -468,14 +468,14 @@ export default function StartPacking({
                                 {selectedOrderItems.length > 0 && (
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium text-gray-600">
-                                            {selectedOrderItems.filter(item => item.completed).length}/{selectedOrderItems.length}
+                                            {checkedItems.size}/{selectedOrderItems.length}
                                         </span>
                                         <div className="w-32 bg-gray-200 rounded-full h-2.5 overflow-hidden">
                                             <div
                                                 className="bg-green-600 h-2.5 rounded-full transition-all duration-500 ease-out"
                                                 style={{ 
                                                     width: `${selectedOrderItems.length > 0 
-                                                        ? (selectedOrderItems.filter(item => item.completed).length / selectedOrderItems.length) * 100 
+                                                        ? (checkedItems.size / selectedOrderItems.length) * 100 
                                                         : 0}%` 
                                                 }}
                                                 aria-hidden="true"

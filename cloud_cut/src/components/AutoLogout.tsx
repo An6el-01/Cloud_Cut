@@ -7,7 +7,7 @@ import { clearAuth } from '@/redux/slices/authSlice';
 import { signOut } from '@/utils/supabase';
 
 // Time in milliseconds (30 minutes)
-const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
+const INACTIVITY_TIMEOUT = 9 * 60 * 60 * 1000;
 
 export default function AutoLogout() {
     const dispatch = useDispatch();
