@@ -57,17 +57,28 @@ export default function Packing() {
     const [retailPackTableBPage, setRetailPackTableBPage] = useState(1);
 
     const orderProgress = useSelector((state: RootState) =>
-        orders.reduce((acc, order) => {
+        state.orders.allOrders.reduce((acc, order) => {
             acc[order.order_id] = selectOrderProgress(order.order_id)(state);
             return acc;
         }, {} as Record<string, string>)
     );
 
     const orderItemsById = useSelector((state: RootState) =>
-        orders.reduce((acc, order) => {
+        state.orders.allOrders.reduce((acc, order) => {
             acc[order.order_id] = selectOrderItemsById(order.order_id)(state);
             return acc;
         }, {} as Record<string, OrderItem[]>)
+    );
+
+    // Calculate priorities for all orders
+    const orderPriorities = useSelector((state: RootState) =>
+        state.orders.allOrders.reduce((acc, order) => {
+            const orderItems = state.orders.orderItems[order.order_id] || [];
+            acc[order.order_id] = orderItems.length > 0
+                ? Math.max(...orderItems.map((item) => item.priority || 0))
+                : 0;
+            return acc;
+        }, {} as Record<string, number>)
     );
 
     useEffect(() => {
@@ -400,19 +411,41 @@ export default function Packing() {
     };
     //Function to get the items by retail pack
     const itemsByRetailPack = useSelector((state: RootState) => {
-        const allOrderItems = state.orders.packingOrders.flatMap((order: Order) => {
+        // Debug log for all orders in packing view
+        console.log('All orders in packing view:', state.orders.allOrders);
+
+        const allOrderItems = state.orders.allOrders.flatMap((order: Order) => {
             const orderItems = state.orders.orderItems[order.order_id] || [];
+            // Debug log for each order's items
+            console.log(`Items for order ${order.order_id}:`, orderItems);
             return orderItems;
         });
-        return allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
+
+        // Debug log for all items
+        console.log('All order items:', allOrderItems);
+
+        const retailPackItems = allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
             if (item.item_name.includes('Retail Pack')) {
+                // Debug log for each retail pack item
+                console.log('Processing retail pack item:', {
+                    itemName: item.item_name,
+                    quantity: item.quantity,
+                    orderId: item.order_id,
+                    skuId: item.sku_id,
+                    completed: item.completed
+                });
                 acc[item.item_name] = (acc[item.item_name] || 0) + item.quantity;
             }
             return acc;
         }, {} as Record<string, number>);
+
+        // Debug log for final retail pack quantities
+        console.log('Retail pack quantities:', retailPackItems);
+        return retailPackItems;
     });
 
     const handleRetailPackClick = (retailPack: string) => {
+        console.log('Retail pack clicked:', retailPack);
         setSelectedRetailPack(retailPack);
         // Switch to orders tab
         setActiveTab('orders');
@@ -445,18 +478,42 @@ export default function Packing() {
         
         // Return cached orders if already fetched
         if (ordersWithRetailPacks[retailPack]) {
+            console.log('Using cached orders for retail pack:', retailPack, ordersWithRetailPacks[retailPack]);
             return ordersWithRetailPacks[retailPack];
         }
         
         // Find all order IDs that have this retail pack
         const orderIdsWithRetailPack = new Set<string>();
         
+        // Debug log for all order items
+        console.log('Searching for orders with retail pack:', retailPack);
+        console.log('All order items available:', allOrderItems);
+        
         // Check each order's items for the retail pack name
         Object.entries(allOrderItems).forEach(([orderId, items]) => {
-            if (items.some(item => item.item_name === retailPack && !item.completed)) {
+            const matchingItems = items.filter(item => item.item_name === retailPack);
+            console.log(`Checking order ${orderId} for ${retailPack}:`, {
+                allItems: items,
+                matchingItems: matchingItems,
+                completedItems: matchingItems.filter(item => item.completed),
+                uncompletedItems: matchingItems.filter(item => !item.completed)
+            });
+            
+            if (matchingItems.length > 0) {
+                console.log('Found matching items in order:', {
+                    orderId,
+                    items: matchingItems.map(item => ({
+                        itemName: item.item_name,
+                        quantity: item.quantity,
+                        completed: item.completed
+                    }))
+                });
                 orderIdsWithRetailPack.add(orderId);
             }
         });
+        
+        // Debug log for found order IDs
+        console.log('Order IDs with retail pack:', Array.from(orderIdsWithRetailPack));
         
         // Convert Set to Array
         const orderIdsArray = Array.from(orderIdsWithRetailPack);
@@ -489,7 +546,7 @@ export default function Packing() {
                         return;
                     }
                     
-                    console.log(`Fetched ${fetchedOrders?.length || 0} orders for retail pack ${retailPack}`);
+                    console.log(`Fetched ${fetchedOrders?.length || 0} orders for retail pack ${retailPack}:`, fetchedOrders);
                     
                     if (fetchedOrders) {
                         // Type casting to ensure we're setting Order[] type
@@ -505,6 +562,11 @@ export default function Packing() {
                             
                             return priorityA - priorityB;
                         });
+                        
+                        console.log('Sorted orders by priority:', typedOrders.map(order => ({
+                            orderId: order.order_id,
+                            priority: Math.min(...(allOrderItems[order.order_id] || []).map(item => item.priority || 10))
+                        })));
                         
                         setOrdersWithRetailPacks(prev => ({
                             ...prev,
@@ -780,7 +842,7 @@ export default function Packing() {
                                                             >
                                                                 <td className="px-4 py-2 text-black">{order.order_id}</td>
                                                                 <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                                                                <td className="px-4 py-2 text-black">{displayPriority}</td>
+                                                                <td className="px-4 py-2 text-black">{orderPriorities[order.order_id]}</td>
                                                                 <td className="px-4 py-2 text-black">
                                                                     {new Date(order.order_date).toLocaleDateString("en-GB")}
                                                                 </td>
