@@ -46,6 +46,7 @@ export const syncFinishedStock = createAsyncThunk(
                     name: item.name,
                     sku: item.sku,
                     stock_level: item.stock_level
+                    
                 };
             });
 

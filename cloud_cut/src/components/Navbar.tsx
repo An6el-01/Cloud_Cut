@@ -40,6 +40,7 @@ const Navbar = () => {
         pathname !== '/profile' && 
         pathname !== '/' && 
         pathname !== '/resetPassword' && 
+        pathname !== '/stock' &&
         !pathname.startsWith('/api/')) {
       console.log('NavBar - Redirecting Packer from unauthorized path:', pathname);
       router.push('/packing');
@@ -95,14 +96,13 @@ const Navbar = () => {
               </Link>
             )}
 
-            {!isPackerRole && (
               <Link
                 href="/stock"
                 className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
               >
                 Stock
               </Link>
-            )}
+
 
             {!isPackerRole && (
               <Link

@@ -8,7 +8,8 @@ import * as Sentry from '@sentry/nextjs';
 import Image from "next/image";
 import { fetchFinishedStockFromSupabase, syncFinishedStock } from "@/redux/thunks/stockThunk";
 import { getSupabaseClient } from "@/utils/supabase";
-
+import SheetBookingOut from "@/components/sheetBookingOut";
+import { updateMediumSheetItem } from '@/utils/despatchCloud';
 
 // Define the type for stock items
 interface StockItem {
@@ -51,11 +52,27 @@ export default function Stock() {
     const [editingItem, setEditingItem] = useState<StockItem | null>(null);
     const [editValue, setEditValue] = useState<number>(0);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
-    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1'>('Medium Sheets');
+    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets'>('2 X 1 Sheets');
+    const [showSheetBookingOut, setShowSheetBookingOut] = useState(false);
+    const [damageTrackingTab, setDamageTrackingTab] = useState<'Aesthetic' | 'Dimensional'>('Aesthetic');
+    const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets'>('2 X 1 Sheets');
 
+
+    // Check if user has restricted role
+    const isRestrictedRole = userProfile?.role === 'Operator' || userProfile?.role === 'Packer';
+
+    // If user has restricted role, show access denied message
+    if (isRestrictedRole) {
+        console.log('Showing restricted access UI');
+        return (
+            <>
+                <NavBar />
+                <SheetBookingOut />
+            </>
+        );
+    }
 
     // Filter items to only show medium sheets and apply search filter
-    console.log('All items before filtering:', items);
     const mediumSheetItems = items
         .filter(item => item.sku?.toLowerCase().includes('sfs-100/50'))
         .filter(item => 
@@ -63,7 +80,6 @@ export default function Stock() {
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.stock.toString().includes(searchQuery)
         );
-    console.log('Filtered medium sheet items:', mediumSheetItems);
 
     const twoByOneItems = items
         .filter(item => /^SFS\d+[A-Z]$/.test(item.sku?.toUpperCase() || ''))
@@ -72,7 +88,6 @@ export default function Stock() {
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.stock.toString().includes(searchQuery)
         );
-    console.log('Filtered 2 X 1 items:', twoByOneItems);
         
     
     // Calculate pagination
@@ -83,18 +98,6 @@ export default function Stock() {
     const currentMediumSheetItems = mediumSheetItems.slice(startIndex, endIndex);
     const currentTwoByOneItems = twoByOneItems.slice(startIndex, endIndex);
 
-    // Add debug logging
-    useEffect(() => {
-        console.log('All stock items:', items);
-        console.log('Filtered medium sheet items:', items.filter((item: StockItem) => item.sku.startsWith('SFS-')));
-        console.log('Filtered 2 X 1 items:', items.filter((item: StockItem) => item.sku.startsWith('SFS')));
-    }, [items]);
-
-    // Debug log for table rendering
-    useEffect(() => {
-        console.log('Rendering table with medium sheets:', currentMediumSheetItems);
-        console.log('Rendering table with 2 X 1 items:', currentTwoByOneItems);
-    }, [currentMediumSheetItems, currentTwoByOneItems]);
 
     const handleRefresh = () => {
         setIsRefreshing(true);
@@ -126,7 +129,6 @@ export default function Stock() {
 
     const handleEdit = async (item: StockItem) => {
         try { 
-            console.log("Edit button clicked for item:", item);
             
             //Get the current session from Supabase
             const supabase = getSupabaseClient();
@@ -161,6 +163,8 @@ export default function Stock() {
 
         try {
             const supabase = getSupabaseClient();
+            
+            // First update Supabase
             const { error } = await supabase
                 .from('finished_stock')
                 .update({ 
@@ -170,8 +174,38 @@ export default function Stock() {
                 .eq('sku', editingItem.sku);
 
             if (error) {
-                console.error("Error updating stock:", error);
+                console.error("Error updating stock in Supabase:", error);
                 return;
+            }
+
+            // Always update DespatchCloud for any item
+            try {
+                // Find the corresponding DespatchCloud inventory item (by id)
+                // We already have editingItem.id, which should match the inventoryId in DespatchCloud
+                if (typeof editingItem.id === 'number') {
+                    await updateMediumSheetItem(editingItem.id, {
+                        stock_level: editValue.toString()
+                    });
+                    console.log('Successfully updated DespatchCloud inventory');
+                } else {
+                    // Fallback: fetch id from Supabase if not present
+                const { data: inventoryItem } = await supabase
+                    .from('finished_stock')
+                    .select('id')
+                    .eq('sku', editingItem.sku)
+                    .single();
+                if (inventoryItem && typeof inventoryItem.id === 'number') {
+                    await updateMediumSheetItem(inventoryItem.id, {
+                        stock_level: editValue.toString()
+                    });
+                        console.log('Successfully updated DespatchCloud inventory (fallback)');
+                    } else {
+                        console.warn('Could not find inventory id for DespatchCloud update');
+                    }
+                }
+            } catch (despatchError) {
+                console.error("Error updating DespatchCloud inventory:", despatchError);
+                // Continue with the UI update even if DespatchCloud update fails
             }
 
             // Clear editing state first
@@ -254,7 +288,7 @@ export default function Stock() {
         setDeleteConfirmItem(null);
     }
 
-    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1') => {
+    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1 Sheets') => {
         setTableTab(tab);
         setCurrentPage(1);  // Reset to page 1 when switching tabs
     };
@@ -262,6 +296,17 @@ export default function Stock() {
     const handleSubmit = () => {
         console.log('Report Damage Form Submitted');
     }
+
+    const handleDamageTrackingTabChange = (tab: 'Aesthetic' | 'Dimensional') => {
+        setDamageTrackingTab(tab);
+    }
+
+    const handleDamageTitleTabChange = (direction: 'left' | 'right') => {
+        setDamageTitleTab((prev) =>
+            prev === '2 X 1 Sheets' && direction === 'right' ? 'Medium Sheets' :
+            prev === 'Medium Sheets' && direction === 'left' ? '2 X 1 Sheets' : prev
+        );
+    };
 
     return (
         <div className="min-h-screen">
@@ -383,10 +428,19 @@ export default function Stock() {
                                         </span>
                                         <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
                                     </button>
-                                    {/**Add New Item Button */}
+                                    {/* Sheet Booking Out Toggle Button */}
+                                    {tableTab === '2 X 1 Sheets' && (
+                                        <button
+                                            className="flex items-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow transition-all duration-200 bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400"
+                                            aria-label="Sheet Booking Out"
+                                            onClick={() => setShowSheetBookingOut((prev) => !prev)}
+                                        >
+                                            Sheet Booking Out
+                                        </button>
+                                    )}
+                                    {/* Add New Item Button */}
                                     <button
-                                        className="flex items-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow transition-all duration-200
-                                            bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
+                                        className="flex items-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow transition-all duration-200 bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
                                         aria-label="Add New Item"
                                     >
                                         <span>
@@ -401,25 +455,26 @@ export default function Stock() {
                         <div className="mt-4 mb-2">
                             <div>
                                 <button
+                                    className={`px-4 py-2 text-md font-medium ${tableTab === '2 X 1 Sheets' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                    style={{ marginBottom: '-1px' }}
+                                    onClick={() => handleTableTabChange('2 X 1 Sheets')}
+                                >
+                                    2 X 1
+                                </button>
+                                <button
                                     className={`px-4 py-2 text-md font-medium ${tableTab === 'Medium Sheets' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
                                     style={{ marginBottom: '-1px' }}
                                     onClick={() => handleTableTabChange('Medium Sheets')}
                                 >
                                     Medium Sheets
                                 </button>
-                                <button
-                                    className={`px-4 py-2 text-md font-medium ${tableTab === '2 X 1' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
-                                    style={{ marginBottom: '-1px' }}
-                                    onClick={() => handleTableTabChange('2 X 1')}
-                                >
-                                    2 X 1
-                                </button>
+                               
                             </div>
                         </div>
 
                     </div>
                     <div className="overflow-x-auto bg-white h-[calc(94vh-300px)] flex flex-col">
-                        {tableTab === '2 X 1' ? (
+                        {tableTab === '2 X 1 Sheets' ? (
                             <div className="flex-1 flex flex-col">
                                 <div className="flex-1 overflow-y-auto">
                                     <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-20 table-auto">
@@ -737,18 +792,16 @@ export default function Stock() {
             
             {/**Damage Tracking Tab */}
             {activeTab === 'DamageTracking' && (
-                <div className="container mx-auto pt-6 ob-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
+                <div className="container mx-auto pt-40 ob-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
                     {/**Report Damage Section*/}
                     <div className="flex-1 min-w-0 max-w-[600px] flex flex-col bg-[#1d1d1d]/90 rounded-xl shadow-xl mb-8">
                         <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
-                            <h1 className="text-2xl font-bold text-white">Report A Damage</h1>
+                            <h1 className="text-2xl font-bold text-white">Report A Damage: {damageTitleTab}</h1>
                         </div>
                         <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between bg-white rounded-b-xl p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="flex flex-col gap-4">
-                                    <label className="font-semibold text-black" htmlFor="Type">
-                                        Type:
-                                    </label>
+                                    <label className="font-semibold text-black" htmlFor="Type">Type Of Damage:</label>
                                     <select
                                         id="type"
                                         name="type"
@@ -757,51 +810,245 @@ export default function Stock() {
                                         required
                                     >
                                         <option value="" disabled>Type...</option>
-                                        <option value="Cutting">Cutting</option>
-                                        <option value="Printing">Printing</option>
+                                        <option value="Aesthetic">Aesthetic Damage</option>
+                                        <option value="Dimensional">Dimensional Damage</option>
                                         <option value="Other">Other</option>
                                     </select>
                                     <label className="font-semibold text-black mt-2" htmlFor="description">Description:</label>
-                                    <input
+                                    <textarea
                                         id="description"
                                         name="description"
+                                        placeholder="Description..."
+                                        className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400 h-40 resize-none align-top"
+                                        required
+                                        rows={6}
+                                        style={{ verticalAlign: 'top' }}
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-4">
+                                    <label className="font-semibold text-black" htmlFor="depth">Depth:</label>
+                                    <input
+                                        id="depth"
+                                        name="depth"
+                                        type="text"
+                                        placeholder="Depth..."
+                                        className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        required
+                                    />
+                                    <label className="font-semibold text-black mt-2" htmlFor="quantity">Quantity:</label>
+                                    <input
+                                        id="quantity"
+                                        name="quantity"
+                                        type="number"
+                                        min="1"
+                                        placeholder="Quantity..."
+                                        className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        required
+                                    />
+                                    <label className="font-semibold text-black mt-2" htmlFor="colour">Colour:</label>
+                                    <input
+                                        id="colour"
+                                        name="colour"
                                         type="text"
                                         placeholder="Description..."
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
                                         required
                                     />
                                 </div>
-
                             </div>
+                            <button
+                                type="submit"
+                                className="mt-8 px-6 py-3 bg-gradient-to-r from-gray-950 to-red-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-black"
+                            >
+                                Submit
+                            </button>
                         </form>
                     </div>
+
+                    {/** Damage Tracking Section */}
+                    <div className="flex-1 min-w-0 max-w-[900px] flex flex-col rounded-xl shadow-xl mb-8 min-h-[600px]" style={{minHeight: '100%'}}>
+                        <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
+                            <div className="flex flex-row items-center justify-between w-full">
+                                <h1 className="text-white text-3xl font-semibold flex items-center gap-2">
+                                    {damageTitleTab === '2 X 1 Sheets' ? '2 X 1 Sheets' : 'Medium Sheets'}
+                                    <button
+                                        className="ml-2 p-1 rounded-full hover:bg-gray-700 transition-colors"
+                                        onClick={() => setDamageTitleTab(damageTitleTab === '2 X 1 Sheets' ? 'Medium Sheets' : '2 X 1 Sheets')}
+                                        aria-label="Next Title"
+                                    >
+                                        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                                    </button>
+                                </h1>
+                                {/* GitHub-style Color Legend to the right of the title */}
+                                <span className="flex flex-row items-center gap-1 bg-transparent">
+                                    <span className="text-xs text-gray-300 select-none">Less</span>
+                                    {[
+                                        'bg-red-100',
+                                        'bg-red-300',
+                                        'bg-red-400',
+                                        'bg-red-500',
+                                        'bg-red-600',
+                                    ].map((color, i) => (
+                                        <div key={i} className={`w-4 h-4 rounded border border-gray-400 ${color}`}></div>
+                                    ))}
+                                    <span className="text-xs text-gray-300 select-none">More</span>
+                                </span>
+                            </div>
+                            {/**Navigation Tools */}
+                            <div className="mt-4 mb-2">
+                                <div>
+                                    <button
+                                        className={`px-4 py-2 text-md font-medium ${damageTrackingTab === 'Aesthetic' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                        style={{ marginBottom: '-1px' }}
+                                        onClick={() => handleDamageTrackingTabChange('Aesthetic')}
+                                    >
+                                        Aesthetic Damage
+                                    </button>
+                                    <button
+                                        className={`px-4 py-2 text-md font-medium ${damageTrackingTab === 'Dimensional' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                        style={{ marginBottom: '-1px' }}
+                                        onClick={() => handleDamageTrackingTabChange('Dimensional')}
+                                    >
+                                        Dimensional Damage
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {/**Heat Map Section */}
+                        <div className="rounded-b-xl p-6 flex flex-col md:flex-row items-center gap-8 w-full justify-center flex-1 bg-white">
+                            {/* Heatmap Section: legend, grid, and column labels all aligned */}
+                            <div className="flex flex-col items-center w-fit justify-center flex-1">
+                                {/* Heatmap grid with row labels */}
+                                <div className="grid grid-cols-11 gap-x-2 gap-y-4 w-fit">
+                                    {['30mm','50mm','70mm'].map((size, rowIdx) => {
+                                        const dummy = [
+                                            [4,4,3,2,1,2,4,4,4,3],
+                                            [3,3,2,1,1,2,3,4,4,2],
+                                            [2,2,1,1,0,1,2,3,1,1],
+                                        ];
+                                        const colorMap = [
+                                            'bg-red-100',
+                                            'bg-red-300',
+                                            'bg-red-400',
+                                            'bg-red-500',
+                                            'bg-red-600',
+                                        ];
+                                        const valueMap = ['Very Low', 'Low', 'Medium', 'High', 'Very High'];
+                                        return [
+                                            // Row label
+                                            <span key={size} className="w-12 text-sm font-semibold text-[#2b3544] text-right mr-2 select-none flex items-center justify-end pr-2">{size}</span>,
+                                            // Heatmap squares
+                                            ...dummy[rowIdx].map((intensity, colIdx) => (
+                                                <div
+                                                    key={colIdx}
+                                                    className={`w-10 h-10 ml-1 rounded-lg border border-gray-300 shadow-sm transition-transform duration-150 cursor-pointer ${colorMap[intensity]} hover:scale-110 hover:shadow-lg`}
+                                                    title={`Damage: ${valueMap[intensity]}`}
+                                                    aria-label={`Damage: ${valueMap[intensity]}`}
+                                                ></div>
+                                            ))
+                                        ];
+                                    })}
+                                </div>
+                                {/* Column Identifiers (Color Names) on Bottom, aligned with grid */}
+                                <div className="grid grid-cols-11 gap-x-[19px] mt-3 w-fit">
+                                    <span></span>
+                                    {['Blue','Green','Black','Orange','Red','Teal','Yellow','Pink','Purple','Grey'].map((color) => (
+                                        <span key={color} className="text-xs font-semibold text-[#2b3544] text-center select-none w-10" style={{minWidth: '2.5rem'}}>{color}</span>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* Time Range Buttons */}
+                            <div className="flex flex-col gap-3 ml-0 md:ml-8 mt-8 md:mt-0 items-center w-full max-w-[120px]">
+                                <button className="px-4 py-2 rounded-full border border-gray-300 bg-red-200 text-[#2b3544] text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-red-300 transition-all duration-150 hover:bg-red-300 w-full">Month</button>
+                                <button className="px-4 py-2 rounded-full border border-gray-300 bg-white text-[#2b3544] text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 transition-all duration-150 hover:bg-gray-100 w-full">6 Months</button>
+                                <button className="px-4 py-2 rounded-full border border-gray-300 bg-white text-[#2b3544] text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 transition-all duration-150 hover:bg-gray-100 w-full">Year</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                        
             )}
 
             {/* Delete Confirmation Modal */}
             {deleteConfirmItem && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                        <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
-                        <> 
-                            Are you sure you want to delete the stock item <strong className="font-semibold">{deleteConfirmItem.item_name}" (SKU: {deleteConfirmItem.sku})
-                                </strong>"?
-                            This action cannot be undone.
-                        </>
-                        <div className="flex justify-end gap-4">
-                            <button
-                                onClick={cancelDelete}
-                                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={confirmDelete}
-                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-                            >
-                                Delete
-                            </button>
-                        </div>
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 animate-fadeIn"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-modal-title"
+              >
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 relative flex flex-col items-center animate-scaleIn">
+                  {/* Warning Icon */}
+                  <div className="mb-4">
+                    <svg className="w-12 h-14 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 20H3a2 2 0 01-1.72-2.97l9-16a2 2 0 013.44 0l9 16A2 2 0 0121 20z" />
+                    </svg>
+                  </div>
+                  {/* Close Button */}
+                  <button
+                    onClick={cancelDelete}
+                    className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 text-2xl font-bold focus:outline-none"
+                    aria-label="Close"
+                  >
+                    &times;
+                  </button>
+                  {/* Title */}
+                  <h3 id="delete-modal-title" className="text-xl font-bold text-red-600 mb-2 text-center">
+                    Delete Stock Item?
+                  </h3>
+                  {/* Description */}
+                  <p className="text-gray-700 text-center mb-4">
+                    Are you sure you want to <span className="font-semibold text-red-600">permanently delete</span> the stock item
+                    <br />
+                    <span className="font-semibold text-black">
+                      {deleteConfirmItem.item_name}
+                    </span>
+                    <span className="text-gray-500"> (SKU: {deleteConfirmItem.sku})</span>?
+                    <br />
+                    <span className="text-sm text-gray-500">This action cannot be undone.</span>
+                  </p>
+                  {/* Action Button */}
+                  <div className="flex justify-center gap-4 mt-2 w-full">
+                    <button
+                      onClick={confirmDelete}
+                      className="px-5 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors font-medium w-full"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                {/* Optional: Add fade/scale-in animation classes in your CSS */}
+                <style jsx>{`
+                  .animate-fadeIn {
+                    animation: fadeIn 0.2s;
+                  }
+                  .animate-scaleIn {
+                    animation: scaleIn 0.2s;
+                  }
+                  @keyframes fadeIn {
+                    from { opacity: 0 }
+                    to { opacity: 1 }
+                  }
+                  @keyframes scaleIn {
+                    from { transform: scale(0.95); opacity: 0 }
+                    to { transform: scale(1); opacity: 1 }
+                  }
+                `}</style>
+              </div>
+            )}
+
+            {/* SheetBookingOut Modal/Section */}
+            {showSheetBookingOut && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80" onClick={() => setShowSheetBookingOut(false)}>
+                    <div className="relative rounded-lg shadow-lg p-8 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                            onClick={() => setShowSheetBookingOut(false)}
+                            aria-label="Close Sheet Booking Out"
+                        >
+                            &times;
+                        </button>
+                        <SheetBookingOut />
                     </div>
                 </div>
             )}

@@ -15,7 +15,7 @@ import EditCompOrder from '@/components/editCompOrder';
 import DeleteCompletedOrder from '@/components/DeleteCompletedOrder';
 import * as Sentry from '@sentry/nextjs';
 import { fetchArchivedOrders } from '@/redux/thunks/ordersThunks';
-import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useRouter } from 'next/navigation';
 
 // Define types used by the dropdown component

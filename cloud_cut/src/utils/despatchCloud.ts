@@ -31,6 +31,13 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
   }
 
   try {
+    console.log('Making request to:', url);
+    console.log('Request options:', {
+      method: options.method,
+      headers: options.headers,
+      body: options.body ? JSON.parse(options.body as string) : undefined
+    });
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -39,6 +46,9 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
         ...options.headers,
       },
     });
+
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
     // If unauthorized, try to refresh token once
     if (response.status === 401) {
@@ -55,12 +65,24 @@ async function fetchWithAuth<T>(url: string, options: RequestInit = {}): Promise
       });
       
       if (!retryResponse.ok) {
+        const errorText = await retryResponse.text();
+        console.error('Retry request failed:', {
+          status: retryResponse.status,
+          statusText: retryResponse.statusText,
+          errorText
+        });
         throw new Error(`API request failed: ${retryResponse.statusText}`);
       }
       return retryResponse.json();
     }
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Request failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText
+      });
       throw new Error(`API request failed: ${response.statusText}`);
     }
     return response.json();
@@ -313,6 +335,77 @@ export async function fetchInventory(
     }
   } catch (error) {
     console.error('Error fetching inventory:', error);
+    throw error;
+  }
+}
+
+export async function updateMediumSheetItem(
+  inventoryId: number,
+  updateData: {
+    stock_level?: string;
+    [key: string]: any;
+  }
+): Promise<any> {
+  // Fetch the inventory item to verify existence (optional, can be skipped if you trust the ID)
+  const fetchUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryId}`;
+  console.log('Fetching inventory item:', fetchUrl);
+
+  try {
+    const inventoryItem = await fetchWithAuth<any>(fetchUrl);
+    console.log('Fetched inventory item:', inventoryItem);
+
+    if (!inventoryItem || !inventoryItem.id) {
+      throw new Error('Could not fetch inventory item details');
+    }
+
+    // Use the correct endpoint for updating stock
+    const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}/stock`;
+    console.log('Updating inventory item stock:', url);
+
+    // Convert stock_level to number if it exists
+    const stockLevel = updateData.stock_level ? parseInt(updateData.stock_level) : undefined;
+    if (typeof stockLevel !== 'number' || isNaN(stockLevel)) {
+      throw new Error('Invalid stock_level value');
+    }
+    const payload = { stock_level: stockLevel };
+    console.log('Stock update data being sent:', payload);
+    console.log('Request URL:', url);
+    console.log('Request method:', 'POST');
+
+    const response = await fetchWithAuth<any>(url, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    console.log('Stock update response:', response);
+
+    // Optionally, fetch the updated item to verify the change
+    const verifyUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}`;
+    const verifyResponse = await fetchWithAuth<any>(verifyUrl);
+    console.log('Verification response:', verifyResponse);
+
+    // Compare stock levels as numbers
+    const expectedStockLevel = stockLevel;
+    const actualStockLevel = typeof verifyResponse.stock_level === 'string' 
+      ? parseInt(verifyResponse.stock_level) 
+      : verifyResponse.stock_level;
+
+    console.log('Stock level comparison:', {
+      expected: expectedStockLevel,
+      actual: actualStockLevel,
+      types: {
+        expected: typeof expectedStockLevel,
+        actual: typeof actualStockLevel
+      }
+    });
+
+    if (expectedStockLevel !== undefined && actualStockLevel !== expectedStockLevel) {
+      throw new Error(`Stock level update verification failed. Expected: ${expectedStockLevel}, Got: ${actualStockLevel}`);
+    }
+
+    return verifyResponse;
+  } catch (error) {
+    console.error('Error updating inventory item stock:', error);
     throw error;
   }
 }

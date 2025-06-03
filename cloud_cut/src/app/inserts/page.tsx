@@ -51,6 +51,9 @@ export default function Inserts() {
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
     const [relatedSkus, setRelatedSkus] = useState<Array<{sku: string, svgUrl: string | null}>>([]);
     const [isAddingNewInsert, setIsAddingNewInsert] = useState(false);
+    const [groupImage, setGroupImage] = useState<File | null>(null);
+    const [groupImagePreview, setGroupImagePreview] = useState<string | null>(null);
+    const groupImageInputRef = useRef<HTMLInputElement>(null);
 
     // Auto-dismiss submitMessage after 5 seconds
     useEffect(() => {
@@ -377,7 +380,15 @@ export default function Inserts() {
                 formData.append('dxf', file);
             });
 
-            const response = await fetch('/api/inserts/add', {
+            // Add group image if it exists and multiple parts is selected
+            if (isMultipleParts && groupImage) {
+                formData.append('groupImage', groupImage);
+            }
+
+            // Choose the appropriate API endpoint based on isMultipleParts
+            const endpoint = isMultipleParts ? '/api/inserts/insert-group-add' : '/api/inserts/add';
+            
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 body: formData
             });
@@ -392,6 +403,8 @@ export default function Inserts() {
                 // Reset form
                 form.reset();
                 setSelectedDXFFiles([]);
+                setGroupImage(null);
+                setGroupImagePreview(null);
                 // Refresh inserts list if the brand is selected
                 if (selectedBrand === brand) {
                     await fetchInsertsForBrand(brand);
@@ -399,7 +412,7 @@ export default function Inserts() {
             } else {
                 setSubmitMessage({
                     type: 'error',
-                    text: result.message
+                    text: result.message || 'Failed to add insert'
                 });
             }
         } catch (error) {
@@ -553,18 +566,35 @@ export default function Inserts() {
                     const cleanPath = svgPath.replace(/^\/+|\/+$/g, '');
                     console.log('[Delete Insert] Cleaned SVG path:', cleanPath);
                     
-                    const { data: storageData, error: storageError } = await supabase.storage
+                    // First check if the file exists
+                    const { data: fileExists, error: checkError } = await supabase.storage
                         .from('inserts')
-                        .remove([cleanPath]);
+                        .list('', {
+                            search: cleanPath
+                        });
                     
-                    console.log('[Delete Insert] Storage remove result:', {
-                        data: storageData,
-                        error: storageError?.message,
-                        path: cleanPath
+                    console.log('[Delete Insert] File existence check:', {
+                        exists: fileExists && fileExists.length > 0,
+                        count: fileExists?.length,
+                        error: checkError?.message
                     });
-                    
-                    if (storageError) {
-                        console.error('Error deleting SVG from storage:', storageError.message);
+
+                    if (fileExists && fileExists.length > 0) {
+                        const { data: storageData, error: storageError } = await supabase.storage
+                            .from('inserts')
+                            .remove([cleanPath]);
+                        
+                        console.log('[Delete Insert] Storage remove result:', {
+                            data: storageData,
+                            error: storageError?.message,
+                            path: cleanPath
+                        });
+                        
+                        if (storageError) {
+                            throw new Error(`Failed to delete SVG from storage: ${storageError.message}`);
+                        }
+                    } else {
+                        console.warn('[Delete Insert] File not found in storage:', cleanPath);
                     }
                 } else {
                     console.warn('[Delete Insert] Could not extract SVG path from URL:', selectedInsert.svgUrl);
@@ -575,18 +605,35 @@ export default function Inserts() {
 
             // Delete the insert from the table
             console.log('[Delete Insert] Deleting from table where sku =', selectedInsert.sku);
-            const { data: tableData, error: tableError } = await supabase
+            
+            // First check if the row exists
+            const { data: existingRows, error: checkError } = await supabase
                 .from('inserts')
-                .delete()
+                .select('sku')
                 .eq('sku', selectedInsert.sku);
             
-            console.log('[Delete Insert] Table delete result:', {
-                data: tableData,
-                error: tableError?.message
+            console.log('[Delete Insert] Row existence check:', {
+                exists: existingRows && existingRows.length > 0,
+                count: existingRows?.length,
+                error: checkError?.message
             });
-            
-            if (tableError) {
-                console.error('Error deleting insert from table:', tableError.message);
+
+            if (existingRows && existingRows.length > 0) {
+                const { data: tableData, error: tableError } = await supabase
+                    .from('inserts')
+                    .delete()
+                    .eq('sku', selectedInsert.sku);
+                
+                console.log('[Delete Insert] Table delete result:', {
+                    data: tableData,
+                    error: tableError?.message
+                });
+                
+                if (tableError) {
+                    throw new Error(`Failed to delete insert from table: ${tableError.message}`);
+                }
+            } else {
+                console.warn('[Delete Insert] Row not found in table:', selectedInsert.sku);
             }
 
             // Clear selection and refresh
@@ -602,6 +649,38 @@ export default function Inserts() {
             }
         } catch (err) {
             console.error('Error deleting insert:', err);
+            // Show error message to user
+            setSubmitMessage({
+                type: 'error',
+                text: `Failed to delete insert: ${err instanceof Error ? err.message : 'Unknown error'}`
+            });
+        }
+    };
+
+    // Add this new handler for group image
+    const handleGroupImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setGroupImage(file);
+            
+            // Create preview URL
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setGroupImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleGroupImageClick = () => {
+        groupImageInputRef.current?.click();
+    };
+
+    const handleRemoveGroupImage = () => {
+        setGroupImage(null);
+        setGroupImagePreview(null);
+        if (groupImageInputRef.current) {
+            groupImageInputRef.current.value = '';
         }
     };
 
@@ -979,11 +1058,11 @@ export default function Inserts() {
                                             </div>
                                         </div>
                                 </div>
-                                {/* Right: DXF Upload */}
+                                {/* Right: DXF Upload and Group Image */}
                                 <div className="flex flex-col gap-4 items-center justify-center">
                                     <label className="font-semibold text-black " htmlFor="dxf">Upload DXF:</label>
                                     {selectedDXFFiles.length > 0 ? (
-                                        <div className="w-full bg-gray-50 border border-gray-400 rounded-lg shadow-sm p-4 h-[30vh] overflow-y-auto">
+                                        <div className={`w-full bg-gray-50 border border-gray-400 rounded-lg shadow-sm p-4 ${isMultipleParts ? 'h-[20vh]' : 'h-[30vh]'} overflow-y-auto`}>
                                             <button
                                                 type="button"
                                                 className="mx-auto mb-3 flex items-center gap-2 px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
@@ -998,7 +1077,7 @@ export default function Inserts() {
                                             </button>
                                             <ul className="space-y-2">
                                                 {selectedDXFFiles.map((file, index) => (
-                                                    <li key={index} className="flex items-center gap-4 bg-white  p-3 border-b border-gray-300">
+                                                    <li key={index} className="flex items-center gap-4 bg-white p-3 border-b border-gray-300">
                                                         <span className="text-sm text-gray-700 truncate flex-1" title={file.name}>{file.name}</span>
                                                         <button
                                                             type="button"
@@ -1028,14 +1107,14 @@ export default function Inserts() {
                                         </div>
                                     ) : (
                                         <div
-                                            className="w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg p-6 bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                                            className={`w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg ${isMultipleParts ? 'p-3' : 'p-6'} bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors`}
                                             onClick={handleDXFClick}
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-2" width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className={`mx-auto ${isMultipleParts ? 'mb-1' : 'mb-2'}`} width={isMultipleParts ? "24" : "40"} height={isMultipleParts ? "24" : "40"} fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-8m0 0l-4 4m4-4l4 4" />
                                                 <rect x="3" y="17" width="18" height="4" rx="2" fill="#fcfafa" />
                                             </svg>
-                                            <span className="text-gray-700">Browse files to upload</span>
+                                            <span className="text-gray-700 text-sm">Browse files to upload</span>
                                             <input
                                                 id="dxf"
                                                 name="dxf"
@@ -1048,10 +1127,58 @@ export default function Inserts() {
                                                 multiple
                                                 required
                                             />
-                                            <div className="w-full mt-4">
-                                                <div className="text-sm text-gray-500 flex items-center justify-center h-10">No files selected</div>
+                                            <div className="w-full mt-2">
+                                                <div className="text-xs text-gray-500 flex items-center justify-center h-8">No files selected</div>
                                             </div>
                                         </div>
+                                    )}
+
+                                    {/* Group Image Upload Section */}
+                                    {isMultipleParts && (
+                                        <>
+                                            <label className="font-semibold text-black mt-1" htmlFor="groupImage">Group Image:</label>
+                                            <div
+                                                className="w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg p-3 bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                                                onClick={handleGroupImageClick}
+                                            >
+                                                {groupImagePreview ? (
+                                                    <div className="relative w-full">
+                                                        <img
+                                                            src={groupImagePreview}
+                                                            alt="Group preview"
+                                                            className="w-full h-24 object-contain mb-1"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="absolute top-1 right-1 p-1 rounded-full bg-red-100 hover:bg-red-200 text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRemoveGroupImage();
+                                                            }}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-1" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <span className="text-gray-700 text-sm">Click to upload group image</span>
+                                                        <p className="text-xs text-gray-500 mt-0.5">This image will be displayed on the group insert card</p>
+                                                    </>
+                                                )}
+                                                <input
+                                                    type="file"
+                                                    ref={groupImageInputRef}
+                                                    onChange={handleGroupImageChange}
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                />
+                                            </div>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -1147,196 +1274,129 @@ export default function Inserts() {
                                             </div>
                                         </div>
                                 </div>
-                                {/* Right: DXF Upload */}
+                                {/* Right: DXF Upload and Group Image */}
                                 <div className="flex flex-col gap-4 items-center justify-center">
-                                    <label className="font-semibold text-black mb-2" htmlFor="dxf">Upload DXF:</label>
-                                        {/* Only show the slider if there are multiple unique parts */}
-                                        {relatedSkus.length > 1 ? (
-                                            <div className="w-full">
-                                                <div className="relative w-full flex items-center justify-center border-2 border-dashed border-gray-400 rounded-lg p-6 bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors">
-                                                    <div className="w-full">
-                                                        <div className="relative flex items-center justify-center">
-                                                            {/* Improved Previous Button */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => { e.stopPropagation(); handleSlideChange('prev'); }}
-                                                                className="absolute left-[-32px] top-1/2 -translate-y-1/2 z-10 w-12 h-12 flex items-center justify-center rounded-full bg-white/70 backdrop-blur border border-gray-300 shadow-lg hover:bg-blue-100 hover:scale-110 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition-all duration-150"
-                                                                aria-label="Previous part"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                    <label className="font-semibold text-black " htmlFor="dxf">Upload DXF:</label>
+                                    {selectedDXFFiles.length > 0 ? (
+                                        <div className={`w-full bg-gray-50 border border-gray-400 rounded-lg shadow-sm p-4 ${isMultipleParts ? 'h-[20vh]' : 'h-[30vh]'} overflow-y-auto`}>
+                                            <button
+                                                type="button"
+                                                className="mx-auto mb-3 flex items-center gap-2 px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                                                aria-label="Add more DXF files"
+                                                title="Add more DXF files"
+                                                onClick={handleDXFClick}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                                                 </svg>
-                                                            </button>
-                                                            <div className="w-full flex flex-col items-center">
-                                                                <div className="w-24 h-20 bg-gray-200 rounded mb-2 overflow-hidden flex items-center justify-center">
-                                                                    {relatedSkus[currentSlideIndex]?.svgUrl ? (
-                                                                        <img
-                                                                            src={relatedSkus[currentSlideIndex].svgUrl!}
-                                                                            alt={`Part ${currentSlideIndex + 1}`}
-                                                                            className="object-contain w-full h-full"
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="text-gray-400 text-xs">No preview</span>
-                                                                    )}
-                                                                </div>
-                                                                <span className="text-sm text-gray-700 font-semibold tracking-wide mt-2">
-                                                                    {relatedSkus[currentSlideIndex]?.sku} 
-                                                                </span>
-                                                            </div>
-                                                            {/* Improved Next Button */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => { e.stopPropagation(); handleSlideChange('next'); }}
-                                                                className="absolute right-[-32px] top-1/2 -translate-y-1/2 z-10 w-12 h-12 flex items-center justify-center rounded-full bg-white/70 backdrop-blur border border-gray-300 shadow-lg hover:bg-blue-100 hover:scale-110 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition-all duration-150"
-                                                                aria-label="Next part"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                        <div className="mt-4 flex justify-center gap-2">
-                                                            {relatedSkus.map((_, index) => (
-                                                                <button
-                                                                    key={index}
-                                                                    type="button"
-                                                                    onClick={(e) => { e.stopPropagation(); setCurrentSlideIndex(index); }}
-                                                                    className={`w-3 h-3 rounded-full border-2 ${
-                                                                        index === currentSlideIndex ? 'bg-blue-500 border-blue-500' : 'bg-gray-200 border-gray-300'
-                                                                    } transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400`}
-                                                                    aria-label={`Go to part ${index + 1}`}
-                                                                />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                    <div
-                                        className="w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg p-6 bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors"
-                                        onClick={handleDXFClick}
-                                    >
-                                        {selectedInsert?.svgUrl ? (
-                                            <>
-                                                <img src={selectedInsert.svgUrl} alt={selectedInsert.sku} className="w-20 h-16 object-contain" />
-                                                <input
-                                                    id="dxf"
-                                                    name="dxf"
-                                                    type="file"
-                                                    accept=".dxf"
-                                                    className="hidden"
-                                                    ref={dxfInputRef}
-                                                    onChange={handleDXFChange}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    multiple
-                                                    required
-                                                />
-                                                <div className="w-full mt-4">
-                                                    {selectedDXFFiles.length > 0 ? (
-                                                        <div className="space-y-2">
-                                                            {selectedDXFFiles.map((file, index) => (
-                                                                <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
-                                                                    <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                                                                    <button
-                                                                    type="button"
-                                                                    className="ml-2 text-gray-400 hover:text-red-500"
-                                                                onClick={e => { e.stopPropagation(); handleRemoveDXF(index); }}
-                                                                    tabIndex={-1}
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                                        </svg>
-                                                                    </button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    ) : (
-                                                                <div className="text-sm text-gray-500 flex items-center justify-center h-10">{relatedSkus[currentSlideIndex]?.sku}</div>
-                                                    )}
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-2" width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-8m0 0l-4 4m4-4l4 4" />
-                                                    <rect x="3" y="17" width="18" height="4" rx="2" fill="#fcfafa" />
-                                                </svg>
-                                                <span className="text-gray-700">Browse files to upload</span>
-                                            </>
-                                        )}
-                                        <input
-                                            id="dxf"
-                                            name="dxf"
-                                            type="file"
-                                            accept=".dxf"
-                                            className="hidden"
-                                            ref={dxfInputRef}
-                                            onChange={handleDXFChange}
-                                            onClick={e => e.stopPropagation()}
-                                            multiple
-                                            required
-                                        />
-                                    </div>
-                                        )}
-                                        {/* SVG URLs List Section */}
-                                        {relatedSkus.length > 0 && relatedSkus[currentSlideIndex] && (
-                                            <div className="w-full bg-gray-50 border border-gray-400 rounded-lg shadow-sm ">
-                                                <ul className="space-y-1">
-                                                    <li className="flex items-center gap-4 bg-white rounded-md p-3 border border-gray-100 shadow-sm">
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="font-semibold text-gray-800 text-[10px] truncate" title={relatedSkus[currentSlideIndex].sku}>{relatedSkus[currentSlideIndex].sku}</div>
-                                                            <div className="text-xs text-gray-500 truncate" title={relatedSkus[currentSlideIndex].svgUrl || ''}>{relatedSkus[currentSlideIndex].svgUrl || 'No SVG URL'}</div>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 ml-2">
-                                                            
-                                                            {/* Copy Icon */}
-                                                            {relatedSkus[currentSlideIndex].svgUrl && (
-                                                            <button
-                                                                type="button"
-                                                                    className="p-1 rounded-full hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                                                                    aria-label="Copy SVG URL"
-                                                                    title="Copy SVG URL"
-                                                                    onClick={() => {
-                                                                        navigator.clipboard.writeText(relatedSkus[currentSlideIndex].svgUrl!);
-                                                                    }}
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                        <rect x="9" y="9" width="13" height="13" rx="2" />
-                                                                        <path d="M5 15V5a2 2 0 012-2h10" />
-                                                                    </svg>
-                                                                </button>
-                                                            )}
-                                                            {/* Edit Icon */}
-                                                            <button
-                                                                type="button"
-                                                                className="p-1 rounded-full hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                                                                aria-label="Edit this SVG"
-                                                                title="Edit this SVG"
-                                                                onClick={() => {/* TODO: Implement edit functionality */}}
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 3.487a2.25 2.25 0 113.182 3.182L7.5 19.213l-4 1 1-4 12.362-12.726z" />
-                                                                </svg>
-                                                            </button>
-                                                            {/* Delete Icon */}
-                                                            <button
-                                                                type="button"
-                                                                className="p-1 rounded-full hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
-                                                                aria-label="Delete this SVG"
-                                                                title="Delete this SVG"
-                                                                onClick={() => {/* TODO: Implement delete functionality */}}
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                                </svg>
-                                                            </button>
-                                                        </div>
+                                                Add more DXF files
+                                            </button>
+                                            <ul className="space-y-2">
+                                                {selectedDXFFiles.map((file, index) => (
+                                                    <li key={index} className="flex items-center gap-4 bg-white p-3 border-b border-gray-300">
+                                                        <span className="text-sm text-gray-700 truncate flex-1" title={file.name}>{file.name}</span>
+                                                        <button
+                                                            type="button"
+                                                            className="ml-2 p-1 rounded-full bg-red-100 hover:bg-red-200 text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                                                            aria-label={`Remove ${file.name}`}
+                                                            title="Remove file"
+                                                            onClick={e => { e.stopPropagation(); handleRemoveDXF(index); }}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
                                                     </li>
-                                                </ul>
-                                                </div>
-                                            )}
+                                                ))}
+                                            </ul>
+                                            <input
+                                                id="dxf"
+                                                name="dxf"
+                                                type="file"
+                                                accept=".dxf"
+                                                className="hidden"
+                                                ref={dxfInputRef}
+                                                onChange={handleDXFChange}
+                                                onClick={e => e.stopPropagation()}
+                                                multiple
+                                            />
                                         </div>
-                                    
+                                    ) : (
+                                        <div
+                                            className={`w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg ${isMultipleParts ? 'p-3' : 'p-6'} bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors`}
+                                            onClick={handleDXFClick}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className={`mx-auto ${isMultipleParts ? 'mb-1' : 'mb-2'}`} width={isMultipleParts ? "24" : "40"} height={isMultipleParts ? "24" : "40"} fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-8m0 0l-4 4m4-4l4 4" />
+                                                <rect x="3" y="17" width="18" height="4" rx="2" fill="#fcfafa" />
+                                            </svg>
+                                            <span className="text-gray-700 text-sm">Browse files to upload</span>
+                                            <input
+                                                id="dxf"
+                                                name="dxf"
+                                                type="file"
+                                                accept=".dxf"
+                                                className="hidden"
+                                                ref={dxfInputRef}
+                                                onChange={handleDXFChange}
+                                                onClick={e => e.stopPropagation()}
+                                                multiple
+                                                required
+                                            />
+                                            <div className="w-full mt-2">
+                                                <div className="text-xs text-gray-500 flex items-center justify-center h-8">No files selected</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Group Image Upload Section */}
+                                    {isMultipleParts && (
+                                        <>
+                                            <label className="font-semibold text-black mt-1" htmlFor="groupImage">Group Image:</label>
+                                            <div
+                                                className="w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-lg p-3 bg-gray-50 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                                                onClick={handleGroupImageClick}
+                                            >
+                                                {groupImagePreview ? (
+                                                    <div className="relative w-full">
+                                                        <img
+                                                            src={groupImagePreview}
+                                                            alt="Group preview"
+                                                            className="w-full h-24 object-contain mb-1"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="absolute top-1 right-1 p-1 rounded-full bg-red-100 hover:bg-red-200 text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRemoveGroupImage();
+                                                            }}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-1" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#1d1d1d" strokeWidth="2">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <span className="text-gray-700 text-sm">Click to upload group image</span>
+                                                        <p className="text-xs text-gray-500 mt-0.5">This image will be displayed on the group insert card</p>
+                                                    </>
+                                                )}
+                                                <input
+                                                    type="file"
+                                                    ref={groupImageInputRef}
+                                                    onChange={handleGroupImageChange}
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                             {/* Submit message */}
                             {submitMessage && (

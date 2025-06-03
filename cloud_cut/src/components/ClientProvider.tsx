@@ -6,6 +6,12 @@ import { ReactNode, useEffect } from "react";
 import { syncOrders, initialFetch } from '@/redux/thunks/ordersThunks';
 import { setUser, setUserProfile } from '@/redux/slices/authSlice';
 import AutoLogout from './AutoLogout';
+import { getSupabaseClient } from '@/utils/supabase';
+
+interface Profile {
+    role: string;
+    email: string;
+}
 
 interface ClientProviderProps {
     children: ReactNode;
@@ -13,22 +19,45 @@ interface ClientProviderProps {
 
 export default function ClientProvider({ children }: ClientProviderProps) {
     useEffect(() => {
-        // Load auth state from localStorage if available
-        try {
-            const savedAuthState = localStorage.getItem('authState');
-            if (savedAuthState) {
-                const authState = JSON.parse(savedAuthState);
-                if (authState.user) {
-                    store.dispatch(setUser(authState.user));
+        const initializeAuth = async () => {
+            try {
+                const supabase = getSupabaseClient();
+                // First check if there's a valid session with Supabase
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                if (session && session.user.email) {
+                    // If there's a valid session, get the user's profile from the database
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('email', session.user.email)
+                        .single();
+
+                    if (profile && typeof profile.role === 'string' && typeof profile.email === 'string') {
+                        // Update Redux with the current user's data
+                        store.dispatch(setUser(session.user));
+                        store.dispatch(setUserProfile({
+                            role: profile.role,
+                            email: profile.email
+                        }));
+                        console.log('Loaded user profile from database:', profile);
+                    }
+                } else {
+                    // If no valid session, clear any stored auth state
+                    store.dispatch(setUser(null));
+                    store.dispatch(setUserProfile(null));
+                    localStorage.removeItem('authState');
                 }
-                if (authState.userProfile) {
-                    store.dispatch(setUserProfile(authState.userProfile));
-                    console.log('Loaded user profile from localStorage:', authState.userProfile);
-                }
+            } catch (error) {
+                console.error('Error initializing auth state:', error);
+                // Clear auth state on error
+                store.dispatch(setUser(null));
+                store.dispatch(setUserProfile(null));
+                localStorage.removeItem('authState');
             }
-        } catch (error) {
-            console.error('Error loading auth state from localStorage:', error);
-        }
+        };
+
+        initializeAuth();
 
         // Initial fetch of current state
         store.dispatch(initialFetch());

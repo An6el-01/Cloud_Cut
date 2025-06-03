@@ -28,6 +28,7 @@ type OrderWithPriority = Order & { calculatedPriority: number };
 export default function Manufacturing() {
   const dispatch = useDispatch<AppDispatch>();
   const orders = useSelector(selectManufacturingOrders); // Use manufacturing-specific selector
+  const allOrders = useSelector((state: RootState) => state.orders.allOrders); // Add allOrders selector
   const totalOrders = useSelector(selectCurrentViewTotal); // Use view-specific total
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   // Get user profile to check for role
@@ -62,7 +63,7 @@ export default function Manufacturing() {
   const [allMediumSheetOrdersChecked, setAllMediumSheetOrdersChecked] = useState(false);
   const [orderIdsToPacking, setOrderIdsToPacking] = useState<string[]>([]);
   const [orderIdsToMarkCompleted, setOrderIdsToMarkCompleted] = useState<string[]>([]);
-  const [currentOrderProgress, setCurrentOrderProgress] = useState<string | undefined>(undefined);
+  const [currentOrderProgress, setCurrentOrderProgress] = useState<string>('0');
   const [selectedMediumSheetQuantity, setSelectedMediumSheetQuantity] = useState<number>(0);
   const [selectedMediumSheet, setSelectedMediumSheet] = useState<string>();
   const [selectedNestingRow, setSelectedNestingRow] = useState<string | null>(null);
@@ -905,8 +906,8 @@ export default function Manufacturing() {
       );
     }
 
-    // Get orders from Redux state that have this medium sheet
-    const ordersWithSheet = orders.filter(order => {
+    // Get orders from Redux state that have this medium sheet - use allOrders instead of orders
+    const ordersWithSheet = allOrders.filter(order => {
       const items = allOrderItems[order.order_id] || [];
       return items.some(item => item.sku_id === sku && !item.completed);
     });
@@ -948,8 +949,8 @@ export default function Manufacturing() {
       const orderItems = allOrderItems[order.order_id] || [];
       const skuItems = orderItems.filter(item => item.sku_id === sku && !item.completed);
 
-      // Count how many items need to be marked as completed
-      const itemsToComplete = skuItems.length;
+      // Calculate total quantity for this SKU in the order
+      const totalQuantity = skuItems.reduce((sum, item) => sum + item.quantity, 0);
 
       return (
         <tr
@@ -976,114 +977,99 @@ export default function Manufacturing() {
         >
           <td className="px-4 py-4 text-left">
             <div className="flex items-center">
-              <span className=" text-black text-lg">{order.order_id}</span>
+              <span className=" text-black text-md">{order.order_id}</span>
             </div>
           </td>
           <td className="px-4 py-4 text-center">
-            <span className="text-black text-lg">{order.customer_name}</span>
+            <span className="text-black text-md">{order.customer_name}</span>
           </td>
           <td className="px-4 py-4 text-center">
-            <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black`}>
+            <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-md text-black`}>
               {order.maxPriority}
             </span>
           </td>
           <td className="px-4 py-4 text-center">
-            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-              {getMediumSheetQuantityInOrder(order.order_id, sku)}
-            </span>
+            <span className="text-black text-md">{totalQuantity}</span>
           </td>
           <td className="px-4 py-4 text-center">
-            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={checkedOrders.has(order.order_id)}
-                  onChange={async (e) => {
-                    await Sentry.startSpan({
-                      name: 'ToggleItemCompletion-MediumSheets',
-                      op: 'ui.interaction.checkbox'
-                    }, async () => {
-                      // If unchecking, remove from local state
-                      if (!e.target.checked) {
-                        setCheckedOrders(prev => {
-                          const newSet = new Set(prev);
-                          newSet.delete(order.order_id);
-                          return newSet;
-                        });
-
-                        // Mark all relevant items for this SKU as not completed
-                        skuItems.forEach(item => {
-                          dispatch(updateItemCompleted({
-                            orderId: order.order_id,
-                            itemId: item.id,
-                            completed: false
-                          }));
-                        });
-                        return;
-                      }
-
-                      // Add to visual state for immediate feedback
-                      setCheckedOrders(prev => new Set(prev).add(order.order_id));
-
-                      // Get all items for this SKU that need to be marked completed
-                      const allOrderSkuItems = orderItems.filter(item => item.sku_id === sku);
-
-                      // Check if this would complete all manufacturing items in the order
-                      const relevantItems = orderItems.filter(item =>
-                        (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFS')) && !item.completed
-                      );
-
-                      const remainingItems = relevantItems.filter(item =>
-                        !allOrderSkuItems.some(skuItem => skuItem.id === item.id)
-                      );
-
-                      // Determine if this order would be ready for packing or just mark completed
-                      const readyForPacking = remainingItems.length === 0;
-
-                      // Reset the array states to avoid conflicts with batch processing
-                      setOrderIdsToPacking([]);
-                      setOrderIdsToMarkCompleted([]);
-
-                      // Set the orderId for individual processing
-                      setSelectedOrderId(order.order_id);
-
-                      // Store the pending item info for the single order case
-                      if (skuItems.length > 0) {
-                        setPendingItemToComplete({
-                          orderId: order.order_id,
-                          itemId: skuItems[0].id,
-                          completed: true
-                        });
-                      }
-
-                      // Calculate fresh progress for this order
-                      const freshProgress = calculateOrderProgress(order.order_id);
-                      setCurrentOrderProgress(freshProgress);
-
-                      // Prepare the appropriate arrays based on whether this order is ready for packing
-                      if (readyForPacking) {
-                        setOrderIdsToPacking([order.order_id]);
-                      } else {
-                        setOrderIdsToMarkCompleted([order.order_id]);
-                      }
-
-                      // Show the confirmation dialog for the single order
-                      setShowMediumSheetConfirmDialog(true);
+            <input
+              type="checkbox"
+              checked={checkedOrders.has(order.order_id)}
+              onChange={async (e) => {
+                await Sentry.startSpan({
+                  name: 'handleMediumSheetCheckboxChange',
+                }, async () => {
+                  // If unchecking, remove from local state
+                  if (!e.target.checked) {
+                    setCheckedOrders(prev => {
+                      const newSet = new Set(prev);
+                      newSet.delete(order.order_id);
+                      return newSet;
                     });
-                  }}
-                  className="sr-only peer"
-                  aria-label={`Mark all items for order ${order.order_id} as completed`}
-                />
-                <div className="w-5 h-5 border-2 border-gray-400 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                  {checkedOrders.has(order.order_id) && (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                      <path d="m9 12 2 2 4-4" />
-                    </svg>
-                  )}
-                </div>
-              </label>
-            </div>
+
+                    // Mark all relevant items for this SKU as not completed
+                    skuItems.forEach(item => {
+                      dispatch(updateItemCompleted({
+                        orderId: order.order_id,
+                        itemId: item.id,
+                        completed: false
+                      }));
+                    });
+                    return;
+                  }
+
+                  // Add to visual state for immediate feedback
+                  setCheckedOrders(prev => new Set(prev).add(order.order_id));
+
+                  // Get all items for this SKU that need to be marked completed
+                  const allOrderSkuItems = orderItems.filter(item => item.sku_id === sku);
+
+                  // Check if this would complete all manufacturing items in the order
+                  const relevantItems = orderItems.filter(item =>
+                    (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFS')) && !item.completed
+                  );
+
+                  const remainingItems = relevantItems.filter(item =>
+                    !allOrderSkuItems.some(skuItem => skuItem.id === item.id)
+                  );
+
+                  // Determine if this order would be ready for packing or just mark completed
+                  const readyForPacking = remainingItems.length === 0;
+
+                  // Reset the array states to avoid conflicts with batch processing
+                  setOrderIdsToPacking([]);
+                  setOrderIdsToMarkCompleted([]);
+
+                  // Set the orderId for individual processing
+                  setSelectedOrderId(order.order_id);
+
+                  // Store the pending item info for the single order case
+                  if (skuItems.length > 0) {
+                    setPendingItemToComplete({
+                      orderId: order.order_id,
+                      itemId: skuItems[0].id,
+                      completed: true
+                    });
+                  }
+
+                  // Calculate fresh progress for this order
+                  const freshProgress = calculateOrderProgress(order.order_id);
+                  setCurrentOrderProgress(freshProgress);
+
+                  // Prepare the appropriate arrays based on whether this order is ready for packing
+                  if (readyForPacking) {
+                    setOrderIdsToPacking([order.order_id]);
+                  } else {
+                    setOrderIdsToMarkCompleted([order.order_id]);
+                  }
+
+                  // Show the confirmation dialog for the single order
+                  setShowMediumSheetConfirmDialog(true);
+                });
+              }}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer bg-blue-600 checked:bg-blue-600"
+              aria-label={`Mark all items for order ${order.order_id} as completed`}
+            />
           </td>
         </tr>
       );
@@ -1176,14 +1162,14 @@ export default function Manufacturing() {
           if (orderIdsForPacking.length > 0 || orderIdsForMarkCompleted.length > 0) {
             // For batch processing, we don't need a specific progress value
             console.log("Manufacturing: Setting up batch processing confirmation dialog");
-            setCurrentOrderProgress(undefined);
+            setCurrentOrderProgress('0');
 
             // Log the state just before showing the dialog
             setTimeout(() => {
               console.log("Manufacturing: State just before showing batch dialog:", {
                 orderIdsToPacking,
                 orderIdsToMarkCompleted,
-                currentOrderProgress: undefined,
+                currentOrderProgress: '0',
                 showConfirmDialog: false // Will be set to true next
               });
             }, 0);
@@ -1214,16 +1200,12 @@ export default function Manufacturing() {
     }
   }, [selectedFoamSheet, activeTab]);
 
-  // Add a function to calculate the latest progress for an order
+  // Add calculateOrderProgress function
   const calculateOrderProgress = (orderId: string): string => {
-    // Get all items for this order from the global allOrderItems
     const items = allOrderItems[orderId] || [];
-    if (items.length === 0) {
-      return "N/A";
-    } else {
-      const completedCount = items.filter(item => item.completed).length;
-      return `${completedCount}/${items.length}`;
-    }
+    if (items.length === 0) return '0';
+    const completedCount = items.filter(item => item.completed).length;
+    return ((completedCount / items.length) * 100).toString();
   };
 
   // Fetch orders when the component mounts or when page changes
@@ -1340,7 +1322,7 @@ export default function Manufacturing() {
     }
 
     // Set the state with the processed nesting queue data
-    setNestingQueueData(processedItemsByFoamSheet);
+    setNestingQueueData(processedItemsByFoamSheet as Record<string, ProcessedNestingData>);
     console.log('Processed nesting queue data with SVGs and nesting results:', processedItemsByFoamSheet);
 
     // Return the processed data
@@ -1941,7 +1923,7 @@ export default function Manufacturing() {
 
                       {/* Display SVGs */}
                       <div className="grid grid-cols-2 gap-4">
-                        {nestingQueueData[selectedNestingRow]?.nestingResult ? (
+                        {nestingQueueData[selectedNestingRow as string]?.nestingResult ? (
                           // Display nesting result if available
                           <div className="col-span-2 bg-gray-800/50 rounded-lg p-4">
                             <h3 className="text-white text-lg font-semibold mb-4">Nesting Layout</h3>
@@ -1951,7 +1933,7 @@ export default function Manufacturing() {
                                 className="w-full h-full"
                                 style={{ backgroundColor: '#FFFFFF' }}
                               >
-                                {nestingQueueData[selectedNestingRow].nestingResult?.placements.map((placement: NestingPlacement, index: number) => (
+                                {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, index: number) => (
                                   <g key={index}>
                                     {placement.parts.map((part: NestingPart, partIndex: number) => (
                                       <g
@@ -1986,7 +1968,7 @@ export default function Manufacturing() {
                           </div>
                         ) : (
                           // Display individual SVGs if no nesting result
-                          nestingQueueData[selectedNestingRow]?.items.map((item: NestingItem, index: number) => (
+                          nestingQueueData[selectedNestingRow as string]?.items.map((item: NestingItem, index: number) => (
                             <div 
                               key={`${item.sku}-${index}`}
                               className="bg-gray-800/50 rounded-lg p-4 flex flex-col items-center"
@@ -2633,7 +2615,7 @@ export default function Manufacturing() {
             setAllMediumSheetOrdersChecked(false);
             setCheckedOrders(new Set());
             // Reset progress
-            setCurrentOrderProgress(undefined);
+            setCurrentOrderProgress('0');
             // Reset order arrays
             setOrderIdsToPacking([]);
             setOrderIdsToMarkCompleted([]);
@@ -2644,7 +2626,7 @@ export default function Manufacturing() {
               pendingItemToComplete: null,
               orderIdsToPacking: [],
               orderIdsToMarkCompleted: [],
-              currentOrderProgress: undefined
+              currentOrderProgress: '0'
             });
           }}
           onConfirm={handleMarkManufactured}

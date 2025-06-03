@@ -552,25 +552,21 @@ export default function Packing() {
                         // Type casting to ensure we're setting Order[] type
                         const typedOrders = fetchedOrders as unknown as Order[];
                         
-                        // Sort orders by priority (lowest first)
-                        typedOrders.sort((a, b) => {
-                            const itemsA = allOrderItems[a.order_id] || [];
-                            const itemsB = allOrderItems[b.order_id] || [];
-                            
-                            const priorityA = itemsA.length > 0 ? Math.min(...itemsA.map(item => item.priority || 10)) : 10;
-                            const priorityB = itemsB.length > 0 ? Math.min(...itemsB.map(item => item.priority || 10)) : 10;
-                            
+                        // Sort orders by priority using the orderPriorities from Redux state
+                        const sortedOrders = [...typedOrders].sort((a, b) => {
+                            const priorityA = orderPriorities[a.order_id] || 0;
+                            const priorityB = orderPriorities[b.order_id] || 0;
                             return priorityA - priorityB;
                         });
                         
-                        console.log('Sorted orders by priority:', typedOrders.map(order => ({
+                        console.log('Sorted orders by priority:', sortedOrders.map(order => ({
                             orderId: order.order_id,
-                            priority: Math.min(...(allOrderItems[order.order_id] || []).map(item => item.priority || 10))
+                            priority: orderPriorities[order.order_id]
                         })));
                         
                         setOrdersWithRetailPacks(prev => ({
                             ...prev,
-                            [retailPack]: typedOrders
+                            [retailPack]: sortedOrders
                         }));
                     }
                 } catch (err) {
@@ -666,6 +662,23 @@ export default function Packing() {
         }
     };
     
+    // Add a new selector to get sorted orders
+    const sortedOrders = useSelector((state: RootState) => {
+        // Get all orders in the packing view
+        const allOrders = state.orders.allOrders;
+        
+        // Sort all orders by priority
+        return [...allOrders].sort((a, b) => {
+            const priorityA = orderPriorities[a.order_id] || 0;
+            const priorityB = orderPriorities[b.order_id] || 0;
+            return priorityA - priorityB;
+        });
+    });
+
+    // Calculate pagination for sorted orders
+    const startIndex = (currentPage - 1) * ordersPerPage;
+    const endIndex = startIndex + ordersPerPage;
+    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
 
     return (
         <div className="min-h-screen">
@@ -814,44 +827,32 @@ export default function Packing() {
                                                         </tr>
                                                     ))
                                                 ) : (
-                                                    // Filter orders based on selectedRetailPack if it's set
-                                                    (selectedRetailPack ? findOrdersWithRetailPack(selectedRetailPack) : orders).map((order) => {
-                                                        //Get the items for this specific order
-                                                        const orderItems = orderItemsById[order.order_id] || [];
-                                                        // Use the calculated priority property if it exists
-                                                        /**THIS IS NOT GETTING THE PRIORITY FOR THE ORDERS PROPERLY. */
-                                                        const displayPriority = 'calculatedPriority' in order
-                                                            ? (order as OrderWithPriority).calculatedPriority
-                                                            : (orderItems.length > 0
-                                                                ? Math.max(...orderItems.map((item) => item.priority || 0))
-                                                                : 0);
-
-                                                        return (
-                                                            <tr
-                                                                key={order.order_id}
-                                                                id={`order-row-${order.order_id}`}
-                                                                ref={order.order_id === selectedOrderId ? selectedRowRef : null}
-                                                                className={`transition-all duration-200 cursor-pointer text-center h-14 ${
-                                                                    order.order_id === selectedOrderId 
-                                                                    ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
-                                                                    : order.picking
-                                                                      ? "bg-red-200/90 border-l-4 border-red-500 shadow-md"
-                                                                      : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
-                                                                }`}
-                                                                onClick={() => handleOrderClick(order.order_id)}
-                                                            >
-                                                                <td className="px-4 py-2 text-black">{order.order_id}</td>
-                                                                <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                                                                <td className="px-4 py-2 text-black">{orderPriorities[order.order_id]}</td>
-                                                                <td className="px-4 py-2 text-black">
-                                                                    {new Date(order.order_date).toLocaleDateString("en-GB")}
-                                                                </td>
-                                                                <td className="px-4 py-2 text-black">
-                                                                    {orderProgress[order.order_id]}
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })
+                                                    // Render paginated orders
+                                                    (selectedRetailPack ? findOrdersWithRetailPack(selectedRetailPack) : paginatedOrders).map((order) => (
+                                                        <tr
+                                                            key={order.order_id}
+                                                            id={`order-row-${order.order_id}`}
+                                                            ref={order.order_id === selectedOrderId ? selectedRowRef : null}
+                                                            className={`transition-all duration-200 cursor-pointer text-center h-14 ${
+                                                                order.order_id === selectedOrderId 
+                                                                ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md" 
+                                                                : order.picking
+                                                                  ? "bg-red-200/90 border-l-4 border-red-500 shadow-md"
+                                                                  : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
+                                                            }`}
+                                                            onClick={() => handleOrderClick(order.order_id)}
+                                                        >
+                                                            <td className="px-4 py-2 text-black">{order.order_id}</td>
+                                                            <td className="px-4 py-2 text-black">{order.customer_name}</td>
+                                                            <td className="px-4 py-2 text-black">{orderPriorities[order.order_id]}</td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                {new Date(order.order_date).toLocaleDateString("en-GB")}
+                                                            </td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                {orderProgress[order.order_id]}
+                                                            </td>
+                                                        </tr>
+                                                    ))
                                                 )}
                                                 {selectedRetailPack && findOrdersWithRetailPack(selectedRetailPack).length === 0 && !isRefreshing && (
                                                     <tr>
