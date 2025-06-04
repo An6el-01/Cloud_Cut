@@ -5,6 +5,14 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from '@/redux/store';
 import { fetchFinishedStockFromSupabase } from '@/redux/thunks/stockThunk';
 import { getSupabaseClient } from '@/utils/supabase';
+import { bookOutStock, updateStockItem } from "@/utils/despatchCloud";
+
+// // Define the type for stock items
+// interface StockItem {
+//     id: number;
+//     item_name: string;
+//     sku: string;
+// }
 
 export default function SheetBookingOut() {
     const dispatch = useDispatch<AppDispatch>();
@@ -32,6 +40,8 @@ export default function SheetBookingOut() {
             const name = item.item_name.toLowerCase();
             return name.includes(colour.toLowerCase()) && name.includes(depth.toLowerCase());
         });
+        
+
         if (!match) {
             setError('No matching 2 X 1 item found for the selected colour and depth.');
             return;
@@ -57,6 +67,17 @@ export default function SheetBookingOut() {
                 return;
             }
             // Optionally: update DespatchCloud here if needed
+            try{
+                if (typeof match.id === 'number') {
+                    await bookOutStock(match.id, quantity)
+                    console.log('Successfully updated DespatchCloud inventory');
+                } else {
+                    console.warn('Could not find inventory id for DespatchCloud update');
+                }
+            } catch (despatchError) {
+                console.error("Error updating DespatchCloud inventory:", despatchError);
+            }
+
             // Refresh Redux state
             await dispatch(fetchFinishedStockFromSupabase({ page: 1, perPage: 15 }));
             setMessage(`Successfully booked out ${quantity} sheet(s) of ${colour} ${depth}.`);
@@ -69,6 +90,8 @@ export default function SheetBookingOut() {
             setLoading(false);
         }
     };
+
+
 
     return (
         <div className="min-h-screen flex items-center justify-center">

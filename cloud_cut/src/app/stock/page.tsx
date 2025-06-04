@@ -9,7 +9,7 @@ import Image from "next/image";
 import { fetchFinishedStockFromSupabase, syncFinishedStock } from "@/redux/thunks/stockThunk";
 import { getSupabaseClient } from "@/utils/supabase";
 import SheetBookingOut from "@/components/sheetBookingOut";
-import { updateMediumSheetItem } from '@/utils/despatchCloud';
+import { updateStockItem } from '@/utils/despatchCloud';
 
 // Define the type for stock items
 interface StockItem {
@@ -127,6 +127,7 @@ export default function Stock() {
         setCurrentPage(newPage);
     };
 
+
     const handleEdit = async (item: StockItem) => {
         try { 
             
@@ -156,7 +157,7 @@ export default function Stock() {
         } catch (error) {
             console.error("Error in handleEdit:", error);
         }
-    }
+    }  
 
     const handleSave = async () => {
         if (!editingItem) return;
@@ -180,12 +181,12 @@ export default function Stock() {
 
             // Always update DespatchCloud for any item
             try {
+                
+
                 // Find the corresponding DespatchCloud inventory item (by id)
                 // We already have editingItem.id, which should match the inventoryId in DespatchCloud
                 if (typeof editingItem.id === 'number') {
-                    await updateMediumSheetItem(editingItem.id, {
-                        stock_level: editValue.toString()
-                    });
+                    await updateStockItem(editingItem.id,{stock_level: editValue.toString()}, 0);
                     console.log('Successfully updated DespatchCloud inventory');
                 } else {
                     // Fallback: fetch id from Supabase if not present
@@ -195,9 +196,9 @@ export default function Stock() {
                     .eq('sku', editingItem.sku)
                     .single();
                 if (inventoryItem && typeof inventoryItem.id === 'number') {
-                    await updateMediumSheetItem(inventoryItem.id, {
-                        stock_level: editValue.toString()
-                    });
+                    await updateStockItem(inventoryItem.id, {                        stock_level: editValue.toString()
+                    }, 0,
+                    );
                         console.log('Successfully updated DespatchCloud inventory (fallback)');
                     } else {
                         console.warn('Could not find inventory id for DespatchCloud update');

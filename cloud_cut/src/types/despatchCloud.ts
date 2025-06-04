@@ -1,4 +1,5 @@
 export interface DespatchCloudOrder {
+    shipping_address_postcode: string;
     id: number;
     channel_order_id: string;
     print_process_ref: string;

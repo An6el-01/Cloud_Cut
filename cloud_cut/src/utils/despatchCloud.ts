@@ -339,12 +339,53 @@ export async function fetchInventory(
   }
 }
 
-export async function updateMediumSheetItem(
+
+export async function bookOutStock(
+  inventoryId: number,
+  quantity: number,
+): Promise<any> {
+  // Fetch the inventory item to verify existence (optional, can be skipped if you trust the ID)
+  const fetchUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryId}`;
+  console.log('Fetching inventory item:', fetchUrl);
+
+  try {
+    const inventoryItem = await fetchWithAuth<any>(fetchUrl);
+    console.log('Fetched inventory item:', inventoryItem);
+
+    if (!inventoryItem || !inventoryItem.id) {
+      throw new Error('Could not fetch inventory item details');
+    }
+      const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}/adjust_location_stock`;
+      console.log('Updating inventory item stock:', url);
+
+      const response = await fetchWithAuth<any>(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          operator: 'decrease',
+          locationId: 0,
+          quantity: quantity,
+          note: 'API TEST',
+          auto_allocate: 1
+        }),
+      });
+  } catch (error) {
+    console.error('Error updating inventory item stock:', error);
+    throw error;
+  }
+};
+
+export async function updateStockItem(
   inventoryId: number,
   updateData: {
     stock_level?: string;
     [key: string]: any;
-  }
+  },
+  locationId?: number,
+
 ): Promise<any> {
   // Fetch the inventory item to verify existence (optional, can be skipped if you trust the ID)
   const fetchUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryId}`;
@@ -358,52 +399,97 @@ export async function updateMediumSheetItem(
       throw new Error('Could not fetch inventory item details');
     }
 
-    // Use the correct endpoint for updating stock
-    const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}/stock`;
+    const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}/adjust_location_stock`;
     console.log('Updating inventory item stock:', url);
 
-    // Convert stock_level to number if it exists
-    const stockLevel = updateData.stock_level ? parseInt(updateData.stock_level) : undefined;
-    if (typeof stockLevel !== 'number' || isNaN(stockLevel)) {
-      throw new Error('Invalid stock_level value');
+    // Only send one stock field, default to stock_level_global_available
+    let payload: any = {};
+    if (updateData.stock_level !== undefined) {
+      payload.stock_level = parseInt(updateData.stock_level);
+    } else {
+      throw new Error('No valid stock field provided');
     }
-    const payload = { stock_level: stockLevel };
-    console.log('Stock update data being sent:', payload);
-    console.log('Request URL:', url);
-    console.log('Request method:', 'POST');
+    
+    //Optionally fetch the updated item to get the quantity
+    const itemUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}`;
+    const itemUrlResponse = await fetchWithAuth<any>(itemUrl);
+
+    //Compare the stock levels as numbers and get the difference
+    const newStockLevel = Number(Object.values(payload)[0]);
+    const oldStockLevel = typeof itemUrlResponse.stock_level === 'string'
+      ? parseInt(itemUrlResponse.stock_level)
+      : itemUrlResponse.stock_level; 
+
+    
+    const difference = oldStockLevel - newStockLevel;
+
+    let operator;
+    let quantity;
+
+    // Find out if we need to increase or decrease the stock level
+    if (difference > 0) {
+      operator = 'decrease';
+      quantity = difference;
+    } else {
+      operator = 'increase';
+      quantity = newStockLevel - oldStockLevel;
+    }
+
+    console.log('request url:', url);
 
     const response = await fetchWithAuth<any>(url, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        operator,
+        locationId,
+        quantity,
+        note: 'API TEST',
+        auto_allocate: 1
+      }),
     });
 
     console.log('Stock update response:', response);
 
-    // Optionally, fetch the updated item to verify the change
-    const verifyUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}`;
-    const verifyResponse = await fetchWithAuth<any>(verifyUrl);
-    console.log('Verification response:', verifyResponse);
+    // // Optionally, fetch the updated item to verify the change
+    // const verifyUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}`;
+    // const verifyResponse = await fetchWithAuth<any>(verifyUrl);
+    // console.log('Verification response:', verifyResponse);
 
-    // Compare stock levels as numbers
-    const expectedStockLevel = stockLevel;
-    const actualStockLevel = typeof verifyResponse.stock_level === 'string' 
-      ? parseInt(verifyResponse.stock_level) 
-      : verifyResponse.stock_level;
+    // // Compare stock levels as numbers
+    // const expectedStockLevel = Object.values(payload)[0];
+    // let actualStockLevel;
+    // if (payload.stock_level_global_available !== undefined) {
+    //   actualStockLevel = typeof verifyResponse.stock_level_global_available === 'string'
+    //     ? parseInt(verifyResponse.stock_level_global_available)
+    //     : verifyResponse.stock_level_global_available;
+    // } else if (payload.stock_level_available !== undefined) {
+    //   actualStockLevel = typeof verifyResponse.stock_level_available === 'string'
+    //     ? parseInt(verifyResponse.stock_level_available)
+    //     : verifyResponse.stock_level_available;
+    // } else if (payload.stock_level !== undefined) {
+    //   actualStockLevel = typeof verifyResponse.stock_level === 'string'
+    //     ? parseInt(verifyResponse.stock_level)
+    //     : verifyResponse.stock_level;
+    // }
 
-    console.log('Stock level comparison:', {
-      expected: expectedStockLevel,
-      actual: actualStockLevel,
-      types: {
-        expected: typeof expectedStockLevel,
-        actual: typeof actualStockLevel
-      }
-    });
+    // console.log('Stock level comparison:', {
+    //   expected: expectedStockLevel,
+    //   actual: actualStockLevel,
+    //   types: {
+    //     expected: typeof expectedStockLevel,
+    //     actual: typeof actualStockLevel
+    //   }
+    // });
 
-    if (expectedStockLevel !== undefined && actualStockLevel !== expectedStockLevel) {
-      throw new Error(`Stock level update verification failed. Expected: ${expectedStockLevel}, Got: ${actualStockLevel}`);
-    }
+    // if (expectedStockLevel !== undefined && actualStockLevel !== expectedStockLevel) {
+    //   throw new Error(`Stock level update verification failed. Expected: ${expectedStockLevel}, Got: ${actualStockLevel}`);
+    // }
 
-    return verifyResponse;
+    return itemUrlResponse;
   } catch (error) {
     console.error('Error updating inventory item stock:', error);
     throw error;

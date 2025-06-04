@@ -223,6 +223,49 @@ const SortDropdown = ({
     );
 };
 
+// --- FOAM SHEET COLOR MAPPING UTILITY ---
+// Maps foam sheet names (e.g., 'Blue 30mm', 'Blue 50mm') to hex codes for the pie chart
+const FOAM_SHEET_COLOR_HEX: Record<string, string> = {
+  'Blue 30mm': '#2563eb',      // Blue
+  'Blue 50mm': '#60a5fa',      // Lighter Blue
+  'Red 30mm': '#ef4444',       // Red
+  'Red 50mm': '#f87171',       // Lighter Red
+  'Green 30mm': '#22c55e',     // Green
+  'Green 50mm': '#4ade80',     // Lighter Green
+  'Orange 30mm': '#f59e42',    // Orange
+  'Orange 50mm': '#fdba74',    // Lighter Orange
+  'Black 30mm': '#222',        // Black
+  'Black 50mm': '#4a4a4a',     // Grayish Black
+  'Yellow 30mm': '#fbbf24',    // Yellow
+  'Yellow 50mm': '#fde047',    // Lighter Yellow
+  'Purple 30mm': '#a855f7',    // Purple
+  'Purple 50mm': '#c4b5fd',    // Lighter Purple
+  'Pink 30mm': '#ec4899',      // Pink
+  'Pink 50mm': '#f9a8d4',      // Lighter Pink
+  'Teal 30mm': '#14b8a6',      // Teal
+  'Teal 50mm': '#5eead4',      // Lighter Teal
+  'Grey 30mm': '#64748b',      // Slate
+  'Grey 50mm': '#cbd5e1',      // Lighter Slate
+};
+const OTHERS_COLOR = '#aab1bf'; // Gray for 'Others'
+
+function getFoamSheetColorHex(name: string): string {
+  // Try exact match
+  if (FOAM_SHEET_COLOR_HEX[name]) return FOAM_SHEET_COLOR_HEX[name];
+  // Try to match color and depth with flexible spacing/case
+  const match = Object.keys(FOAM_SHEET_COLOR_HEX).find(
+    key => key.toLowerCase() === name.toLowerCase()
+  );
+  if (match) return FOAM_SHEET_COLOR_HEX[match];
+  // If 'Others', use neutral
+  if (name === 'Others') return OTHERS_COLOR;
+  // Fallback: try to match just color
+  const color = name.split(' ')[0];
+  const fallback = Object.keys(FOAM_SHEET_COLOR_HEX).find(key => key.startsWith(color));
+  if (fallback) return FOAM_SHEET_COLOR_HEX[fallback];
+  return OTHERS_COLOR;
+}
+
 export default function Admin() {
     const dispatch = useDispatch<AppDispatch>();
     const { archivedOrders, archivedOrderItems } = useSelector((state: RootState) => state.orders);
@@ -232,7 +275,40 @@ export default function Admin() {
     const selectedRowRef = useRef<HTMLTableRowElement>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [currentSlide, setCurrentSlide] = useState(0);
+    const { orderItems } = useSelector((state: RootState) => state.orders);
     const router = useRouter();
+
+
+    //Combine all items from both tables
+    const allOrderItems = [
+        ...Object.values(orderItems || {}).flat(),
+        ...Object.values(archivedOrderItems || {}).flat()
+    ];
+
+    //Aggregate by foam sheet, excluding 'N/A'
+    const foamSheetMap: Record<string, number> = {};
+    allOrderItems.forEach(item => {
+        const sheet = item.foamsheet || 'Unknown';
+        if (sheet === 'N/A') return; // Exclude N/A
+        foamSheetMap[sheet] = (foamSheetMap[sheet] || 0) + (item.quantity || 0);
+    });
+
+
+    // Prepare data for PieChart
+    const foamSheetData = Object.entries(foamSheetMap)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+
+    //Optionally, limit to top N and group the rest as 'Others'
+    const TOP_N = 5;
+    const topFoamSheets =  foamSheetData.slice(0, TOP_N);
+    const othersValue = foamSheetData.slice(TOP_N).reduce((sum, d) => sum + d.value, 0);
+    const pieChartData = [
+        ...topFoamSheets,
+        ...(othersValue > 0 ? [{ name: 'Others', value: othersValue }]: [])
+    ];
+
     
     // New state to track editing state
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -305,17 +381,6 @@ export default function Admin() {
         {name: 'HASTA', image: '/hasta.png'},
     ]
 
-
-    //Data for Pie Chart
-    const data= [
-        {name: 'BLUE 30mm', value: 40},
-        {name: 'RED 30mm', value: 25},
-        {name: 'GREEN 30mm', value: 10},
-        {name: 'ORANGE 50mm', value: 15},
-        {name: 'Others', value: 10},
-    ];
-
-    const COLORS = ['#3B82F6', '#EF4444', '#F97316', '#22C55E', '#9CA3AF'];
 
     // Fetch archived orders on component mount
     useEffect(() => {
@@ -1004,11 +1069,11 @@ export default function Admin() {
                         <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 lg:gap-11 justify-center items-center">
                             {/* Legend */}
                             <div className="flex flex-row sm:flex-col gap-2 sm:gap-3 justify-center flex-wrap ml-11">
-                                {data.map((entry, index) => (
+                                {pieChartData.map((entry) => (
                                     <div key={entry.name} className="flex items-center gap-2 min-w-[100px]">
                                         <div 
-                                            className="w-6 h-3 rounded-full" 
-                                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                            className="w-6 h-3 rounded-full border border-gray-300" 
+                                            style={{ backgroundColor: getFoamSheetColorHex(entry.name) }}
                                         />
                                         <span className="text-xs sm:text-sm text-gray-700">{entry.name}</span>
                                     </div>
@@ -1019,7 +1084,7 @@ export default function Admin() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
                                         <Pie
-                                            data={data}
+                                            data={pieChartData}
                                             dataKey="value"
                                             nameKey="name"
                                             cx="70%"
@@ -1028,15 +1093,15 @@ export default function Admin() {
                                             fill="#8884d8"
                                             paddingAngle={2}
                                         >
-                                            {data.map((entry, index) => (
+                                            {pieChartData.map((entry, index) => (
                                                 <Cell 
                                                     key={`cell-${index}`} 
-                                                    fill={COLORS[index % COLORS.length]}
+                                                    fill={getFoamSheetColorHex(entry.name)}
                                                 />
                                             ))}
                                         </Pie>
                                         <Tooltip 
-                                            formatter={(value) => [`${value}%`, null]}
+                                            formatter={(value, name) => [`${value} sheets`, name]}
                                             contentStyle={{ 
                                                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                                                 border: '1px solid #ccc',
@@ -1049,7 +1114,9 @@ export default function Admin() {
                             </div>
                         </div>
                         <div className="flex justify-center py-3 sm:py-4">
-                            <button className="bg-gradient-to-r from-red-800 to-red-600 text-white px-6 py-2 rounded-full flex items-center space-x-2 hover:from-red-700 hover:to-red-500 ">
+                            <button 
+                                onClick={() => router.push('/analytics')}
+                                className="bg-gradient-to-r from-red-800 to-red-600 text-white px-6 py-2 rounded-full flex items-center space-x-2 hover:from-red-700 hover:to-red-500 ">
                                 <span>View Analytics</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M5 12h14"/>

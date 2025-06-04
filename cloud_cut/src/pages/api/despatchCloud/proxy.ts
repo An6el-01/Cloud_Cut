@@ -104,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 'Accept': 'application/json',
                 'Authorization': req.headers.authorization || '',
             },
-            body: req.method === 'POST' ? JSON.stringify(req.body) : undefined,
+            body: !['GET', 'OPTIONS'].includes(req.method!) ? JSON.stringify(req.body) : undefined,
         });
 
         if (!response.ok) {
