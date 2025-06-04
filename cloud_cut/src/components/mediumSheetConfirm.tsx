@@ -50,6 +50,8 @@ export default function MediumSheetConfirm({
     // Parse order progress to determine if it's ready for packing
     const [isReadyForPacking, setIsReadyForPacking] = useState(true);
     const [itemToEdit, setItemToEdit] = useState<string | null>(null);
+    // Add loading state for confirm button
+    const [isLoading, setIsLoading] = useState(false);
     
     // Function to reset all state
     const resetState = () => {
@@ -82,6 +84,7 @@ export default function MediumSheetConfirm({
     };
     
     const handleConfirm = async () => {
+        setIsLoading(true);
         console.log("MediumSheetConfirm: handleConfirm called - Current state:", {
             packingOrders, markCompletedOrders, totalOrders, isMultipleOrders, isReadyForPacking,
             userMediumSheetsAddedToStock, sku
@@ -98,6 +101,7 @@ export default function MediumSheetConfirm({
                     .eq('sku', sku);
                 if (updateError) {
                     console.error("Error updating stock (deducting):", updateError);
+                    setIsLoading(false);
                     return;
                 }
 
@@ -118,6 +122,7 @@ export default function MediumSheetConfirm({
 
                 if (fetchError) {
                     console.error("Error fetching current stock:", fetchError);
+                    setIsLoading(false);
                     return;
                 }
 
@@ -132,6 +137,7 @@ export default function MediumSheetConfirm({
 
                 if (updateError) {
                     console.error("Error updating stock:", updateError);
+                    setIsLoading(false);
                     return;
                 }
 
@@ -151,6 +157,8 @@ export default function MediumSheetConfirm({
             onClose();
         } catch (error) {
             console.error("Error in handleConfirm:", error);
+        } finally {
+            setIsLoading(false);
         }
     };
     
@@ -678,12 +686,23 @@ export default function MediumSheetConfirm({
                             isReadyForPacking
                                 ? 'bg-blue-600 hover:bg--700 focus:ring-blue-500' 
                                 : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
-                        }`}
+                        } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
                         aria-label="Confirm processing orders"
+                        disabled={isLoading}
                     >
-                        {isMultipleOrders 
-                            ? `Confirm Batch Processing (${totalOrders})` 
-                            : 'Confirm Processing'}
+                        {isLoading ? (
+                            <span className="flex items-center justify-center gap-2">
+                                <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                            </span>
+                        ) : (
+                            isMultipleOrders 
+                                ? `Confirm Batch Processing (${totalOrders})` 
+                                : 'Confirm Processing'
+                        )}
                     </button>
                 </div>
             </div>      
