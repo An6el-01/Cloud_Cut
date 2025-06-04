@@ -1,7 +1,9 @@
-"use client";
-
 import React, { useEffect, useRef, useState } from 'react';
 import { getSupabaseClient } from "@/utils/supabase";
+import { editMediumSheetStock } from "@/utils/despatchCloud";
+
+
+
 
 export default function MediumSheetConfirm({
     isOpen,
@@ -47,6 +49,7 @@ export default function MediumSheetConfirm({
     const [currentMediumSheetStock, setCurrentMediumSheetStock] = useState(0);
     // Parse order progress to determine if it's ready for packing
     const [isReadyForPacking, setIsReadyForPacking] = useState(true);
+    const [itemToEdit, setItemToEdit] = useState<string | null>(null);
     
     // Function to reset all state
     const resetState = () => {
@@ -97,6 +100,12 @@ export default function MediumSheetConfirm({
                     console.error("Error updating stock (deducting):", updateError);
                     return;
                 }
+
+                try{
+                    await handleEditMediumSheetsInStock(false, mediumSheetTotalQuantity);
+                } catch (error) {
+                    console.error("Error editing medium sheet stock:", error);
+                }
                 console.log("Stock deducted for SKU:", sku, "New value:", newStockValue);
             } else if (sku && userMediumSheetsAddedToStock > 0) {
                 // Only add to stock if not using available stock
@@ -124,6 +133,12 @@ export default function MediumSheetConfirm({
                 if (updateError) {
                     console.error("Error updating stock:", updateError);
                     return;
+                }
+
+                try{
+                    await handleEditMediumSheetsInStock(true, userMediumSheetsAddedToStock);
+                } catch (error) {
+                    console.error("Error editing medium sheet stock:", error);
                 }
 
                 console.log("Successfully updated stock for SKU:", sku, "New value:", newStockValue);
@@ -360,6 +375,35 @@ export default function MediumSheetConfirm({
         }
     }, [isOpen, sku]);
 
+
+    async function fetchSelectedMediumSheet(sku: string) {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+            .from('finished_stock')
+            .select('*')
+            .eq('sku', sku)
+            .single();
+        
+        if (error) {
+            console.error("Error fetching selected medium sheet:", error);
+            return null;
+        }
+        return data;
+    }
+
+    const handleEditMediumSheetsInStock = async (isAdding: boolean, quantity: number) => {
+        const mediumSheetItem = await fetchSelectedMediumSheet(sku || '');
+        if (!mediumSheetItem) return;
+
+        console.log('Medium sheet item:', mediumSheetItem);
+
+        if (isAdding) {
+            await editMediumSheetStock(Number(mediumSheetItem.id), quantity, true);
+        } else {
+            await editMediumSheetStock(Number(mediumSheetItem.id), quantity, false);
+        }
+    }
+
     return (
         <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300"
@@ -414,6 +458,8 @@ export default function MediumSheetConfirm({
                                     </div>
                                 </div>
                                 <hr className="my-4 border-gray-200 dark:border-gray-700" />
+
+                                {/** variable mediumSheetTotalQuantity is the number of sheets that will be removed from stock */}
                                 <p className="text-gray-700 dark:text-gray-300 mb-2">
                                     By confirming, <strong>{mediumSheetTotalQuantity}</strong> sheets will be deducted from <strong>{selectedMediumSheet}.</strong>
                                 </p>
@@ -445,6 +491,8 @@ export default function MediumSheetConfirm({
                                                 <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
                                             </svg>
                                         </span>
+
+                                        {/** variable userMediumSheetsAddedToStock is the number of medium sheets that will be added to stock */}
                                         <span className="flex items-center gap-2">
                                             <input
                                                 type="number"
@@ -552,6 +600,7 @@ export default function MediumSheetConfirm({
                                             </div>
                                         </div>
                                     </div>
+                                    {/** variable mediumSheetTotalQuantity is the number of sheets that will be removed from stock */}
                                     <p className="text-gray-700 dark:text-gray-300 mb-2">
                                         By confirming, <strong>{mediumSheetTotalQuantity}</strong> sheets will be deducted from <strong>{selectedMediumSheet}.</strong>
                                     </p>
@@ -583,6 +632,7 @@ export default function MediumSheetConfirm({
                                                     <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
                                                 </svg>
                                             </span>
+                                            {/** variable userMediumSheetsAddedToStock is the amount of sheets that will be added to stock */}
                                             <span className="flex items-center gap-2">
                                                 <input
                                                     type="number"
