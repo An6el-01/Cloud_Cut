@@ -137,7 +137,7 @@ export default function ManuConfirm({
             aria-labelledby="dialog-title"
         >
             <div
-                className={`bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 transform transition-all duration-300 scale-100 relative w-1/3`}
+                className={`bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 transform transition-all duration-300 scale-100 relative w-full max-w-md`}
                 onClick={e => e.stopPropagation()}
             >
                 {/** Close button (X) in the top right */}

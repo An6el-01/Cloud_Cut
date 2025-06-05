@@ -7,6 +7,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import dynamic from 'next/dynamic';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, BarChart, Bar, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { useRouter } from 'next/navigation';
+import UkSalesMap from '@/components/UkSalesMap';
 
 
 const FOAM_SHEET_COLOR_HEX: Record<string, string> = {
@@ -224,12 +225,6 @@ export default function Analytics() {
         countySalesMap[county] = (countySalesMap[county] || 0) + totalQty;
     });
 
-    // Prepare data for radar chart: top 8 counties
-    const topCounties = Object.entries(countySalesMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([county, sales]) => ({ county, sales }));
-
     return (
         <div className="relative min-h-screen ">
             {/* Navbar */}
@@ -343,29 +338,14 @@ export default function Analytics() {
                         </div>
                     </div>
 
-                    {/* Sales by County (UK) (Spider Chart) */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col items-center justify-center">
+                    {/* Sales by County (UK) (Map) */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col items-center justify-center h-[500px] lg:h-[600px] w-full">
                         <div className="bg-gray-800 flex items-center justify-between w-full p-3">
                             <span className="text-lg font-semibold text-white">Sales By County (UK)</span>
                             <span className="text-xl">🏴</span>
                         </div>
-                        <div className="flex flex-col items-center justify-center p-4">
-                            <ResponsiveContainer width={250} height={250}>
-                                <RadarChart cx="50%" cy="50%" outerRadius={100} data={topCounties}>
-                                    <PolarGrid stroke="#bbb" />
-                                    <PolarAngleAxis dataKey="county" tick={{ fontSize: 12, fill: '#333' }} />
-                                    <PolarRadiusAxis angle={30} domain={[0, Math.max(...topCounties.map(d => d.sales), 1)]} tick={{ fontSize: 10, fill: '#666' }} />
-                                    <Radar name="Sales" dataKey="sales" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
-                                </RadarChart>
-                            </ResponsiveContainer>
-                            <div className="grid grid-cols-2 gap-x-8 gap-y-2 mt-2 text-sm text-gray-700 w-full max-w-xs">
-                                {topCounties.map((d, i) => (
-                                    <div key={d.county} className="flex justify-between">
-                                        <span>{d.county}</span>
-                                        <span className="font-semibold">{d.sales}</span>
-                                    </div>
-                                ))}
-                            </div>
+                        <div className="flex-1 w-full h-full">
+                            <UkSalesMap countySalesMap={countySalesMap} />
                         </div>
                     </div>
                 </div>
