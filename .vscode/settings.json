@@ -90,6 +90,7 @@
     "offsetpaths",
     "offsetx",
     "offsety",
+    "parsererror",
     "partgroup",
     "pdot",
     "pdotnorm",

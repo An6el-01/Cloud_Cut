@@ -103,14 +103,13 @@ SvgParser.prototype.config = function (config) {
     this.conf.endpointTolerance = Number(config.endpointTolerance);
 }
 
-SvgParser.prototype.load = function(dirpath, svgString, scale, scalingFactor){
-
-    if(!svgString || typeof svgString !== 'string'){
+SvgParser.prototype.load = function(dirpath, svgString, scale, scalingFactor) {
+    if (!svgString || typeof svgString !== 'string') {
         throw Error('invalid SVG string');
     }
 
     // small hack. inkscape svgs opened and saved in illustrator will fail from a lack of an inkscape xmlns
-    if(/inkscape/.test(svgString) && !/xmlns:inkscape/.test(svgstring)){
+    if (/inkscape/.test(svgString) && !/xmlns:inkscape/.test(svgString)) {
         svgString = svgString.replace(/xmlns=/i, ' xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns=');
     }
 
@@ -118,95 +117,81 @@ SvgParser.prototype.load = function(dirpath, svgString, scale, scalingFactor){
     var svg = parser.parseFromString(svgString, "image/svg+xml");
     this.dirPath = dirpath;
 
-    var failed = svg.documentElement.nodeName.indexOf('parsererror')>-1;
-    if(failed){
-        console.log('svg DOM parsing error: '+ svg.documentElement.nodeName);
+    var failed = svg.documentElement.nodeName.indexOf('parsererror') > -1;
+    if (failed) {
+        console.log('svg DOM parsing error: ' + svg.documentElement.nodeName);
     }
-    if(svg){
+    if (svg) {
         // scale the svg so that our scale parameter is preserved
         var root = svg.firstElementChild;
 
         this.svg = svg;
         this.svgRoot = root;
 
-        // get local scaling factor from svg root 'width' dimension
-        var width = root.getAttribute('width');
-        var viewBox = root.getAttribute('viewBox');
-
+        // Parse width, height, and viewBox
+        var widthAttr = root.getAttribute('width');
+        var heightAttr = root.getAttribute('height');
+        var viewBoxAttr = root.getAttribute('viewBox');
         var transform = root.getAttribute('transform') || '';
 
-        if(!width || !viewBox){
-            if(!scalingFactor){
-                return this.svgRoot;
+        // Default values
+        let width = 1, height = 1, viewBox = [0, 0, 1, 1];
+        let unit = 'px';
+
+        // Parse width and height with units
+        if (widthAttr) {
+            const match = widthAttr.match(/([\d.]+)([a-z%]*)/i);
+            if (match) {
+                width = parseFloat(match[1]);
+                unit = match[2] || 'px';
             }
-            else {
-                // apply absolute scaling
-                transform += ' scale('+scalingFactor+')';
-                root.setAttribute('transform', transform);
-
-                this.conf.scale *= scalingFactor;
-                return this.svgRoot;
+        }
+        if (heightAttr) {
+            const match = heightAttr.match(/([\d.]+)([a-z%]*)/i);
+            if (match) {
+                height = parseFloat(match[1]);
             }
         }
-
-        width = width.trim();
-        viewBox = viewBox.trim().split(/[\s,]+/);
-
-        if(!width || viewBox.length < 4){
-            return this.svgRoot;
+        if (viewBoxAttr) {
+            viewBox = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
         }
 
-        var pxwidth = viewBox[2];
+        // Convert width/height to px if needed
+        // 1in = 96px, 1cm = 37.795px, 1mm = 3.7795px, 1pt = 1.3333px, 1pc = 16px
+        const unitToPx = {
+            '': 1,
+            'px': 1,
+            'pt': 1.3333,
+            'pc': 16,
+            'mm': 3.7795,
+            'cm': 37.795,
+            'in': 96
+        };
+        let widthPx = width * (unitToPx[unit] || 1);
+        let heightPx = height * (unitToPx[unit] || 1);
 
-        // localscale is in pixels/inches, regardless of units
-        var localscale = null;
-
-        if(/in/.test(width)){
-            width = Number(width.replace(/[^0-9\.]/g, ''));
-            localscale = pxwidth/width;
-        }
-        else if(/mm/.test(width)){
-            width = Number(width.replace(/[^0-9\.]/g, ''));
-            localscale = (25.4*pxwidth)/width;
-        }
-        else if(/cm/.test(width)){
-            width = Number(width.replace(/[^0-9\.]/g, ''));
-            localscale = (2.54*pxwidth)/width;
-        }
-        else if(/pt/.test(width)){
-            width = Number(width.replace(/[^0-9\.]/g, ''));
-            localscale = (72*pxwidth)/width;
-        }
-        else if(/pc/.test(width)){
-            width = Number(width.replace(/[^0-9\.]/g, ''));
-            localscale = (6*pxwidth)/width;
-        }
-        // these are css "pixels"
-        else if(/px/.test(width)){
-            width = Number(width.replace(/[^0-9\.]/g, ''));
-            localscale = (96*pxwidth)/width;
+        // If viewBox is present, use it for scaling
+        let scaleX = 1, scaleY = 1;
+        if (viewBox.length === 4) {
+            scaleX = widthPx / viewBox[2];
+            scaleY = heightPx / viewBox[3];
         }
 
-        if(localscale === null){
-            localscale = scalingFactor;
+        // Compose a transform string to normalize to px
+        let normalizeTransform = '';
+        if (scaleX !== 1 || scaleY !== 1) {
+            normalizeTransform += ` scale(${scaleX},${scaleY})`;
         }
-        else if(scalingFactor){
-            localscale *= scalingFactor;
+        if (transform) {
+            normalizeTransform += ' ' + transform;
+        }
+        normalizeTransform = normalizeTransform.trim();
+        if (normalizeTransform) {
+            root.setAttribute('transform', normalizeTransform);
         }
 
-        // no scaling factor
-        if(localscale === null){
-            console.log('no scale');
-            return this.svgRoot;
-        }
-        
-        transform = root.getAttribute('transform') || '';
-
-        transform += ' scale('+(scale/localscale)+')';
-
-        root.setAttribute('transform', transform);
-
-        this.conf.scale *= scale/localscale;
+        // Store the scale for downstream use
+        this.conf.scale = scaleX; // Use X scale for uniform scaling
     }
 
     return this.svgRoot;

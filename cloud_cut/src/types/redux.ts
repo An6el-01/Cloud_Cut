@@ -88,6 +88,11 @@ export interface NestingItem {
     svgUrl?: string[];
 }
 
+export interface PolygonPoint {
+    x: number;
+    y: number;
+}
+
 export interface NestingPart {
     x: number;
     y: number;
@@ -95,6 +100,7 @@ export interface NestingPart {
     id: string;
     source: NestingItem;
     filename: string;
+    polygons? : { x: number, y: number }[][];
     children?: NestingPart[];
     itemName?: string;
     orderId?: string;

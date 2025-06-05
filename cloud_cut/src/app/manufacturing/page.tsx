@@ -31,15 +31,13 @@ export default function Manufacturing() {
   const allOrders = useSelector((state: RootState) => state.orders.allOrders); // Add allOrders selector
   const totalOrders = useSelector(selectCurrentViewTotal); // Use view-specific total
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
-  // Get user profile to check for role
-  const userProfile = useSelector((state: RootState) => state.auth.userProfile);
+  const userProfile = useSelector((state: RootState) => state.auth.userProfile);   // Get user profile to check for role
   const isOperatorRole = userProfile?.role === 'Operator';
   const selectedItemsSelector = useMemo(() => selectOrderItemsById(selectedOrderId || ''), [selectedOrderId]);
   const selectedOrderItems = useSelector(selectedItemsSelector);
   const { currentPage, loading, error, } = useSelector((state: RootState) => state.orders);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
-
   const totalPages = Math.ceil(totalOrders / ordersPerPage);
   const selectedOrder = orders.find((o) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1485,6 +1483,19 @@ export default function Manufacturing() {
     });
   };
 
+  // Function to calculate bounding box for the polygon
+  function getBoundingBox(points: { x: number, y: number}[]) {
+    const xs = points.map(p => p.x);
+    const ys = points.map(p => p.y);
+
+    return{
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  }
+
   // Update the table in the first section to show nesting queue data
   return (
     <div className="min-h-screen">
@@ -1928,42 +1939,87 @@ export default function Manufacturing() {
                           <div className="col-span-2 bg-gray-800/50 rounded-lg p-4">
                             <h3 className="text-white text-lg font-semibold mb-4">Nesting Layout</h3>
                             <div className="aspect-[4/3] bg-gray-700/50 rounded-lg overflow-hidden">
-                              <svg
-                                viewBox="0 0 1000 750"
-                                className="w-full h-full"
-                                style={{ backgroundColor: '#FFFFFF' }}
-                              >
-                                {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, index: number) => (
-                                  <g key={index}>
-                                    {placement.parts.map((part: NestingPart, partIndex: number) => (
-                                      <g
-                                        key={partIndex}
-                                        transform={`translate(${part.x},${part.y}) rotate(${part.rotation})`}
-                                      >
-                                        <rect
-                                          x="0"
-                                          y="0"
-                                          width="100"
-                                          height="100"
-                                          fill="none"
-                                          stroke="#4CAF50"
-                                          strokeWidth="2"
-                                        />
-                                        <text
-                                          x="50"
-                                          y="50"
-                                          textAnchor="middle"
-                                          dominantBaseline="middle"
-                                          fill="#4CAF50"
-                                          fontSize="12"
-                                        >
-                                          {part.itemName || part.filename}
-                                        </text>
-                                      </g>
-                                    ))}
-                                  </g>
-                                ))}
-                              </svg>
+                              {(() => {
+                                // Debug logs for SVG rendering
+                                console.log('Selected nesting row:', selectedNestingRow);
+                                console.log('Nesting queue data:', nestingQueueData[selectedNestingRow as string]);
+                                console.log('Nesting result:', nestingQueueData[selectedNestingRow as string]?.nestingResult);
+                                // Get all parts for the current placement
+                                const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
+                                // Gather all points after translation/rotation
+                                let allPoints: { x: number, y: number }[] = [];
+                                allParts.forEach((part: NestingPart) => {
+                                  if (part.polygons && part.polygons[0]) {
+                                    // Apply translation and rotation to each point
+                                    const angle = (part.rotation || 0) * Math.PI / 180;
+                                    const cos = Math.cos(angle);
+                                    const sin = Math.sin(angle);
+                                    part.polygons[0].forEach(pt => {
+                                      // Rotate around (0,0), then translate
+                                      const x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                      const y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                      allPoints.push({ x, y });
+                                    });
+                                  }
+                                });
+                                // Compute bounding box
+                                let minX = 0, minY = 0, maxX = 1000, maxY = 750;
+                                if (allPoints.length > 0) {
+                                  minX = Math.min(...allPoints.map(p => p.x));
+                                  minY = Math.min(...allPoints.map(p => p.y));
+                                  maxX = Math.max(...allPoints.map(p => p.x));
+                                  maxY = Math.max(...allPoints.map(p => p.y));
+                                }
+                                const padding = 20;
+                                const viewBox = `${minX - padding} ${minY - padding} ${maxX - minX + 2 * padding} ${maxY - minY + 2 * padding}`;
+                                return (
+                                  <svg
+                                    viewBox={viewBox}
+                                    className="w-full h-full"
+                                    style={{ backgroundColor: '#FFFFFF' }}
+                                  >
+                                    {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, index: number) => {
+                                      console.log('Rendering placement:', placement);
+                                      return (
+                                        <g key={index}>
+                                          {placement.parts.map((part: NestingPart, partIndex: number) => {
+                                            console.log('Rendering part:', part);
+                                            console.log('part.polygons:', part.polygons);
+                                            console.log('part.polygons[0]:', part.polygons && part.polygons[0]);
+                                            const angle = (part.rotation || 0) * Math.PI / 180;
+                                            const cos = Math.cos(angle);
+                                            const sin = Math.sin(angle);
+                                            return (
+                                              <g
+                                                key={partIndex}
+                                              >
+                                                {part.polygons && part.polygons[0] && (() => {
+                                                  const points = part.polygons[0].map(pt => {
+                                                    const x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                                    const y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                                    return { x, y };
+                                                  });
+                                                  console.log(`Polygon points for:`, part.itemName || part.filename, points);
+                                                  return (
+                                                    <>
+                                                      <polygon
+                                                        points={points.map(pt => `${pt.x},${pt.y}`).join(' ')}
+                                                        fill="none"
+                                                        stroke="#4CAF50"
+                                                        strokeWidth="2"
+                                                      />
+                                                    </>
+                                                  );
+                                                })()}
+                                              </g>
+                                            );
+                                          })}
+                                        </g>
+                                      );
+                                    })}
+                                  </svg>
+                                );
+                              })()}
                             </div>
                           </div>
                         ) : (

@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import Navbar from '@/components/Navbar';
 import { AppDispatch, RootState } from '@/redux/store';
 import { useDispatch, useSelector } from 'react-redux';
 import dynamic from 'next/dynamic';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, BarChart, Bar, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
-import { useRouter } from 'next/navigation';
-import UkSalesMap from '@/components/UkSalesMap';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+// import UkSalesMap from '@/components/UkSalesMap';
 
 
 const FOAM_SHEET_COLOR_HEX: Record<string, string> = {
@@ -339,7 +338,7 @@ export default function Analytics() {
                     </div>
 
                     {/* Sales by County (UK) (Map) */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col items-center justify-center h-[500px] lg:h-[600px] w-full">
+                    {/* <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col items-center justify-center h-[500px] lg:h-[600px] w-full">
                         <div className="bg-gray-800 flex items-center justify-between w-full p-3">
                             <span className="text-lg font-semibold text-white">Sales By County (UK)</span>
                             <span className="text-xl">🏴</span>
@@ -347,7 +346,7 @@ export default function Analytics() {
                         <div className="flex-1 w-full h-full">
                             <UkSalesMap countySalesMap={countySalesMap} />
                         </div>
-                    </div>
+                    </div> */}
                 </div>
             </div>
         </div>

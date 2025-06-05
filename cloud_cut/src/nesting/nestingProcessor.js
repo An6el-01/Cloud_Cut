@@ -73,6 +73,8 @@ export class NestingProcessor {
       if (item.svgUrl && item.svgUrl[0] !== 'noMatch') {
         for (const svgUrl of item.svgUrl) {
           try {
+          // Check if the svg is processed properly as a part
+
             console.log(`Processing SVG for ${item.sku} from URL: ${svgUrl}`);
             
             // Fetch SVG content
@@ -149,17 +151,34 @@ export class NestingProcessor {
                 }
               }
             }
+            // Filter out polygons that are not the main part 
+
             
             if (polygons.length > 0) {
+
+
+              // Find the polygon with the most points (most complex)
+              let bestPolygon = polygons[0];
+              let maxPoints = polygons[0].length;
+              for (let i = 1; i < polygons.length; i++) {
+                if (polygons[i].length > maxPoints) {
+                  bestPolygon = polygons[i];
+                  maxPoints = polygons[i].length;
+                }
+              }
+
+              console.log('Extracted polygon points:', bestPolygon);
+
+
               // Add to parts array
               parts.push({
                 id: `${item.sku}-${parts.length}`,
-                polygons: polygons,
+                polygons: [bestPolygon],
                 quantity: item.quantity,
                 source: item,
                 rotation: 0
               });
-              console.log(`Successfully processed ${item.sku} with ${polygons.length} polygons`);
+              console.log(`Successfully processed ${item.sku} with 1 polygon (largest by area)`);
             } else {
               console.warn(`No polygons generated for ${item.sku}`);
             }
@@ -194,6 +213,7 @@ export class NestingProcessor {
           id: part.id,
           source: part.source,
           filename: part.source.sku,
+          polygons: part.polygons,
           children: part.children || [],
           itemName: originalItem?.itemName,
           orderId: originalItem?.orderId,
