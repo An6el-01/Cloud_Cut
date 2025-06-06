@@ -73,8 +73,6 @@ export class NestingProcessor {
       if (item.svgUrl && item.svgUrl[0] !== 'noMatch') {
         for (const svgUrl of item.svgUrl) {
           try {
-          // Check if the svg is processed properly as a part
-
             console.log(`Processing SVG for ${item.sku} from URL: ${svgUrl}`);
             
             // Fetch SVG content
@@ -97,11 +95,33 @@ export class NestingProcessor {
               console.error(`SVG parsing error for ${item.sku}:`, parserError.textContent);
               continue;
             }
-            
+
+            // Get dimensions from CSV for this SKU
+            const dimensionsResponse = await fetch('/data/dxf_dimensions.csv');
+            const dimensionsText = await dimensionsResponse.text();
+            const dimensions = dimensionsText.split('\n')
+              .slice(1) // Skip header
+              .filter(line => line.trim()) // Remove empty lines
+              .map(line => {
+                const [item_name, min_x, min_y, min_z, max_x, max_y, max_z, width, height, depth] = line.split(',');
+                return { item_name, width: parseFloat(width), height: parseFloat(height) };
+              })
+              .find(dim => item.sku.includes(dim.item_name));
+
+            if (!dimensions) {
+              console.warn(`No dimensions found for SKU ${item.sku}`);
+              continue;
+            }
+
             // Initialize SVG parser with the document
             this.svgParser = new SvgParser();
             this.svgParser.svg = svgDoc;
             this.svgParser.svgRoot = svgDoc.documentElement;
+            
+            // Set the viewBox to match our target sheet dimensions (in mm)
+            const sheetWidth = 1000; // mm
+            const sheetHeight = 2000; // mm
+            this.svgParser.svgRoot.setAttribute('viewBox', `0 0 ${sheetWidth} ${sheetHeight}`);
             
             // Log SVG structure
             console.log(`SVG root element:`, this.svgParser.svgRoot);
@@ -151,12 +171,8 @@ export class NestingProcessor {
                 }
               }
             }
-            // Filter out polygons that are not the main part 
-
             
             if (polygons.length > 0) {
-
-
               // Find the polygon with the most points (most complex)
               let bestPolygon = polygons[0];
               let maxPoints = polygons[0].length;
@@ -167,13 +183,24 @@ export class NestingProcessor {
                 }
               }
 
-              console.log('Extracted polygon points:', bestPolygon);
-
+              // --- SCALE THE POLYGON TO MATCH CSV DIMENSIONS ---
+              const bounds = this.geometryUtil.getPolygonBounds(bestPolygon);
+              const partSvgWidth = bounds.width;
+              const partSvgHeight = bounds.height;
+              const csvWidth = dimensions.width;
+              const csvHeight = dimensions.height;
+              const scaleX = csvWidth / partSvgWidth;
+              const scaleY = csvHeight / partSvgHeight;
+              const scaledPolygon = bestPolygon.map(pt => ({
+                x: (pt.x - bounds.x) * scaleX, // shift to (0,0) then scale
+                y: (pt.y - bounds.y) * scaleY
+              }));
+              console.log('Scaled polygon points:', scaledPolygon);
 
               // Add to parts array
               parts.push({
                 id: `${item.sku}-${parts.length}`,
-                polygons: [bestPolygon],
+                polygons: [scaledPolygon],
                 quantity: item.quantity,
                 source: item,
                 rotation: 0
