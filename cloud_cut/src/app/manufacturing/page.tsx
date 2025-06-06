@@ -1915,35 +1915,18 @@ export default function Manufacturing() {
             </div>
             {/* Nesting Visualization Section */}
             {firstColTab !== 'Orders Queue' && firstColTab !== 'Work In Progress' && (
-              <div className="flex-1 min-w-0 max-w-[500px] flex flex-col bg-black/70 rounded-xl shadow-xl">
+              <div className="flex-1 min-w-0 max-w-96 flex flex-col bg-black/70 rounded-xl shadow-xl p-3">
                 <div className="rounded-t-lg">
                   <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
                     Nesting Visualization
                   </h1>
                 </div>
-                <div className="border border-gray-200 p-6 h-full overflow-y-auto">
+                <div className="h-full overflow-y-auto">
                   {selectedNestingRow ? (
-                    <div className="space-y-6">
-                      {/* Display foam sheet name */}
-                      <div className="text-center">
-                        <h2 className="text-xl font-semibold text-white mb-2">
-                          {formatMediumSheetName(selectedNestingRow)}
-                        </h2>
-                       
-                      </div>
-
-                      {/* Display SVGs */}
-                      <div className="grid grid-cols-2 gap-4">
+                    <div className="aspect-[1/2] bg-gray-700/50 overflow-hidden h-full mx-auto flex items-center justify-center">
                         {nestingQueueData[selectedNestingRow as string]?.nestingResult ? (
                           // Display nesting result if available
-                          <div className="col-span-2 bg-gray-800/50 rounded-lg p-4">
-                            <h3 className="text-white text-lg font-semibold mb-4">Nesting Layout</h3>
-                            <div className="aspect-[4/3] bg-gray-700/50 rounded-lg overflow-hidden">
-                              {(() => {
-                                // Debug logs for SVG rendering
-                                console.log('Selected nesting row:', selectedNestingRow);
-                                console.log('Nesting queue data:', nestingQueueData[selectedNestingRow as string]);
-                                console.log('Nesting result:', nestingQueueData[selectedNestingRow as string]?.nestingResult);
+                              (() => {
                                 // Get all parts for the current placement
                                 const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
                                 // Gather all points after translation/rotation
@@ -1962,66 +1945,67 @@ export default function Manufacturing() {
                                     });
                                   }
                                 });
-                                // Compute bounding box
-                                let minX = 0, minY = 0, maxX = 1000, maxY = 750;
-                                if (allPoints.length > 0) {
-                                  minX = Math.min(...allPoints.map(p => p.x));
-                                  minY = Math.min(...allPoints.map(p => p.y));
-                                  maxX = Math.max(...allPoints.map(p => p.x));
-                                  maxY = Math.max(...allPoints.map(p => p.y));
-                                }
-                                const padding = 20;
-                                const viewBox = `${minX - padding} ${minY - padding} ${maxX - minX + 2 * padding} ${maxY - minY + 2 * padding}`;
+
+                                const VIEWBOX_WIDTH = 1000;
+                                const VIEWBOX_HEIGHT = 1600; // Portrait: height > width
+                                const viewBox = `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
+
+                                // Compute bounding box of all points
+                                let minX = Math.min(...allPoints.map(p => p.x));
+                                let minY = Math.min(...allPoints.map(p => p.y));
+                                let maxX = Math.max(...allPoints.map(p => p.x));
+                                let maxY = Math.max(...allPoints.map(p => p.y));
+
+                                // Compute scale to fit portrait viewBox
+                                const polyWidth = maxX - minX;
+                                const polyHeight = maxY - minY;
+                                const scale = Math.min(
+                                  VIEWBOX_WIDTH / polyWidth,
+                                  VIEWBOX_HEIGHT / polyHeight
+                                );
+
+                                // Compute translation to center polygons in the viewBox
+                                const offsetX = (VIEWBOX_WIDTH - polyWidth * scale) / 2 - minX * scale;
+                                const offsetY = (VIEWBOX_HEIGHT - polyHeight * scale) / 2 - minY * scale;
+
                                 return (
                                   <svg
                                     viewBox={viewBox}
                                     className="w-full h-full"
-                                    style={{ backgroundColor: '#FFFFFF' }}
+                                    style={{ backgroundColor: '#000000', border: '1px solid #ffffff' }}
                                   >
-                                    {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, index: number) => {
-                                      console.log('Rendering placement:', placement);
-                                      return (
-                                        <g key={index}>
-                                          {placement.parts.map((part: NestingPart, partIndex: number) => {
-                                            console.log('Rendering part:', part);
-                                            console.log('part.polygons:', part.polygons);
-                                            console.log('part.polygons[0]:', part.polygons && part.polygons[0]);
+                                    {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, index: number) => (
+                                      <g key={index}>
+                                        {placement.parts.map((part: NestingPart, partIndex: number) => {
+                                          if (!part.polygons || !part.polygons[0]) return null;
+                                          // Scale and center each polygon
+                                          const points = part.polygons[0].map(pt => {
+                                            // Apply rotation if needed (around part center)
                                             const angle = (part.rotation || 0) * Math.PI / 180;
                                             const cos = Math.cos(angle);
                                             const sin = Math.sin(angle);
-                                            return (
-                                              <g
-                                                key={partIndex}
-                                              >
-                                                {part.polygons && part.polygons[0] && (() => {
-                                                  const points = part.polygons[0].map(pt => {
-                                                    const x = pt.x * cos - pt.y * sin + (part.x || 0);
-                                                    const y = pt.x * sin + pt.y * cos + (part.y || 0);
-                                                    return { x, y };
-                                                  });
-                                                  console.log(`Polygon points for:`, part.itemName || part.filename, points);
-                                                  return (
-                                                    <>
-                                                      <polygon
-                                                        points={points.map(pt => `${pt.x},${pt.y}`).join(' ')}
-                                                        fill="none"
-                                                        stroke="#4CAF50"
-                                                        strokeWidth="2"
-                                                      />
-                                                    </>
-                                                  );
-                                                })()}
-                                              </g>
-                                            );
-                                          })}
-                                        </g>
-                                      );
-                                    })}
+                                            let x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                            let y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                            // Scale and center
+                                            x = x * scale + offsetX;
+                                            y = y * scale + offsetY;
+                                            return `${x},${y}`;
+                                          }).join(' ');
+                                          return (
+                                            <polygon
+                                              key={partIndex}
+                                              points={points}
+                                              fill="none"
+                                              stroke="#4CAF50"
+                                              strokeWidth="2"
+                                            />
+                                          );
+                                        })}
+                                      </g>
+                                    ))}
                                   </svg>
                                 );
-                              })()}
-                            </div>
-                          </div>
+                              })()
                         ) : (
                           // Display individual SVGs if no nesting result
                           nestingQueueData[selectedNestingRow as string]?.items.map((item: NestingItem, index: number) => (
@@ -2055,7 +2039,6 @@ export default function Manufacturing() {
                             </div>
                           ))
                         )}
-                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -2376,7 +2359,7 @@ export default function Manufacturing() {
         </div>
       )}
 
-      {/* Medium Sheets Tab Active Section */}
+      {/** Medium Sheets Tab Active Section */}
       {activeTab === 'medium' && (
         <div className="container mx-auto pt-6 pb-8 px-4 flex flex-col lg:flex-row gap-6 max-w-[1520px]">
           {/**Medium Sheets Section */}
