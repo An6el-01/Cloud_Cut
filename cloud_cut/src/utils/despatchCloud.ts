@@ -448,6 +448,12 @@ export async function updateStockItem(
       throw new Error('Could not fetch inventory item details');
     }
 
+    // Check if the item is a medium sheet by looking at the SKU
+    if (inventoryItem.sku && inventoryItem.sku.toLowerCase().startsWith('sf-100/50')) {
+      console.log('Skipping stock update for medium sheet item:', inventoryItem.sku);
+      return inventoryItem;
+    }
+
     const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}/adjust_location_stock`;
     console.log('Updating inventory item stock:', url);
 

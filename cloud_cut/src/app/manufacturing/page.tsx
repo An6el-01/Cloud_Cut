@@ -80,6 +80,24 @@ export default function Manufacturing() {
     setFirstColTab(tab);
   };
 
+  const NESTED_ORDER_COLOURS = [
+    '#2196F3',
+    '#F44336',
+    '#4CAF50',
+    '#FF9800',
+    '#9C27B0',
+    '#607D8B',
+    '#FF5722',
+    '#E91E63',
+    '#00BCD4',
+  ];
+
+  //Helper to get a color for an order (by index)
+  const getOrderColor = (orderId: string, index: number) => {
+    // Assign color based on the order's position in the uniqueOrders list (index)
+    return NESTED_ORDER_COLOURS[index % NESTED_ORDER_COLOURS.length];
+  }
+
   // Get all order items from the state
   const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
   // State to track orders with medium sheets
@@ -1916,6 +1934,7 @@ export default function Manufacturing() {
             {/* Nesting Visualization Section */}
             {firstColTab !== 'Orders Queue' && firstColTab !== 'Work In Progress' && (
               <div className="flex-1 min-w-0 max-w-96 flex flex-col bg-black/70 rounded-xl shadow-xl p-3">
+                {/** Nesting Visualization Title */}
                 <div className="rounded-t-lg">
                   <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
                     Nesting Visualization
@@ -1974,19 +1993,32 @@ export default function Manufacturing() {
                                     className="w-full h-full"
                                     style={{ backgroundColor: '#000000', border: '1px solid #ffffff' }}
                                   >
-                                    {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, index: number) => (
-                                      <g key={index}>
+                                    {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, placementIndex: number) => (
+                                      <g key={placementIndex}>
                                         {placement.parts.map((part: NestingPart, partIndex: number) => {
                                           if (!part.polygons || !part.polygons[0]) return null;
+                                          // Find the order index for this part's orderId in uniqueOrders
+                                          const uniqueOrders = (() => {
+                                            const items = nestingQueueData[selectedNestingRow as string]?.items || [];
+                                            const grouped = items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
+                                              const key = `${item.orderId}-${item.customerName}`;
+                                              if (!acc[key]) {
+                                                acc[key] = { orderId: item.orderId, customerName: item.customerName, items: [] };
+                                              }
+                                              acc[key].items.push(item);
+                                              return acc;
+                                            }, {});
+                                            return Object.values(grouped);
+                                          })();
+                                          const orderIndex = uniqueOrders.findIndex(o => o.orderId === part.orderId);
+                                          const fillColor = getOrderColor(part.orderId || '', orderIndex);
                                           // Scale and center each polygon
                                           const points = part.polygons[0].map(pt => {
-                                            // Apply rotation if needed (around part center)
                                             const angle = (part.rotation || 0) * Math.PI / 180;
                                             const cos = Math.cos(angle);
                                             const sin = Math.sin(angle);
                                             let x = pt.x * cos - pt.y * sin + (part.x || 0);
                                             let y = pt.x * sin + pt.y * cos + (part.y || 0);
-                                            // Scale and center
                                             x = x * scale + offsetX;
                                             y = y * scale + offsetY;
                                             return `${x},${y}`;
@@ -1995,8 +2027,9 @@ export default function Manufacturing() {
                                             <polygon
                                               key={partIndex}
                                               points={points}
-                                              fill="none"
-                                              stroke="#4CAF50"
+                                              fill={fillColor}
+                                              fillOpacity={0.7}
+                                              stroke="#fff"
                                               strokeWidth="2"
                                             />
                                           );
@@ -2068,6 +2101,7 @@ export default function Manufacturing() {
                     <table className="w-full text-white border-separate border-spacing-y-2">
                       <thead>
                         <tr>
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"> </th>
                           <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
                           <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
                         </tr>
@@ -2122,6 +2156,13 @@ export default function Manufacturing() {
 
                           return uniqueOrders.map((order: { orderId: string; customerName: string; items: NestingItem[] }, index: number) => (
                             <tr key={`${order.orderId}-${index}`} className="hover:bg-gray-800/30 transition-colors">
+                              <td className="px-6 py-4 text-center text-lg font-semibold">
+                              <span
+                                  className="inline-block w-4 h-4 rounded-full"
+                                  style={{ backgroundColor: getOrderColor(order.orderId, index)}}
+                                  title={`Order color for ${order.customerName}`}
+                                ></span>
+                              </td>
                               <td className="px-6 py-4 text-center text-lg font-semibold text-white">
                                 {order.customerName || '(No Name in Order)'}
                               </td>
