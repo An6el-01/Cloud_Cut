@@ -113,30 +113,26 @@ export class NestingProcessor {
               continue;
             }
 
+            console.log('Dimensions for ', item.sku, 'in the CSV is width: ', dimensions.width, 'and height: ', dimensions.height);
+
+            
+
             // Initialize SVG parser with the document
             this.svgParser = new SvgParser();
             this.svgParser.svg = svgDoc;
             this.svgParser.svgRoot = svgDoc.documentElement;
             
             // Set the viewBox to match our target sheet dimensions (in mm)
+            const PADDING = 10; // 10mm padding
             const sheetWidth = 1000; // mm
             const sheetHeight = 2000; // mm
-            this.svgParser.svgRoot.setAttribute('viewBox', `0 0 ${sheetWidth} ${sheetHeight}`);
-            
-            // Log SVG structure
-            console.log(`SVG root element:`, this.svgParser.svgRoot);
-            console.log(`Number of child elements:`, this.svgParser.svgRoot.children.length);
+            this.svgParser.svgRoot.setAttribute('viewBox', `-${PADDING} -${PADDING} ${sheetWidth + 2 * PADDING} ${sheetHeight + 2 * PADDING}`);
             
             // Convert all paths to absolute coordinates first
             const paths = svgDoc.getElementsByTagName('path');
-            console.log(`Found ${paths.length} path elements`);
             
             for (let i = 0; i < paths.length; i++) {
               const path = paths[i];
-              console.log(`Processing path ${i + 1}:`, {
-                d: path.getAttribute('d'),
-                transform: path.getAttribute('transform')
-              });
               
               try {
                 if (!path.getAttribute('d')) {
@@ -195,17 +191,25 @@ export class NestingProcessor {
                 x: (pt.x - bounds.x) * scaleX, // shift to (0,0) then scale
                 y: (pt.y - bounds.y) * scaleY
               }));
-              console.log('Scaled polygon points:', scaledPolygon);
+
+              console.log('Dimensions for ', item.sku, 'is width: ', partSvgWidth, 'and height: ', partSvgHeight);
+
+              if (!partSvgWidth || !partSvgHeight) {
+                console.warn(`Dimensions are zero for SKU ${item.sku}`);
+                continue;
+              }
 
               // Add to parts array
-              parts.push({
-                id: `${item.sku}-${parts.length}`,
-                polygons: [scaledPolygon],
-                quantity: item.quantity,
-                source: item,
-                rotation: 0
-              });
-              console.log(`Successfully processed ${item.sku} with 1 polygon (largest by area)`);
+              for (let q = 0; q < item.quantity; q++) {
+                parts.push({
+                  id: `${item.sku}-${parts.length}`,
+                  polygons: [scaledPolygon],
+                  quantity: 1, // Each part is a single instance
+                  source: item,
+                  rotation: 0
+                });
+              }
+              console.log(`Successfully processed ${item.sku} with ${item.quantity} polygons`);
             } else {
               console.warn(`No polygons generated for ${item.sku}`);
             }

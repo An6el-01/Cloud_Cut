@@ -1051,7 +1051,6 @@ export class DeepNest {
             }
 
             if (finished) {
-                console.log("new generation!");
                 // all individuals have been evaluated, start new generation
                 GA.generation();
             }
@@ -1526,7 +1525,6 @@ DeepNest.prototype.nest = async function(parts, config) {
     };
 
 GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
-    console.log('Evaluating fitness for individual:', individual);
     
     // Create a new worker for this evaluation
     const worker = new PlacementWorker(
@@ -1540,7 +1538,6 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
 
     // Place the parts and get the result
     const result = worker.place(individual.placement);
-    console.log('Placement result:', result);
 
     if (!result || !result.success) {
         console.log('Placement failed, returning high fitness value');
@@ -1612,14 +1609,6 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
     // Calculate fitness (lower is better)
     // We want to maximize material efficiency and minimize average distance
     const fitness = (1 / materialEfficiency) + (averageDistance * 0.1);
-    
-    console.log('Fitness calculation:', {
-        totalPartsArea,
-        boundingBoxArea,
-        materialEfficiency,
-        averageDistance,
-        fitness
-    });
 
     return fitness;
 }

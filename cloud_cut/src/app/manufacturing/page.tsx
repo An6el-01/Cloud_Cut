@@ -69,6 +69,16 @@ export default function Manufacturing() {
     'Orders Queue'
   );
   const [nestingQueueData, setNestingQueueData] = useState<Record<string, ProcessedNestingData>>({});
+
+  const [hoveredInsert, setHoveredInsert] = useState<{
+    partKey: string;
+    mouseX: number;
+    mouseY: number;
+  } | null>(null);
+  const [damagedInserts, setDamagedInserts] = useState<Record<string, boolean>>({});
+  const svgContainerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
   // Improved function for tab changes that completely prevents changes for operators
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
     // Operators can ONLY have 'Orders Queue'
@@ -96,6 +106,15 @@ export default function Manufacturing() {
   const getOrderColor = (orderId: string, index: number) => {
     // Assign color based on the order's position in the uniqueOrders list (index)
     return NESTED_ORDER_COLOURS[index % NESTED_ORDER_COLOURS.length];
+  }
+
+  const getPolygonCentroid = (pointsArr: {x: number, y: number}[]) => {
+    let x = 0, y = 0, len = pointsArr.length;
+    for (let i = 0; i < len; i++) {
+      x += pointsArr[i].x;
+      y += pointsArr[i].y;
+    }
+    return { x: x / len, y: y / len };
   }
 
   // Get all order items from the state
@@ -144,11 +163,6 @@ export default function Manufacturing() {
   const itemsByMediumSheet = useSelector((state: RootState) => {
     // Get all order items from the state, not just the ones for the current page
     const allOrderItems = Object.values(state.orders.orderItems).flat();
-    console.log('All order items in Medium Sheets tab:', allOrderItems.map(item => ({
-      order_id: item.order_id,
-      sku_id: item.sku_id,
-      completed: item.completed
-    })));
 
     // Define valid medium sheet patterns
     const validMediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
@@ -160,14 +174,13 @@ export default function Manufacturing() {
       );
 
       if (isMediumSheet) {
-        console.log(`Found medium sheet item: ${item.sku_id} in order ${item.order_id}`);
+        
         // Add the item quantity to the total for this SKU
         acc[item.sku_id] = (acc[item.sku_id] || 0) + item.quantity;
       }
       return acc;
     }, {});
 
-    console.log('Medium sheet quantities by SKU:', result);
     return result;
   });
 
@@ -282,7 +295,6 @@ export default function Manufacturing() {
           orderIdsArray.includes(order.order_id)
         );
 
-        console.log(`Found ${ordersFromStore.length} orders for medium sheet ${sku}`);
 
         if (ordersFromStore.length > 0) {
           setOrdersWithMediumSheets(prev => ({
@@ -1942,137 +1954,175 @@ export default function Manufacturing() {
                 </div>
                 <div className="h-full overflow-y-auto">
                   {selectedNestingRow ? (
-                    <div className="aspect-[1/2] bg-gray-700/50 overflow-hidden h-full mx-auto flex items-center justify-center">
-                        {nestingQueueData[selectedNestingRow as string]?.nestingResult ? (
-                          // Display nesting result if available
-                              (() => {
-                                // Get all parts for the current placement
-                                const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
-                                // Gather all points after translation/rotation
-                                let allPoints: { x: number, y: number }[] = [];
-                                allParts.forEach((part: NestingPart) => {
-                                  if (part.polygons && part.polygons[0]) {
-                                    // Apply translation and rotation to each point
+                    (() => {
+                      // Get all parts for the current placement
+                      const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
+                      // Gather all points after translation/rotation
+                      let allPoints: { x: number, y: number }[] = [];
+                      allParts.forEach((part: NestingPart) => {
+                        if (part.polygons && part.polygons[0]) {
+                          const angle = (part.rotation || 0) * Math.PI / 180;
+                          const cos = Math.cos(angle);
+                          const sin = Math.sin(angle);
+                          part.polygons[0].forEach(pt => {
+                            const x = pt.x * cos - pt.y * sin + (part.x || 0);
+                            const y = pt.x * sin + pt.y * cos + (part.y || 0);
+                            allPoints.push({ x, y });
+                          });
+                        }
+                      });
+                      const PADDING = 10; // 10mm padding
+                      const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
+                      const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
+                      const viewBox = `-${PADDING} -${PADDING} ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
+                      // Compute bounding box of all points
+                      let minX = Math.min(...allPoints.map(p => p.x));
+                      let minY = Math.min(...allPoints.map(p => p.y));
+                      let maxX = Math.max(...allPoints.map(p => p.x));
+                      let maxY = Math.max(...allPoints.map(p => p.y));
+                      // Compute scale to fit portrait viewBox
+                      const polyWidth = maxX - minX;
+                      const polyHeight = maxY - minY;
+                      const scale = Math.min(
+                        VIEWBOX_WIDTH / polyWidth,
+                        VIEWBOX_HEIGHT / polyHeight
+                      );
+                      // Compute translation to center polygons in the viewBox
+                      const offsetX = (VIEWBOX_WIDTH - polyWidth * scale) / 2 - minX * scale;
+                      const offsetY = (VIEWBOX_HEIGHT - polyHeight * scale) / 2 - minY * scale;
+                      return (
+                        <div ref={svgContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+                          <svg
+                            ref={svgRef}
+                            viewBox={viewBox}
+                            className="w-full h-full"
+                            style={{ backgroundColor: '#000000', border: '1px solid #ffffff', display: 'block' }}
+                          >
+                            {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, placementIndex: number) => (
+                              <g key={placementIndex}>
+                                {placement.parts.map((part: NestingPart, partIndex: number) => {
+                                  if (!part.polygons || !part.polygons[0]) return null;
+                                  // Find the order index for this part's orderId in uniqueOrders
+                                  const uniqueOrders = (() => {
+                                    const items = nestingQueueData[selectedNestingRow as string]?.items || [];
+                                    const grouped = items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
+                                      const key = `${item.orderId}-${item.customerName}`;
+                                      if (!acc[key]) {
+                                        acc[key] = { orderId: item.orderId, customerName: item.customerName, items: [] };
+                                      }
+                                      acc[key].items.push(item);
+                                      return acc;
+                                    }, {});
+                                    return Object.values(grouped);
+                                  })();
+                                  const orderIndex = uniqueOrders.findIndex(o => o.orderId === part.orderId);
+                                  const fillColor = getOrderColor(part.orderId || '', orderIndex);
+                                  // Scale and center each polygon
+                                  const pointsArr = part.polygons[0].map(pt => {
                                     const angle = (part.rotation || 0) * Math.PI / 180;
                                     const cos = Math.cos(angle);
                                     const sin = Math.sin(angle);
-                                    part.polygons[0].forEach(pt => {
-                                      // Rotate around (0,0), then translate
-                                      const x = pt.x * cos - pt.y * sin + (part.x || 0);
-                                      const y = pt.x * sin + pt.y * cos + (part.y || 0);
-                                      allPoints.push({ x, y });
-                                    });
-                                  }
-                                });
-
-                                const VIEWBOX_WIDTH = 1000;
-                                const VIEWBOX_HEIGHT = 1600; // Portrait: height > width
-                                const viewBox = `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
-
-                                // Compute bounding box of all points
-                                let minX = Math.min(...allPoints.map(p => p.x));
-                                let minY = Math.min(...allPoints.map(p => p.y));
-                                let maxX = Math.max(...allPoints.map(p => p.x));
-                                let maxY = Math.max(...allPoints.map(p => p.y));
-
-                                // Compute scale to fit portrait viewBox
-                                const polyWidth = maxX - minX;
-                                const polyHeight = maxY - minY;
-                                const scale = Math.min(
-                                  VIEWBOX_WIDTH / polyWidth,
-                                  VIEWBOX_HEIGHT / polyHeight
-                                );
-
-                                // Compute translation to center polygons in the viewBox
-                                const offsetX = (VIEWBOX_WIDTH - polyWidth * scale) / 2 - minX * scale;
-                                const offsetY = (VIEWBOX_HEIGHT - polyHeight * scale) / 2 - minY * scale;
-
-                                return (
-                                  <svg
-                                    viewBox={viewBox}
-                                    className="w-full h-full"
-                                    style={{ backgroundColor: '#000000', border: '1px solid #ffffff' }}
-                                  >
-                                    {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, placementIndex: number) => (
-                                      <g key={placementIndex}>
-                                        {placement.parts.map((part: NestingPart, partIndex: number) => {
-                                          if (!part.polygons || !part.polygons[0]) return null;
-                                          // Find the order index for this part's orderId in uniqueOrders
-                                          const uniqueOrders = (() => {
-                                            const items = nestingQueueData[selectedNestingRow as string]?.items || [];
-                                            const grouped = items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
-                                              const key = `${item.orderId}-${item.customerName}`;
-                                              if (!acc[key]) {
-                                                acc[key] = { orderId: item.orderId, customerName: item.customerName, items: [] };
-                                              }
-                                              acc[key].items.push(item);
-                                              return acc;
-                                            }, {});
-                                            return Object.values(grouped);
-                                          })();
-                                          const orderIndex = uniqueOrders.findIndex(o => o.orderId === part.orderId);
-                                          const fillColor = getOrderColor(part.orderId || '', orderIndex);
-                                          // Scale and center each polygon
-                                          const points = part.polygons[0].map(pt => {
-                                            const angle = (part.rotation || 0) * Math.PI / 180;
-                                            const cos = Math.cos(angle);
-                                            const sin = Math.sin(angle);
-                                            let x = pt.x * cos - pt.y * sin + (part.x || 0);
-                                            let y = pt.x * sin + pt.y * cos + (part.y || 0);
-                                            x = x * scale + offsetX;
-                                            y = y * scale + offsetY;
-                                            return `${x},${y}`;
-                                          }).join(' ');
-                                          return (
-                                            <polygon
-                                              key={partIndex}
-                                              points={points}
-                                              fill={fillColor}
-                                              fillOpacity={0.7}
-                                              stroke="#fff"
-                                              strokeWidth="2"
-                                            />
-                                          );
-                                        })}
-                                      </g>
-                                    ))}
-                                  </svg>
-                                );
-                              })()
-                        ) : (
-                          // Display individual SVGs if no nesting result
-                          nestingQueueData[selectedNestingRow as string]?.items.map((item: NestingItem, index: number) => (
-                            <div 
-                              key={`${item.sku}-${index}`}
-                              className="bg-gray-800/50 rounded-lg p-4 flex flex-col items-center"
-                            >
-                              {item.svgUrl && item.svgUrl[0] !== 'noMatch' ? (
-                                <div className="grid grid-cols-2 gap-2">
-                                  {item.svgUrl.map((url: string, urlIndex: number) => (
-                                    <img
-                                      key={`${item.sku}-svg-${urlIndex}`}
-                                      src={url}
-                                      alt={`SVG ${urlIndex + 1} for ${item.sku}`}
-                                      className="w-full h-full object-contain"
+                                    let x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                    let y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                    // No scaling or offset, use mm coordinates directly
+                                    return { x, y };
+                                  });
+                                  const points = pointsArr.map(pt => `${pt.x},${pt.y}`).join(' ');
+                                  // Unique key for this part
+                                  const partKey = `${part.orderId || ''}-${partIndex}`;
+                                  // Centroid for tooltip
+                                  const centroid = getPolygonCentroid(pointsArr);
+                                  return (
+                                    <polygon
+                                      key={partIndex}
+                                      points={points}
+                                      fill={fillColor}
+                                      fillOpacity={0.7}
+                                      stroke="#fff"
+                                      strokeWidth="2"
+                                      style={{ cursor: 'pointer' }}
+                                      onMouseEnter={() => setHoveredInsert({ partKey, mouseX: centroid.x, mouseY: centroid.y })}
+                                      onMouseMove={() => setHoveredInsert({ partKey, mouseX: centroid.x, mouseY: centroid.y })}
+                                      onMouseLeave={e => {
+                                        // Only hide if not moving into tooltip
+                                        if (!(e.relatedTarget && (e.relatedTarget as HTMLElement).classList.contains('insert-tooltip'))) {
+                                          setHoveredInsert(null);
+                                        }
+                                      }}
                                     />
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gray-700/50 rounded">
-                                  <span className="text-gray-400 text-sm">No SVG available</span>
-                                </div>
-                              )}
-                              <div className="text-center">
-                                <p className="text-white font-medium break-words w-full">{item.itemName}</p>
-                                <div className="flex items-center justify-center gap-2 mt-1">
-                                  <p className="text-white text-sm">Order ID: {item.orderId}</p>
-                                  <p className="text-white text-sm">Quantity: {item.quantity}</p>
-                                </div>
+                                  );
+                                })}
+                              </g>
+                            ))}
+                          </svg>
+                          {/* Tooltip overlay for hovered insert */}
+                          {hoveredInsert && svgRef.current && svgContainerRef.current && (() => {
+                            const tooltipWidth = 140;
+                            const tooltipHeight = 44;
+                            // Get SVG and container bounding rects
+                            const svgRect = svgRef.current.getBoundingClientRect();
+                            const containerRect = svgContainerRef.current.getBoundingClientRect();
+                            // Get viewBox
+                            const vb = svgRef.current.viewBox.baseVal;
+                            // Calculate scale factors
+                            const scaleX = svgRect.width / vb.width;
+                            const scaleY = svgRect.height / vb.height;
+                            // Convert centroid (viewBox) to pixel coordinates within SVG
+                            const pixelX = hoveredInsert.mouseX * scaleX;
+                            const pixelY = hoveredInsert.mouseY * scaleY;
+                            // Position relative to container div
+                            let left = pixelX - tooltipWidth / 2;
+                            let top = pixelY - tooltipHeight - 12;
+                            // Clamp to container bounds
+                            left = Math.max(0, Math.min(left, svgRect.width - tooltipWidth));
+                            top = Math.max(0, Math.min(top, svgRect.height - tooltipHeight));
+                            return (
+                              <div
+                                className="insert-tooltip"
+                                style={{
+                                  position: 'absolute',
+                                  left: left,
+                                  top: top,
+                                  zIndex: 10,
+                                  pointerEvents: 'auto',
+                                  width: tooltipWidth,
+                                  minHeight: tooltipHeight,
+                                  background: 'rgba(30,30,30,0.98)',
+                                  color: '#fff',
+                                  borderRadius: 8,
+                                  padding: '10px 18px',
+                                  boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
+                                  fontSize: 15,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 10,
+                                  minWidth: 120,
+                                  transition: 'opacity 0.15s',
+                                }}
+                                onMouseEnter={() => setHoveredInsert(hoveredInsert)}
+                                onMouseLeave={() => setHoveredInsert(null)}
+                              >
+                                <span>Damaged?</span>
+                                <input
+                                  type="checkbox"
+                                  checked={!!damagedInserts[hoveredInsert.partKey]}
+                                  onChange={e => setDamagedInserts(prev => ({ ...prev, [hoveredInsert.partKey]: e.target.checked }))}
+                                  style={{
+                                    accentColor: '#F44336',
+                                    width: 18,
+                                    height: 18,
+                                    borderRadius: 4,
+                                    border: '2px solid #fff',
+                                    background: '#222',
+                                    cursor: 'pointer',
+                                  }}
+                                />
                               </div>
-                            </div>
-                          ))
-                        )}
-                    </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2101,8 +2151,7 @@ export default function Manufacturing() {
                     <table className="w-full text-white border-separate border-spacing-y-2">
                       <thead>
                         <tr>
-                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"> </th>
-                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
+                          <th className="px-6 py-3 text-left text-lg font-semibold text-white underline">Customer Name</th>
                           <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
                         </tr>
                       </thead>
@@ -2156,14 +2205,13 @@ export default function Manufacturing() {
 
                           return uniqueOrders.map((order: { orderId: string; customerName: string; items: NestingItem[] }, index: number) => (
                             <tr key={`${order.orderId}-${index}`} className="hover:bg-gray-800/30 transition-colors">
-                              <td className="px-6 py-4 text-center text-lg font-semibold">
+                              
+                              <td className="px-6 py-4 text-left text-lg font-semibold text-white">
                               <span
-                                  className="inline-block w-4 h-4 rounded-full"
+                                  className="w-4 h-4 rounded-full mr-3 inline-block"
                                   style={{ backgroundColor: getOrderColor(order.orderId, index)}}
                                   title={`Order color for ${order.customerName}`}
                                 ></span>
-                              </td>
-                              <td className="px-6 py-4 text-center text-lg font-semibold text-white">
                                 {order.customerName || '(No Name in Order)'}
                               </td>
                               <td className="px-6 py-4 text-center text-lg font-semibold text-white">
