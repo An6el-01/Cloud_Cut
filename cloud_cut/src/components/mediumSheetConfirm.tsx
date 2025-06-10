@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getSupabaseClient } from "@/utils/supabase";
-import { editMediumSheetStock } from "@/utils/despatchCloud";
 
 
 
@@ -139,12 +138,6 @@ export default function MediumSheetConfirm({
                     console.error("Error updating stock:", updateError);
                     setIsLoading(false);
                     return;
-                }
-
-                try{
-                    await handleEditMediumSheetsInStock(true, userMediumSheetsAddedToStock);
-                } catch (error) {
-                    console.error("Error editing medium sheet stock:", error);
                 }
 
                 console.log("Successfully updated stock for SKU:", sku, "New value:", newStockValue);
@@ -286,34 +279,37 @@ export default function MediumSheetConfirm({
         isAvailableStock
     });
 
-    const handleMediumSheetsManufactured = () => {
-        if (!mediumSheetTotalQuantity) return;
-        
-        // Calculate the next multiple of 4
-        const nextMultipleOf4 = Math.ceil(mediumSheetTotalQuantity / 4) * 4;
-        setAdjustedMediumSheetQuantity(nextMultipleOf4);
+    // const handleMediumSheetsManufactured = () => {
+    //     if (!mediumSheetTotalQuantity) return;
+    //     // Calculate the next multiple of 4
+    //     const nextMultipleOf4 = Math.ceil(mediumSheetTotalQuantity / 4) * 4;
+    //     setAdjustedMediumSheetQuantity(nextMultipleOf4);
 
-        const mediumSheetsAddedToStock = adjustedMediumSheetQuantity - mediumSheetTotalQuantity;
+    //     const mediumSheetsAddedToStock = adjustedMediumSheetQuantity - mediumSheetTotalQuantity;
 
-        setMediumSheetsAddedToStock(mediumSheetsAddedToStock);
-    }
+    //     setMediumSheetsAddedToStock(mediumSheetsAddedToStock);
+    // }
 
     // Effect to update adjusted quantity when mediumSheetTotalQuantity changes
     useEffect(() => {
-        if (mediumSheetTotalQuantity) {
-            const nextMultipleOf4 = Math.ceil(mediumSheetTotalQuantity / 4) * 4;
-            setAdjustedMediumSheetQuantity(nextMultipleOf4);
-            
-            // Calculate sheets added to stock after we have the adjusted quantity
-            const sheetsAdded = nextMultipleOf4 - mediumSheetTotalQuantity;
-            console.log('Calculating sheets added:', {
-                mediumSheetTotalQuantity,
-                nextMultipleOf4,
-                sheetsAdded
-            });
+        if (typeof mediumSheetTotalQuantity === 'number' && typeof currentMediumSheetStock === 'number') {
+            // How many do we need to manufacture?
+            const sheetsToManufacture = Math.max(0, mediumSheetTotalQuantity - currentMediumSheetStock);
+
+            let adjustedToManufacture = sheetsToManufacture;
+            let sheetsAdded = 0;
+
+            if (sheetsToManufacture > 0) {
+                if (sheetsToManufacture % 4 !== 0) {
+                    adjustedToManufacture = Math.ceil(sheetsToManufacture / 4) * 4;
+                    sheetsAdded = adjustedToManufacture - sheetsToManufacture;
+                }
+            }
+
+            setAdjustedMediumSheetQuantity(adjustedToManufacture);
             setMediumSheetsAddedToStock(sheetsAdded);
         }
-    }, [mediumSheetTotalQuantity]);
+    }, [mediumSheetTotalQuantity, currentMediumSheetStock]);
 
     // Add debug log for render
     console.log('Render state:', {
@@ -404,12 +400,6 @@ export default function MediumSheetConfirm({
         if (!mediumSheetItem) return;
 
         console.log('Medium sheet item:', mediumSheetItem);
-
-        if (isAdding) {
-            await editMediumSheetStock(Number(mediumSheetItem.id), quantity, true);
-        } else {
-            await editMediumSheetStock(Number(mediumSheetItem.id), quantity, false);
-        }
     }
 
     return (

@@ -164,7 +164,6 @@ export default function Stock() {
 
         try {
             const supabase = getSupabaseClient();
-            
             // First update Supabase
             const { error } = await supabase
                 .from('finished_stock')

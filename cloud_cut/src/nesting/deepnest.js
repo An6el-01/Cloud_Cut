@@ -15,6 +15,13 @@ export class DeepNest {
 
         var svg = null;
 
+        const binPolygon = [
+            { x: 0, y: 0 },
+            { x: 1000, y: 0 },
+            { x: 1000, y: 2000 },
+            { x: 0, y: 2000 }
+        ];
+
         var config = {
             clipperScale: 10000000,
             curveTolerance: 0.3,
@@ -29,7 +36,8 @@ export class DeepNest {
             scale: 72,
             simplify: false,
             overlapTolerance: 0.0001,
-            generations: 50
+            generations: 50,
+            binPolygon: binPolygon
         };
 
         /**CHECK IF ALL THESE ARE NEEDED */
@@ -1327,6 +1335,15 @@ export class DeepNest {
                 
                 console.log('Nesting completed with result:', result);
                 
+                // Merge config with default config
+                const mergedConfig = {
+                    ...this.config,
+                    ...config
+                };
+
+                this.binPolygon = mergedConfig.binPolygon;
+                this.config = mergedConfig;
+
                 return result;
             } catch (error) {
                 console.error('Error in nesting process:', error);
@@ -1347,6 +1364,9 @@ DeepNest.prototype.nest = async function(parts, config) {
         ...this.config,
         ...config
     };
+
+    this.binPolygon = mergedConfig.binPolygon;
+    this.config = mergedConfig;
 
     // Convert parts to polygons if they aren't already
     const polygons = parts.map(part => {
@@ -1528,7 +1548,7 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
     
     // Create a new worker for this evaluation
     const worker = new PlacementWorker(
-        this.binPolygon,
+        this.config.binPolygon,
         individual.placement,
         individual.placement.map(p => p.id),
         individual.rotation.map(r => r || 0),
@@ -1536,6 +1556,7 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
         this.nfpCache
     );
 
+    {/**This Is Failing!!! */}
     // Place the parts and get the result
     const result = worker.place(individual.placement);
 

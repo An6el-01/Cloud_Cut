@@ -1860,6 +1860,10 @@ module.exports = {
         startpoint = this.searchStartPoint(A, B, inside, NFPlist);
       }
 
+      if (!nfp || nfp.length === 0) {
+        console.warn('NFP calculation failed for polygons:', A, B);
+      }
+
       return NFPlist;
     },
 

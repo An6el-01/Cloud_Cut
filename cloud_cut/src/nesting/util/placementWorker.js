@@ -48,8 +48,11 @@ function rotatePolygon(polygon, degrees){
     return rotated;
 }
 
-function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache) {
-    this.binPolygon = binPolygon;
+function PlacementWorker(paths, ids, rotations, config, nfpCache) {
+    console.log('PlacementWorker initialized with binPolygon:', config.binPolygon);
+    console.log('PlacementWorker received paths:', paths);
+
+    this.binPolygon = config.binPolygon;
     this.paths = paths;
     this.ids = ids;
     this.rotations = rotations;
@@ -63,6 +66,7 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache) {
     // return a placement for the paths/rotations worker
     // happens inside a webworker
     this.placePaths = function(paths) {
+        console.log('PlacementWorker.placePaths called with paths:', paths);
 
         if (!this.binPolygon) {
             return null;

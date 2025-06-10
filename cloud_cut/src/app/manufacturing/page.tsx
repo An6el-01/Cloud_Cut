@@ -1954,54 +1954,54 @@ export default function Manufacturing() {
                 </div>
                 <div className="h-full overflow-y-auto">
                   {selectedNestingRow ? (
-                    (() => {
-                      // Get all parts for the current placement
-                      const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
-                      // Gather all points after translation/rotation
-                      let allPoints: { x: number, y: number }[] = [];
-                      allParts.forEach((part: NestingPart) => {
-                        if (part.polygons && part.polygons[0]) {
-                          const angle = (part.rotation || 0) * Math.PI / 180;
-                          const cos = Math.cos(angle);
-                          const sin = Math.sin(angle);
-                          part.polygons[0].forEach(pt => {
-                            const x = pt.x * cos - pt.y * sin + (part.x || 0);
-                            const y = pt.x * sin + pt.y * cos + (part.y || 0);
-                            allPoints.push({ x, y });
-                          });
-                        }
-                      });
+                              (() => {
+                                // Get all parts for the current placement
+                                const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
+                                // Gather all points after translation/rotation
+                                let allPoints: { x: number, y: number }[] = [];
+                                allParts.forEach((part: NestingPart) => {
+                                  if (part.polygons && part.polygons[0]) {
+                                    const angle = (part.rotation || 0) * Math.PI / 180;
+                                    const cos = Math.cos(angle);
+                                    const sin = Math.sin(angle);
+                                    part.polygons[0].forEach(pt => {
+                                      const x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                      const y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                      allPoints.push({ x, y });
+                                    });
+                                  }
+                                });
                       const PADDING = 10; // 10mm padding
                       const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
                       const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
                       const viewBox = `-${PADDING} -${PADDING} ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
-                      // Compute bounding box of all points
-                      let minX = Math.min(...allPoints.map(p => p.x));
-                      let minY = Math.min(...allPoints.map(p => p.y));
-                      let maxX = Math.max(...allPoints.map(p => p.x));
-                      let maxY = Math.max(...allPoints.map(p => p.y));
-                      // Compute scale to fit portrait viewBox
-                      const polyWidth = maxX - minX;
-                      const polyHeight = maxY - minY;
-                      const scale = Math.min(
-                        VIEWBOX_WIDTH / polyWidth,
-                        VIEWBOX_HEIGHT / polyHeight
-                      );
-                      // Compute translation to center polygons in the viewBox
-                      const offsetX = (VIEWBOX_WIDTH - polyWidth * scale) / 2 - minX * scale;
-                      const offsetY = (VIEWBOX_HEIGHT - polyHeight * scale) / 2 - minY * scale;
-                      return (
+                                // Compute bounding box of all points
+                                let minX = Math.min(...allPoints.map(p => p.x));
+                                let minY = Math.min(...allPoints.map(p => p.y));
+                                let maxX = Math.max(...allPoints.map(p => p.x));
+                                let maxY = Math.max(...allPoints.map(p => p.y));
+                                // Compute scale to fit portrait viewBox
+                                const polyWidth = maxX - minX;
+                                const polyHeight = maxY - minY;
+                                const scale = Math.min(
+                                  VIEWBOX_WIDTH / polyWidth,
+                                  VIEWBOX_HEIGHT / polyHeight
+                                );
+                                // Compute translation to center polygons in the viewBox
+                                const offsetX = (VIEWBOX_WIDTH - polyWidth * scale) / 2 - minX * scale;
+                                const offsetY = (VIEWBOX_HEIGHT - polyHeight * scale) / 2 - minY * scale;
+                                return (
                         <div ref={svgContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
-                          <svg
+                                  <svg
                             ref={svgRef}
-                            viewBox={viewBox}
-                            className="w-full h-full"
+                                    viewBox={viewBox}
+                                    className="w-full h-full"
                             style={{ backgroundColor: '#000000', border: '1px solid #ffffff', display: 'block' }}
-                          >
+                                  >
                             {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, placementIndex: number) => (
                               <g key={placementIndex}>
-                                {placement.parts.map((part: NestingPart, partIndex: number) => {
-                                  if (!part.polygons || !part.polygons[0]) return null;
+                                        {placement.parts.map((part: NestingPart, partIndex: number) => {
+                                          if (!part.polygons || !part.polygons[0]) return null;
                                   // Find the order index for this part's orderId in uniqueOrders
                                   const uniqueOrders = (() => {
                                     const items = nestingQueueData[selectedNestingRow as string]?.items || [];
@@ -2017,13 +2017,13 @@ export default function Manufacturing() {
                                   })();
                                   const orderIndex = uniqueOrders.findIndex(o => o.orderId === part.orderId);
                                   const fillColor = getOrderColor(part.orderId || '', orderIndex);
-                                  // Scale and center each polygon
+                                          // Scale and center each polygon
                                   const pointsArr = part.polygons[0].map(pt => {
-                                    const angle = (part.rotation || 0) * Math.PI / 180;
-                                    const cos = Math.cos(angle);
-                                    const sin = Math.sin(angle);
-                                    let x = pt.x * cos - pt.y * sin + (part.x || 0);
-                                    let y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                            const angle = (part.rotation || 0) * Math.PI / 180;
+                                            const cos = Math.cos(angle);
+                                            const sin = Math.sin(angle);
+                                            let x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                            let y = pt.x * sin + pt.y * cos + (part.y || 0);
                                     // No scaling or offset, use mm coordinates directly
                                     return { x, y };
                                   });
@@ -2032,29 +2032,43 @@ export default function Manufacturing() {
                                   const partKey = `${part.orderId || ''}-${partIndex}`;
                                   // Centroid for tooltip
                                   const centroid = getPolygonCentroid(pointsArr);
-                                  return (
-                                    <polygon
-                                      key={partIndex}
-                                      points={points}
-                                      fill={fillColor}
-                                      fillOpacity={0.7}
-                                      stroke="#fff"
-                                      strokeWidth="2"
-                                      style={{ cursor: 'pointer' }}
-                                      onMouseEnter={() => setHoveredInsert({ partKey, mouseX: centroid.x, mouseY: centroid.y })}
-                                      onMouseMove={() => setHoveredInsert({ partKey, mouseX: centroid.x, mouseY: centroid.y })}
-                                      onMouseLeave={e => {
-                                        // Only hide if not moving into tooltip
-                                        if (!(e.relatedTarget && (e.relatedTarget as HTMLElement).classList.contains('insert-tooltip'))) {
-                                          setHoveredInsert(null);
-                                        }
-                                      }}
-                                    />
-                                  );
-                                })}
-                              </g>
-                            ))}
-                          </svg>
+                                          return (
+                                            <>
+                                              <polygon
+                                                key={partIndex}
+                                                points={points}
+                                                fill={fillColor}
+                                                fillOpacity={0.7}
+                                                stroke="#fff"
+                                                strokeWidth="2"
+                                                style={{ cursor: 'pointer' }}
+                                                onMouseEnter={() => setHoveredInsert({ partKey, mouseX: centroid.x, mouseY: centroid.y })}
+                                                onMouseMove={() => setHoveredInsert({ partKey, mouseX: centroid.x, mouseY: centroid.y })}
+                                                onMouseLeave={e => {
+                                                  // Only hide if not moving into tooltip
+                                                  if (!(e.relatedTarget && (e.relatedTarget as HTMLElement).classList.contains('insert-tooltip'))) {
+                                                    setHoveredInsert(null);
+                                                  }
+                                                }}
+                                              />
+                                              <text
+                                                x={centroid.x}
+                                                y={centroid.y}
+                                                textAnchor="middle"
+                                                dominantBaseline="middle"
+                                                fontSize={`${40 * scale}px`}
+                                                fill='#fff'
+                                                fontWeight='bold'
+                                                pointerEvents='none'
+                                              >
+                                                {partIndex + 1}
+                                              </text>
+                                            </>
+                                          );
+                                        })}
+                                      </g>
+                                    ))}
+                                  </svg>
                           {/* Tooltip overlay for hovered insert */}
                           {hoveredInsert && svgRef.current && svgContainerRef.current && (() => {
                             const tooltipWidth = 140;
@@ -2117,10 +2131,10 @@ export default function Manufacturing() {
                                     cursor: 'pointer',
                                   }}
                                 />
-                              </div>
+                                </div>
                             );
                           })()}
-                        </div>
+                                </div>
                       );
                     })()
                   ) : (
@@ -2151,7 +2165,8 @@ export default function Manufacturing() {
                     <table className="w-full text-white border-separate border-spacing-y-2">
                       <thead>
                         <tr>
-                          <th className="px-6 py-3 text-left text-lg font-semibold text-white underline">Customer Name</th>
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"> </th>
+                          <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
                           <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
                         </tr>
                       </thead>
@@ -2165,7 +2180,7 @@ export default function Manufacturing() {
                           if (!selectedFoamSheet || !nestingQueueData[selectedFoamSheet]) {
                             return (
                               <tr>
-                                <td colSpan={2} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
+                                <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
                                   <div className="flex items-center justify-center h-full">
                                     <p className="text-white text-lg">No nest selected. Please choose a nest from the nesting queue.</p>
                                   </div>
@@ -2205,16 +2220,20 @@ export default function Manufacturing() {
 
                           return uniqueOrders.map((order: { orderId: string; customerName: string; items: NestingItem[] }, index: number) => (
                             <tr key={`${order.orderId}-${index}`} className="hover:bg-gray-800/30 transition-colors">
-                              
-                              <td className="px-6 py-4 text-left text-lg font-semibold text-white">
+                              <td className="px-6 py-4 text-center text-md font-semibold">
+                              <span className= "inline-block w-4 h-4 mr-4">
+                                {index + 1}
+                              </span>
                               <span
-                                  className="w-4 h-4 rounded-full mr-3 inline-block"
+                                  className="inline-block w-10 h-3 rounded-full"
                                   style={{ backgroundColor: getOrderColor(order.orderId, index)}}
                                   title={`Order color for ${order.customerName}`}
                                 ></span>
+                              </td>
+                              <td className="px-3 py-4 text-center text-md font-semibold text-white">
                                 {order.customerName || '(No Name in Order)'}
                               </td>
-                              <td className="px-6 py-4 text-center text-lg font-semibold text-white">
+                              <td className="px-6 py-4 text-center text-md font-semibold text-white">
                                 {order.orderId}
                               </td>
                             </tr>

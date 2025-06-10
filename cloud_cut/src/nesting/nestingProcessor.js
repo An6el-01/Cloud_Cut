@@ -38,9 +38,9 @@ export class NestingProcessor {
 
       // Configure nesting parameters
       const config = {
-        spacing: 0,
+        spacing: 0, // Ensure no extra space between parts for tight packing
         tolerance: 0.1,
-        rotations: [0, 90, 180, 270],
+        rotations: [0, 90, 180, 270], // Rotations remain as is
         useHoles: true,
         populationSize: 10,
         mutationRate: 0.1,
@@ -58,6 +58,14 @@ export class NestingProcessor {
       // Process and format the result
       const formattedResult = this.formatNestingResult(result, items);
       console.log('Formatted nesting result:', formattedResult);
+      
+      if (this.deepNest && this.deepNest.binPolygon) {
+        console.log("Bin polygon (foamsheet) for nesting:", this.deepNest.binPolygon)
+      } else if (config && config.binPolygon) {
+        console.log('Bin polygon (foamsheet) from config:', config.binPolygon);
+      } else {
+        console.warn('No bin polygon (foamsheet) defined for nesting.')
+      }
       
       return formattedResult;
     } catch (error) {
@@ -220,6 +228,8 @@ export class NestingProcessor {
       }
     }
     
+    console.log('Polygons for nesting:', parts.map(p => p.polygons));
+    
     return parts;
   }
 
@@ -254,9 +264,27 @@ export class NestingProcessor {
       })
     };
 
+    // Align placements to origin (0,0) for tightest fit in the viewBox
+    this.alignPlacementsToOrigin(sheet.parts);
+
     return {
       fitness: nestingResult.fitness,
       placements: [sheet]
     };
+  }
+
+  alignPlacementsToOrigin(placements) {
+    // Shift all placements so the minimum x/y is at (0,0) for optimal packing
+    let minX = Infinity, minY = Infinity;
+    placements.forEach(part => {
+      part.polygons[0].forEach(pt => {
+        minX = Math.min(minX, pt.x + (part.x || 0));
+        minY = Math.min(minY, pt.y + (part.y || 0));
+      });
+    });
+    placements.forEach(part => {
+      part.x = (part.x || 0) - minX;
+      part.y = (part.y || 0) - minY;
+    });
   }
 } 

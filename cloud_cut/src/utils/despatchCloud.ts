@@ -339,52 +339,6 @@ export async function fetchInventory(
   }
 }
 
-export async function editMediumSheetStock(
-  inventoryId: number,
-  quantity: number,
-  isAdding: boolean
-): Promise<any> {
-  // Fetch the inventory item to verify existence (optional, can be skipped if you trust the ID)
-  const fetchUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryId}`;
-  console.log('Fetching inventory item:', fetchUrl);
-  try{
-    const mediumSheetItem = await fetchWithAuth<any>(fetchUrl);
-    console.log('Fetched inventory item:', mediumSheetItem);
-
-    if(!mediumSheetItem || !mediumSheetItem.id) {
-      throw new Error('Could not fetch inventory item details');
-    }
-
-    const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${mediumSheetItem.id}/adjust_location_stock`;
-    console.log('Updating medium sheet item stock:', url);
-
-    const operator = isAdding ? 'increase' : 'decrease';
-
-    const response = await fetchWithAuth<any>(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        operator,
-        locationId: 0,
-        quantity,
-        note: 'API TEST',
-        auto_allocate: 1
-      })
-    });
-
-    console.log('Stock update response:', response);
-
-    return response;
-
-  } catch (error) {
-    console.error('Error updating medium sheet stock:', error);
-    throw error;
-  } 
-};
-
 
 export async function bookOutStock(
   inventoryId: number,
@@ -449,7 +403,7 @@ export async function updateStockItem(
     }
 
     // Check if the item is a medium sheet by looking at the SKU
-    if (inventoryItem.sku && inventoryItem.sku.toLowerCase().startsWith('sf-100/50')) {
+    if (inventoryItem.sku && inventoryItem.sku.toLowerCase().startsWith('sfs-100/50')) {
       console.log('Skipping stock update for medium sheet item:', inventoryItem.sku);
       return inventoryItem;
     }
