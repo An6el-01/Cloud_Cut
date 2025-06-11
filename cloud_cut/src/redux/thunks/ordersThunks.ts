@@ -397,6 +397,266 @@ export const syncOrders = createAsyncThunk(
         return acc;
       }, {});
 
+      // AutoMark order items in manufacturing with the SKU Prefix "SFI" or "SFC" as completed
+      const autoCompleteItems = async () => {
+        try {
+          // Get all active items that need to be auto-completed
+          const { data: itemsToUpdate, error: fetchError } = await supabase
+            .from('order_items')
+            .select('*')
+            .in('order_id', pendingOrderIds)
+            .eq('completed', false)
+            .or('sku_id.ilike.SFI%,sku_id.ilike.SFC%');
+
+          if (fetchError) {
+            console.error('Error fetching items for auto-completion:', fetchError);
+            return;
+          }
+
+          if (itemsToUpdate && itemsToUpdate.length > 0) {
+            console.log(`Found ${itemsToUpdate.length} items to auto-complete`);
+
+            // Update items in batches to avoid rate limiting
+            const batchSize = 20;
+            for (let i = 0; i < itemsToUpdate.length; i += batchSize) {
+              const batch = itemsToUpdate.slice(i, i + batchSize);
+              const itemIds = batch.map(item => item.id);
+
+              const { error: updateError } = await supabase
+                .from('order_items')
+                .update({ 
+                  completed: true,
+                  updated_at: new Date().toISOString()
+                })
+                .in('id', itemIds);
+
+              if (updateError) {
+                console.error('Error updating items in batch:', updateError);
+              } else {
+                console.log(`Successfully auto-completed batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(itemsToUpdate.length/batchSize)}`);
+              }
+
+              // Update Redux state for each item
+              batch.forEach((item) => {
+                const typedItem = item as unknown as OrderItem;
+                const orderId = typedItem.order_id;
+                const items = updatedOrderItems[orderId] || [];
+                const itemIndex = items.findIndex((i: OrderItem) => i.id === typedItem.id);
+                if (itemIndex !== -1) {
+                  items[itemIndex].completed = true;
+                }
+              });
+
+              // Small delay to prevent rate limiting
+              if (i + batchSize < itemsToUpdate.length) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error in auto-complete items process:', error);
+        }
+      };
+
+      // Execute the auto-complete function
+      await autoCompleteItems();
+
+      // AutoMark orders as Manufactured if all items with the SKU Prefix "SFI", "SFC", or "SFS" are completed
+      const autoMarkManufactured = async () => {
+        try {
+          console.log('AutoMarking orders as manufactured if all items with the SKU Prefix "SFI", "SFC", or "SFS" are completed');
+          
+          // Get all orders that need to be checked
+          const { data: ordersToCheck, error: ordersError } = await supabase
+            .from('orders')
+            .select('order_id')
+            .in('order_id', pendingOrderIds)
+            .eq('manufactured', false);
+
+          if (ordersError) {
+            console.error('Error fetching orders for manufacturing check:', ordersError);
+            return;
+          }
+
+          if (ordersToCheck && ordersToCheck.length > 0) {
+            console.log(`Checking ${ordersToCheck.length} orders for manufacturing status`);
+
+            // Process orders in batches
+            const batchSize = 20;
+            for (let i = 0; i < ordersToCheck.length; i += batchSize) {
+              const batch = ordersToCheck.slice(i, i + batchSize);
+              const orderIds = batch.map(order => order.order_id);
+
+              // Get all items for these orders
+              const { data: items, error: itemsError } = await supabase
+                .from('order_items')
+                .select('*')
+                .in('order_id', orderIds)
+                .or('sku_id.ilike.SFI%,sku_id.ilike.SFC%,sku_id.ilike.SFS%');
+
+              if (itemsError) {
+                console.error('Error fetching items for manufacturing check:', itemsError);
+                continue;
+              }
+
+              // Group items by order_id
+              const itemsByOrder = items.reduce<Record<string, OrderItem[]>>((acc, item) => {
+                const typedItem = item as unknown as OrderItem;
+                if (!acc[typedItem.order_id]) acc[typedItem.order_id] = [];
+                acc[typedItem.order_id].push(typedItem);
+                return acc;
+              }, {});
+
+              // Check each order's items and update if all are completed
+              const ordersToUpdate = Object.entries(itemsByOrder)
+                .filter(([orderId, items]) => {
+                  // Only include orders that have manufacturing items
+                  const hasManufacturingItems = items.length > 0;
+                  // Check if all items are completed
+                  const allCompleted = items.every(item => item.completed);
+                  return hasManufacturingItems && allCompleted;
+                })
+                .map(([orderId]) => ({
+                  order_id: orderId,
+                  manufactured: true,
+                  updated_at: new Date().toISOString()
+                }));
+
+              if (ordersToUpdate.length > 0) {
+                // Update orders in Supabase using update instead of upsert
+                for (const update of ordersToUpdate) {
+                  const { error: updateError } = await supabase
+                    .from('orders')
+                    .update({ 
+                      manufactured: true,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('order_id', update.order_id);
+
+                  if (updateError) {
+                    console.error(`Error updating manufacturing status for order ${update.order_id}:`, updateError);
+                  } else {
+                    console.log(`Successfully marked order ${update.order_id} as manufactured`);
+                  }
+                }
+
+                // Update Redux state
+                ordersToUpdate.forEach(update => {
+                  const order = pendingOrders?.find(o => o.order_id === update.order_id);
+                  if (order) {
+                    order.manufactured = true;
+                  }
+                });
+              }
+
+              // Small delay to prevent rate limiting
+              if (i + batchSize < ordersToCheck.length) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error in auto-mark manufacturing process:', error);
+        }
+      };
+
+      console.log('AutoMarking orders as manufactured if all items with the SKU Prefix "SFI", "SFC", or "SFS" are completed FINISHED');
+
+      // Execute the auto-mark manufacturing function
+      await autoMarkManufactured();
+
+      // AutoMark all items of the orders marked as manufactured to completed = false.
+      const autoMarkItemsAsNotCompleted = async () => {
+        try {
+          console.log('AutoMarking all items of the orders marked as manufactured to completed = false');
+
+          // Get all orders that were just marked as manufactured
+          const { data: manufacturedOrders, error: ordersError } = await supabase
+            .from('orders')
+            .select('order_id')
+            .in('order_id', pendingOrderIds)
+            .eq('manufactured', true);
+
+          if (ordersError) {
+            console.error('Error fetching manufactured orders:', ordersError);
+            return;
+          }
+
+          if (manufacturedOrders && manufacturedOrders.length > 0) {
+            console.log(`Found ${manufacturedOrders.length} manufactured orders to process`);
+
+            // Process orders in batches
+            const batchSize = 20;
+            for (let i = 0; i < manufacturedOrders.length; i += batchSize) {
+              const batch = manufacturedOrders.slice(i, i + batchSize);
+              const orderIds = batch.map(order => order.order_id);
+
+              // Get all items for these orders
+              const { data: items, error: itemsError } = await supabase
+                .from('order_items')
+                .select('*')
+                .in('order_id', orderIds)
+                .eq('completed', true);
+
+              if (itemsError) {
+                console.error('Error fetching items for completion check:', itemsError);
+                continue;
+              }
+
+              if (items && items.length > 0) {
+                console.log(`Found ${items.length} completed items to mark as not completed`);
+
+                // Update items in batches
+                for (let j = 0; j < items.length; j += batchSize) {
+                  const itemBatch = items.slice(j, j + batchSize);
+                  const itemIds = itemBatch.map(item => item.id);
+
+                  const { error: updateError } = await supabase
+                    .from('order_items')
+                    .update({ 
+                      completed: false,
+                      updated_at: new Date().toISOString()
+                    })
+                    .in('id', itemIds);
+
+                  if (updateError) {
+                    console.error('Error updating items completion status:', updateError);
+                  } else {
+                    console.log(`Successfully marked ${itemBatch.length} items as not completed`);
+                  }
+
+                  // Update Redux state
+                  itemBatch.forEach((item) => {
+                    const typedItem = item as unknown as OrderItem;
+                    const orderId = typedItem.order_id;
+                    const orderItems = updatedOrderItems[orderId] || [];
+                    const itemIndex = orderItems.findIndex(i => i.id === typedItem.id);
+                    if (itemIndex !== -1) {
+                      orderItems[itemIndex].completed = false;
+                    }
+                  });
+
+                  // Small delay to prevent rate limiting
+                  if (j + batchSize < items.length) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                  }
+                }
+              }
+
+              // Small delay to prevent rate limiting
+              if (i + batchSize < manufacturedOrders.length) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error in auto-mark items as not completed process:', error);
+        }
+      };
+
+      // Execute the auto-mark items as not completed function
+      await autoMarkItemsAsNotCompleted();
+
       console.log('Sync completed successfully');
       
       return {
