@@ -28,7 +28,7 @@ function toNestCoordinates(polygon, scale){
 
 function rotatePolygon(polygon, degrees){
     var rotated = [];
-    angle = (degrees * Math.PI) / 180;
+    var angle = (degrees * Math.PI) / 180;
     for (var i = 0; i < polygon.length; i++){
         var x = polygon[i].x;
         var y = polygon[i].y;
@@ -48,16 +48,18 @@ function rotatePolygon(polygon, degrees){
     return rotated;
 }
 
-function PlacementWorker(paths, ids, rotations, config, nfpCache) {
-    console.log('PlacementWorker initialized with binPolygon:', config.binPolygon);
-    console.log('PlacementWorker received paths:', paths);
+function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, polygonOffset) {
 
-    this.binPolygon = config.binPolygon;
+
+    this.binPolygon = binPolygon;
     this.paths = paths;
     this.ids = ids;
     this.rotations = rotations;
     this.config = config;
     this.nfpCache = nfpCache || {};
+    this.polygonOffset = polygonOffset;
+    console.log("PlacementWorker initialized with binPolygon:", this.binPolygon);
+    console.log("PlacementWorker initialized with paths:", this.paths);
 
     // Bind methods to this instance
     this.place = this.place.bind(this);
@@ -66,17 +68,18 @@ function PlacementWorker(paths, ids, rotations, config, nfpCache) {
     // return a placement for the paths/rotations worker
     // happens inside a webworker
     this.placePaths = function(paths) {
-        console.log('PlacementWorker.placePaths called with paths:', paths);
 
         if (!this.binPolygon) {
             return null;
         }
 
         if(this.binPolygon && Array.isArray(this.binPolygon)) {
-            const padded = GeometryUtil.polygonOffset(this.binPolygon, -10);
-
-            if (padded && padded.length > 0) {
-                this.binPolygon = padded[0];
+            // Check if polygonOffset is a function before calling it
+            if (typeof this.polygonOffset === 'function') {
+                const padded = this.polygonOffset(this.binPolygon, {x: -10, y: -10});
+                if (padded && padded.length > 0) {
+                    this.binPolygon = padded;
+                }
             }
         }
 
@@ -85,7 +88,7 @@ function PlacementWorker(paths, ids, rotations, config, nfpCache) {
         // rotate paths by given rotation
         var rotated = [];
         for (i = 0; i < paths.length; i++) {
-            r = rotatePolygon(paths[i], paths[i].rotation);
+            var r = rotatePolygon(paths[i], paths[i].rotation);
             r.rotation = paths[i].rotation;
             r.source = paths[i].source;
             r.id = paths[i].id;

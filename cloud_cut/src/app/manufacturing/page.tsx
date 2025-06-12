@@ -1583,8 +1583,7 @@ export default function Manufacturing() {
               }}
               className="relative rounded-full font-medium transition-all duration-300 z-10 flex-1 py-2 px-3"
             >
-              <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${activeTab === 'medium' ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'
-                }`}>
+              <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${activeTab === 'medium' ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
@@ -1680,6 +1679,36 @@ export default function Manufacturing() {
                         </span>
                         <span>{isExporting ? "Nesting..." : "Start Nesting"}</span>
                       </button>
+                      {/* * Medium Sheets Button
+                      <button
+                        onClick={async () => Sentry.startSpan({
+                          name: 'handleMediumSheet-Orders',
+                        }, async () => {
+                          setActiveTab('medium');
+                          // If there's a selected foam sheet, refresh its orders
+                          if (selectedFoamSheet) {
+                            setLoadingMediumSheetOrders(true);
+                            //Clear cache to force refresh
+                            setOrdersWithMediumSheets(prev => {
+                              const newState = { ...prev };
+                              if (selectedFoamSheet in newState) {
+                                delete newState[selectedFoamSheet];
+                              }
+                              return newState;
+                            });
+                            // Trigger refresh by calling findOrdersWithMediumSheet
+                            findOrdersWithMediumSheet(selectedFoamSheet);
+                          }
+                        })}
+                        className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 focus:outline-none focus:ring-2 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
+                      >
+                        <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${activeTab === 'medium' ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Medium Sheets
+                        </span>
+                      </button> */}
                     </div>
                   </div>
                 </div>
