@@ -1,9 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getSupabaseClient } from "@/utils/supabase";
 
-
-
-
 export default function MediumSheetConfirm({
     isOpen,
     onClose,
@@ -125,13 +122,10 @@ export default function MediumSheetConfirm({
                     return;
                 }
 
-                // Calculate new stock value
-                const newStockValue = (currentStock?.stock as number || 0) + userMediumSheetsAddedToStock;
-
                 // Update stock value
                 const { error: updateError } = await supabase
                     .from('finished_stock')
-                    .update({ stock: newStockValue })
+                    .update({ stock: userMediumSheetsAddedToStock })
                     .eq('sku', sku);
 
                 if (updateError) {
@@ -140,7 +134,6 @@ export default function MediumSheetConfirm({
                     return;
                 }
 
-                console.log("Successfully updated stock for SKU:", sku, "New value:", newStockValue);
             }
 
             // Call the original onConfirm with the order arrays
@@ -690,7 +683,7 @@ export default function MediumSheetConfirm({
                             </span>
                         ) : (
                             isMultipleOrders 
-                                ? `Confirm Batch Processing (${totalOrders})` 
+                                ? `Confirm Batch Processing` 
                                 : 'Confirm Processing'
                         )}
                     </button>
