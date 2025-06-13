@@ -27,6 +27,8 @@ import { OrderItem, Order } from "@/types/redux";
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
+import RetailPackConfirm from "@/components/retailPackConfirm";
+
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
 
@@ -50,11 +52,21 @@ export default function Packing() {
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'orders' | 'retail'>('orders');
     const [retailPackFilter, setRetailPackFilter] = useState('');
-    const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
+    const [selectedRetailPack, setSelectedRetailPack] = useState<string | null>(null);    
+    const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
     const [retailPackPage, setRetailPackPage] = useState(1);
     const retailPacksPerPage = 15;
     const [retailPackTableBPage, setRetailPackTableBPage] = useState(1);
+    const [allRetailPacksChecked, setAllRetailPacksChecked] = useState(false);
+    const [checkedOrders, setCheckedOrders] = useState<Set<string>>(new Set());
+    const [orderIdsForMarkCompleted, setOrderIdsForMarkCompleted] = useState<string[]>([]);
+    const [currentOrderProgress, setCurrentOrderProgress] = useState<string>('0');
+    const [showRetailPackConfirmDialog, setShowRetailPackConfirmDialog] = useState(false);
+    const [checkedRetailPacks, setCheckedRetailPacks] = useState<Record<string, boolean>>({});
+    const [pendingRetailPackOrders, setPendingRetailPackOrders] = useState<RetailPackOrders>([]);
+    
+    type RetailPackOrders = { retailPackName: string; orderIds: string[] }[];
 
     const orderProgress = useSelector((state: RootState) =>
         state.orders.allOrders.reduce((acc, order) => {
@@ -277,7 +289,6 @@ export default function Packing() {
         }
     });
 };
-
 
     const handleMarkCompleted = (orderId: string) => {
         Sentry.startSpan({
@@ -583,7 +594,6 @@ export default function Packing() {
         return ordersWithRetailPacks[retailPack] || [];
     };
 
-
     // Function to compute the total number of retail packs after filtering
     const getFilteredRetailPacks = () => {
         return Object.entries(itemsByRetailPack)
@@ -674,6 +684,53 @@ export default function Packing() {
             return priorityA - priorityB;
         });
     });
+
+    const markAllRetailPacksAsPacked = async (retailPackOrders: RetailPackOrders) => {
+        Sentry.startSpan({
+            name: 'markAllRetailPacksAsPacked',
+        }, async () => {
+            setIsRefreshing(true);
+
+            try{
+                for (const { retailPackName, orderIds } of retailPackOrders) {
+                    // Update Supabase
+                    const { error } = await supabase
+                        .from('order_items')
+                        .update({ completed: true })
+                        .in('order_id', orderIds)
+                        .eq('item_name', retailPackName);
+
+                    if (error) {
+                        console.error(`Error updating order_items for ${retailPackName}:`, error);
+                        continue;
+                    }
+
+                    // update Redux for each orderId
+                    orderIds.forEach(orderId => {
+                        // Find the items in Redux for this order and retail pack
+                        const items = allOrderItems[orderId]?.filter(item => item.item_name === retailPackName) || [];
+                        items.forEach(item => {
+                            dispatch(updateItemCompleted({
+                                orderId,
+                                itemId: item.id,
+                                completed: true,
+                            }));
+                        });
+                    });
+                }
+            } catch (err) {
+                    console.error('Error in markAllRetailPacksAsPacked:', err);
+                } finally {
+                    setIsRefreshing(false);
+                }
+            });
+    };
+
+    // Reset checkedRetailPacks when the page changes
+    useEffect(() => {
+        setCheckedRetailPacks({});
+    }, [retailPackPage]);
+
 
     // Calculate pagination for sorted orders
     const startIndex = (currentPage - 1) * ordersPerPage;
@@ -1071,6 +1128,37 @@ export default function Packing() {
                                                 <tr>
                                                     <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
                                                     <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
+                                                    <th className="px-6 py-4 text-center">
+                                                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={allRetailPacksChecked}
+                                                                    onChange={() => {
+                                                                        // Instead of marking immediately, open confirm dialog with pending data
+                                                                        const tableARetailPacks = getTableARetailPacks();
+                                                                        const tableARetailPackOrders = tableARetailPacks.map(([retailPackName]) => ({
+                                                                            retailPackName,
+                                                                            orderIds: (findOrdersWithRetailPack(retailPackName) || []).map(order => order.order_id)
+                                                                        }));
+                                                                        setPendingRetailPackOrders(tableARetailPackOrders);
+                                                                        setShowRetailPackConfirmDialog(true);
+                                                                    }}
+                                                                    className="sr-only peer"
+                                                                    aria-label="Mark all retail packs as packed"
+                                                                    disabled={getTableARetailPacks().length === 0}
+                                                                />
+                                                                <div className="w-5 h-5 border-2 border-black rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                                                    {allRetailPacksChecked && (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                                                                        <path d="m9 12 2 2 4-4" />
+                                                                      </svg>
+                                                                    )}
+                                                                </div>
+                                                            </label>
+                                                        </div>
+                                                    </th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-300">
@@ -1090,7 +1178,7 @@ export default function Packing() {
                                                     //Render Retail Packs and their quantities for Table A
                                                     getTableARetailPacks().length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={2} className="px-6 py-10 text-center">
+                                                            <td colSpan={3} className="px-6 py-10 text-center">
                                                                 <div className="flex flex-col items-center justify-center h-60 text-black">
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1121,6 +1209,34 @@ export default function Packing() {
                                                                     <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
                                                                         {quantity}
                                                                     </span>
+                                                                </td>
+                                                                <td className="px-6 py-3 text-center">
+                                                                    <label 
+                                                                    className="inline-flex items-center cursor-pointer"
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={!!checkedRetailPacks[itemName]}
+                                                                            onChange={() => {
+                                                                                const retailPackName = itemName;
+                                                                                const orderIds = (findOrdersWithRetailPack(retailPackName) || []).map(order => order.order_id);
+                                                                                setPendingRetailPackOrders([{ retailPackName, orderIds }]);
+                                                                                setShowRetailPackConfirmDialog(true);
+                                                                            }}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                            className="sr-only peer"
+                                                                            aria-label={`Mark all ${itemName} retail packs as packed`}
+                                                                        />
+                                                                        <div className="w-5 h-5 border-2 border-black rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                                                            {!!checkedRetailPacks[itemName] && (
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                                                                                    <path d="m9 12 2 2 4-4" />
+                                                                                </svg>
+                                                                            )}
+                                                                        </div>
+                                                                    </label>
                                                                 </td>
                                                             </tr>
                                                         ))
@@ -1182,6 +1298,37 @@ export default function Packing() {
                                                 <tr>
                                                     <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
                                                     <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
+                                                    <th className="px-6 py-4 text-center">
+                                                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                                                            <label className={`relative inline-flex items-center cursor-pointer`}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={allRetailPacksChecked}
+                                                                    onChange={() => {
+                                                                        //Instead of making it immediate, open the confirm dialog with the pending data
+                                                                        const tableBRetailPacks = getTableBRetailPacks();
+                                                                        const tableBRetailPackOrders = tableBRetailPacks.map(([retailPackName]) => ({
+                                                                            retailPackName,
+                                                                            orderIds: (findOrdersWithRetailPack(retailPackName) || []).map(order => order.order_id)
+                                                                        }));
+                                                                        setPendingRetailPackOrders(tableBRetailPackOrders);
+                                                                        setShowRetailPackConfirmDialog(true);
+                                                                    }}
+                                                                    className="sr-only peer"
+                                                                    aria-label="Mark all retail packs as packed"
+                                                                    disabled={getTableBRetailPacks().length === 0}
+                                                                />
+                                                                <div className="w-5 h-5 border-2 border-black rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                                                    {allRetailPacksChecked && (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                                                                        <path d="m9 12 2 2 4-4" />
+                                                                      </svg>
+                                                                    )}
+                                                                </div>
+                                                            </label>
+                                                        </div>
+                                                    </th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-300">
@@ -1201,7 +1348,7 @@ export default function Packing() {
                                                     //Render Retail Packs and their quantities for Table B
                                                     getTableBRetailPacks().length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={2} className="px-6 py-10 text-center">
+                                                            <td colSpan={3} className="px-6 py-10 text-center">
                                                                 <div className="flex flex-col items-center justify-center h-60 text-black">
                                                                     {getFilteredRetailPacks().length <= retailPacksPerPage ? (
                                                                         <>
@@ -1244,6 +1391,34 @@ export default function Packing() {
                                                                     <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
                                                                         {quantity}
                                                                     </span>
+                                                                </td>
+                                                                <td className="px-6 py-3 text-center">
+                                                                    <label 
+                                                                    className="inline-flex items-center cursor-pointer"
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={!!checkedRetailPacks[itemName]}
+                                                                            onChange={() => {
+                                                                                const retailPackName = itemName;
+                                                                                const orderIds = (findOrdersWithRetailPack(retailPackName) || []).map(order => order.order_id);
+                                                                                setPendingRetailPackOrders([{ retailPackName, orderIds }]);
+                                                                                setShowRetailPackConfirmDialog(true);
+                                                                            }}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                            className="sr-only peer"
+                                                                            aria-label={`Mark all ${itemName} retail packs as packed`}
+                                                                        />
+                                                                        <div className="w-5 h-5 border-2 border-black rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                                                            {!!checkedRetailPacks[itemName] && (
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                                                                                    <path d="m9 12 2 2 4-4" />
+                                                                                </svg>
+                                                                            )}
+                                                                        </div>
+                                                                    </label>
                                                                 </td>
                                                             </tr>
                                                         ))
@@ -1297,6 +1472,24 @@ export default function Packing() {
                     selectedOrder={selectedOrder}
                     selectedOrderItems={selectedOrderItems}
                     id={String(selectedOrder.id)}
+                />
+            )}
+
+            {/** Retail Pack Confirmation Dialog */}
+            {showRetailPackConfirmDialog && (
+                <RetailPackConfirm
+                    isOpen={showRetailPackConfirmDialog}
+                    onClose={() => {
+                        setShowRetailPackConfirmDialog(false);
+                        setPendingRetailPackOrders([]);
+                    }}
+                    onConfirm={() => {
+                        markAllRetailPacksAsPacked(pendingRetailPackOrders);
+                        setShowRetailPackConfirmDialog(false);
+                        setPendingRetailPackOrders([]);
+                    }}
+                    orderIdsForMarkCompleted={orderIdsForMarkCompleted}
+                    retailPackOrders={pendingRetailPackOrders}
                 />
             )}
         </div>

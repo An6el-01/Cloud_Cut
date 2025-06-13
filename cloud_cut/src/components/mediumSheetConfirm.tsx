@@ -263,27 +263,7 @@ export default function MediumSheetConfirm({
         return null;
     }
 
-    console.log("MediumSheetConfirm: Rendering with state:", {
-        packingOrders,
-        markCompletedOrders,
-        totalOrders,
-        isMultipleOrders,
-        isReadyForPacking,
-        isAvailableStock
-    });
 
-    // const handleMediumSheetsManufactured = () => {
-    //     if (!mediumSheetTotalQuantity) return;
-    //     // Calculate the next multiple of 4
-    //     const nextMultipleOf4 = Math.ceil(mediumSheetTotalQuantity / 4) * 4;
-    //     setAdjustedMediumSheetQuantity(nextMultipleOf4);
-
-    //     const mediumSheetsAddedToStock = adjustedMediumSheetQuantity - mediumSheetTotalQuantity;
-
-    //     setMediumSheetsAddedToStock(mediumSheetsAddedToStock);
-    // }
-
-    // Effect to update adjusted quantity when mediumSheetTotalQuantity changes
     useEffect(() => {
         if (typeof mediumSheetTotalQuantity === 'number' && typeof currentMediumSheetStock === 'number') {
             // How many do we need to manufacture?
@@ -304,12 +284,6 @@ export default function MediumSheetConfirm({
         }
     }, [mediumSheetTotalQuantity, currentMediumSheetStock]);
 
-    // Add debug log for render
-    console.log('Render state:', {
-        mediumSheetsAddedToStock,
-        adjustedMediumSheetQuantity,
-        mediumSheetTotalQuantity
-    });
 
     useEffect(() => {
         if (
@@ -499,10 +473,7 @@ export default function MediumSheetConfirm({
                                 </div>
                             </>
                         )}
-                           
-
-                           
-                            
+                                
                             {/* Orders Being moved to Packing */}
                             {packingOrders.length > 0 && (
                                 <div className="bg-green-50 dark:bg-green-900/30 p-3 rounded-lg mb-3">
@@ -667,7 +638,7 @@ export default function MediumSheetConfirm({
                         onClick={handleConfirm}
                         className={`px-6 py-2.5 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 shadow-md hover:shadow-lg ${
                             isReadyForPacking
-                                ? 'bg-blue-600 hover:bg--700 focus:ring-blue-500' 
+                                ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' 
                                 : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
                         } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
                         aria-label="Confirm processing orders"
