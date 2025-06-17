@@ -744,7 +744,7 @@ export default function Packing() {
             {/**Pill Section*/}
             <div className="container mx-auto pt-28 flex justify-center gap-8">
                 <div className="flex justify-center">
-                    <div className="relative bg-[#2b3544] rounded-full shadow-xl p-1 inline-flex border border-gray-700 w-[320px]">
+                    <div className="relative bg-[#2b3544] rounded-full shadow-xl p-1 inline-flex border border-gray-700 w-[360px]">
                         {/* Sliding background that moves based on active tab */}
                         <div className={`sliding-pill ${activeTab === 'orders' ? 'pill-first' : 'pill-second'}`}></div>
                         
@@ -759,7 +759,7 @@ export default function Packing() {
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                                 </svg>
-                                Orders Queue
+                                Packing Queue
                             </span>
                         </button>
                         

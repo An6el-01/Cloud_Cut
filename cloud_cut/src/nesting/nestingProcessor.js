@@ -46,7 +46,9 @@ export class NestingProcessor {
         mutationRate: 0.1,
         crossoverRate: 0.9,
         tournamentSize: 3,
-        generations: 50
+        generations: 50,
+        width: 1000,
+        height: 2000,
       };
       console.log('Using nesting config:', config);
 
@@ -169,6 +171,8 @@ export class NestingProcessor {
                   const points = this.svgParser.polygonify(element);
                   if (points && points.length > 0) {
                     polygons.push(points);
+                  } else {
+                    console.warn(`Polygonify returned empty or invalid points for element ${element.tagName} in SKU ${item.sku}`);
                   }
                 } catch (error) {
                   console.error(`Error polygonifying element ${element.tagName}:`, error);
@@ -201,9 +205,10 @@ export class NestingProcessor {
               }));
 
               console.log('Dimensions for ', item.sku, 'is width: ', partSvgWidth, 'and height: ', partSvgHeight);
+              console.log('Scaled polygon for', item.sku, ':', scaledPolygon);
 
-              if (!partSvgWidth || !partSvgHeight) {
-                console.warn(`Dimensions are zero for SKU ${item.sku}`);
+              if (!partSvgWidth || !partSvgHeight || scaledPolygon.length === 0) {
+                console.warn(`Invalid or empty scaled polygon for SKU ${item.sku}`);
                 continue;
               }
 

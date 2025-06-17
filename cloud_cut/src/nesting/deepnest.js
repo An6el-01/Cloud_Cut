@@ -5,6 +5,8 @@
 // Import required dependencies
 import { SvgParser } from './svgparser';
 import { GeometryUtil } from './util/geometryutil';
+import { NfpCache } from './nfpDb';
+
 const { PlacementWorker } = require('./util/placementWorker');
 
 export class DeepNest {
@@ -12,6 +14,8 @@ export class DeepNest {
         this.eventEmitter = eventEmitter || {
             emit: (event, data) => console.log(`Nesting event: ${event}`, data)
         };
+
+        this.nfpCache = new NfpCache();
 
         var svg = null;
 
@@ -198,7 +202,10 @@ export class DeepNest {
                 simple = polygon;
             }
 
+            // Log before calling polygonOffset
+            console.log('[simplifyPolygon] Calling polygonOffset for main offset:', { simple, inside, tolerance });
             var offsets = this.polygonOffset(simple, inside ? -tolerance : tolerance);
+            console.log('[simplifyPolygon] polygonOffset result:', offsets);
 
             var offset = null;
             var offsetArea = 0;
@@ -236,7 +243,9 @@ export class DeepNest {
             for(j = 1; j < numshells; j++) {
                 var delta = j * (tolerance / numshells);
                 delta = inside ? -delta : delta;
+                console.log(`[simplifyPolygon] Calling polygonOffset for shell j=${j} with delta=${delta}`);
                 var shell = this.polygonOffset(simple, delta);
+                console.log(`[simplifyPolygon] polygonOffset result for shell j=${j}:`, shell);
                 if (shell.length > 0) {
                     shell = shell[0];
                 }
@@ -1132,7 +1141,9 @@ export class DeepNest {
         // use the clipper library to return an offset to the given polygon. Positive offset expands the polygon, negative contracts
         // note that this returns an array of polygons
         DeepNest.prototype.polygonOffset = function (polygon, offset) {
+            console.log('[polygonOffset] Called with:', { polygon, offset });
             if (!offset || offset == 0 || GeometryUtil.almostEqual(offset, 0)) {
+                console.log('[polygonOffset] No offset needed, returning original polygon');
                 return polygon;
             }
 
@@ -1156,6 +1167,7 @@ export class DeepNest {
             for (var i = 0; i < newpaths.length; i++) {
                 result.push(this.clipperToSvg(newpaths[i]));
             }
+            console.log('[polygonOffset] Returning result:', result);
             return result;
         };
 
@@ -1347,7 +1359,7 @@ export class DeepNest {
             const ga = new GeneticAlgorithm(parts, {
                 ...config,
                 binPolygon
-            }, polygonOffset);
+            }, polygonOffset, this.nfpCache);
             
             // Run the genetic algorithm
             const result = await ga.run();
@@ -1360,7 +1372,17 @@ export class DeepNest {
     }
 }
 
-function GeneticAlgorithm(adam, config, polygonOffset) {
+// Helper function to deep clone a part (including polygons)
+function deepClonePart(part) {
+    return {
+        ...part,
+        polygons: part.polygons ? part.polygons.map(poly => poly.map(pt => ({...pt}))) : [],
+        source: part.source ? { ...part.source } : undefined,
+    };
+}
+
+function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
+    console.log('[GeneticAlgorithm] Constructor called with:', { adam, config, polygonOffset, nfpCache });
     this.config = {
         populationSize: 10,
         mutationRate: 10,
@@ -1372,12 +1394,12 @@ function GeneticAlgorithm(adam, config, polygonOffset) {
     if (!this.config.binPolygon) {
         this.config.binPolygon = defaultBinPolygon;
     }
-    console.log("GeneticAlgorithm config as construction:", this.config);
-
-    this.nfpCache = {};
+    console.log('[GeneticAlgorithm] config as construction:', this.config);
+    this.nfpCache = nfpCache;
     this.polygonOffset = polygonOffset;
-    console.log("[GeneticAlgorithm] typeof polygonOffset:", typeof polygonOffset);
-    console.log("[GeneticAlgorithm] polygonOffset:", polygonOffset);
+    console.log('[GeneticAlgorithm] typeof polygonOffset:', typeof polygonOffset);
+    console.log('[GeneticAlgorithm] polygonOffset:', polygonOffset);
+    console.log('[GeneticAlgorithm] binPolygon:', this.config.binPolygon);
 
     // Ensure polygonOffset is a function
     if (typeof this.polygonOffset !== 'function') {
@@ -1390,16 +1412,15 @@ function GeneticAlgorithm(adam, config, polygonOffset) {
         };
     }
 
-    // population is an array of individuals. Each individual is an object representing the orders of insertion and the angle each part is rotated
+    // Deep clone the initial parts for each individual
+    const initialPlacement = adam.map(deepClonePart);
     var angles = [];
     for (var i = 0; i < adam.length; i++) {
         var angle = 
             Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
         angles.push(angle);
     }
-
-    this.population = [{ placement: adam, rotation: angles }];
-
+    this.population = [{ placement: initialPlacement, rotation: angles }];
     while (this.population.length < this.config.populationSize) {
         var mutant = this.mutate(this.population[0]);
         this.population.push(mutant);
@@ -1408,8 +1429,9 @@ function GeneticAlgorithm(adam, config, polygonOffset) {
 
 //returns a mutated individual with the given mutation rate
 GeneticAlgorithm.prototype.mutate = function (individual) {
+    // Deep clone the placement array
     var clone = {
-        placement: individual.placement.slice(0),
+        placement: individual.placement.map(deepClonePart),
         rotation: individual.rotation.slice(0), 
     };
     for (var i = 0; i < clone.placement.length; i++) {
@@ -1529,8 +1551,10 @@ GeneticAlgorithm.prototype.randomWeightedIndividual = function (exclude) {
 GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
     console.log("Passing binPolygon to PlacementWorker:", this.config.binPolygon);
     console.log("Passing placement to PlacementWorker:", individual.placement);
-    console.log("[GeneticAlgorithm.evaluateFitness] typeof this.polygonOffset:", typeof this.polygonOffset);
-    console.log("[GeneticAlgorithm.evaluateFitness] this.polygonOffset:", this.polygonOffset);
+    individual.placement.forEach((p, i) => {
+        console.log(`Placement part ${i}:`, p, 'polygons:', p.polygons);
+    });
+
     // Create a new worker for this evaluation
     const worker = new PlacementWorker(
         this.config.binPolygon,

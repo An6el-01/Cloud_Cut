@@ -2,7 +2,32 @@
  * Handles the placement of parts
  */
 
-const { GeometryUtil } = require("./geometryutil");
+const { getOuterNfp, getInnerNfp } = require('../background');
+const { GeometryUtil } = require('./geometryUtilLib');
+
+const { GeometryUtil: OldGeometryUtil } = require("./geometryutil");
+
+function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
+    const key = { A: A.id, B: B.id, Arotation: A.rotation, Brotation: B.rotation };
+
+    if (!A || !A.polygons || !A.polygons[0] || A.polygons[0].length === 0 ||
+        !B || !B.polygons || !B.polygons[0] || B.polygons[0].length === 0) {
+        console.error('[NFP ERROR] Invalid part(s) passed to getOrCreateNfp:', {A, B});
+        return [];
+    }
+
+    let nfp = nfpCache.find(key, type === 'inner' );
+    if (nfp) {
+        console.log(`[NFP CACHE HIT] ${type.toUpperCase()} NFP for A:${A.id} (rot:${A.rotation}) B:${B.id} (rot:${B.rotation})`);
+    } else {
+        console.log(`[NFP GENERATE] ${type.toUpperCase()} NFP for A:${A.id} (rot:${A.rotation}) B:${B.id} (rot:${B.rotation})`);
+        nfp = type === 'outer'
+            ? getOuterNfp(A.polygons[0], B.polygons[0], false, nfpCache)
+            : getInnerNfp(A.polygons[0], B.polygons[0], config, nfpCache);
+        nfpCache.insert({ ...key, nfp }, type === 'inner');
+    }
+    return nfp;
+}
 
 function toClipperCoordinates(polygon){
     var clone = {};
@@ -50,7 +75,6 @@ function rotatePolygon(polygon, degrees){
 
 function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, polygonOffset) {
 
-
     this.binPolygon = binPolygon;
     this.paths = paths;
     this.ids = ids;
@@ -58,6 +82,10 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
     this.config = config;
     this.nfpCache = nfpCache || {};
     this.polygonOffset = polygonOffset;
+    console.log('[PlacementWorker] Constructor called');
+    console.log('[PlacementWorker] binPolygon:', this.binPolygon);
+    console.log('[PlacementWorker] typeof polygonOffset:', typeof this.polygonOffset);
+    console.log('[PlacementWorker] polygonOffset:', this.polygonOffset);
     console.log("PlacementWorker initialized with binPolygon:", this.binPolygon);
     console.log("PlacementWorker initialized with paths:", this.paths);
 
@@ -65,26 +93,138 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
     this.place = this.place.bind(this);
     this.placePaths = this.placePaths.bind(this);
 
+    // Helper: Intersect two sets of polygons using ClipperLib
+    function intersectPolygons(a, b, scale) {
+        // a and b are arrays of polygons (arrays of points)
+        const clipper = new ClipperLib.Clipper();
+        const solution = new ClipperLib.Paths();
+        // Convert to Clipper coordinates and scale up
+        function toClipper(poly) {
+            return poly.map(pt => ({ X: Math.round(pt.x * scale), Y: Math.round(pt.y * scale) }));
+        }
+        const aClip = a.map(toClipper);
+        const bClip = b.map(toClipper);
+        clipper.AddPaths(aClip, ClipperLib.PolyType.ptSubject, true);
+        clipper.AddPaths(bClip, ClipperLib.PolyType.ptClip, true);
+        clipper.Execute(
+            ClipperLib.ClipType.ctIntersection,
+            solution,
+            ClipperLib.PolyFillType.pftNonZero,
+            ClipperLib.PolyFillType.pftNonZero
+        );
+        // Convert back to normal coordinates
+        return solution.map(poly => poly.map(pt => ({ x: pt.X / scale, y: pt.Y / scale })));
+    }
+
+    // Helper: Pick the bottom-left-most point from a set of polygons
+    function pickBottomLeftPoint(polygons) {
+        let minX = Infinity, minY = Infinity, best = null;
+        polygons.forEach(poly => {
+            poly.forEach(pt => {
+                if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
+                    minX = pt.x;
+                    minY = pt.y;
+                    best = pt;
+                }
+            });
+        });
+        return best;
+    }
+
+    function precomputeBinNfps(parts, binPolygon, rotations, config, nfpCache) {
+        console.log(`[NFP PRECOMPUTE] Starting bin-part NFP precomputation for ${parts.length} parts and ${rotations.length} rotations.`);
+        for (const part of parts){
+            for (const rot of rotations){
+                const rotatedPoly = rotatePolygon(part.polygons[0], rot);
+                const partRot = {
+                    ...part,
+                    polygons: [rotatedPoly],
+                    rotation: rot
+                };
+                getOrCreateNfp(
+                    { id: -1, polygons: [binPolygon], rotation:0 },
+                    partRot,
+                    config,
+                    nfpCache,
+                    'outer'
+                );
+            }
+        }
+        console.log(`[NFP PRECOMPUTE] Finished bin-part NFP precomputation.`);
+    }
+
+    function precomputePartNfps(parts, rotations, config, nfpCache) {
+        console.log(`[NFP PRECOMPUTE] Starting part-part NFP precomputation for ${parts.length} parts and ${rotations.length} rotations.`);
+        for (const partA of parts){
+            for (const partB of parts){
+                for (const rotA of rotations){
+                    for (const rotB of rotations){
+                        const rotatedPolyA = rotatePolygon(partA.polygons[0], rotA);
+                        const partARot = {
+                            ...partA,
+                            polygons: [rotatedPolyA],
+                            rotation: rotA
+                        };
+                        const rotatedPolyB = rotatePolygon(partB.polygons[0], rotB);
+                        const partBRot = {
+                            ...partB,
+                            polygons: [rotatedPolyB],
+                            rotation: rotB
+                        };
+                        getOrCreateNfp(
+                            partARot,
+                            partBRot,
+                            config,
+                            nfpCache,
+                            'inner'
+                        );
+                    }
+                }
+            }
+        }
+        console.log(`[NFP PRECOMPUTE] Finished part-part NFP precomputation.`);
+    }
+
+    const uniquePartsMap = new Map();
+    for (const p of paths){
+        if(!uniquePartsMap.has(p.sourceShapeId)){
+            uniquePartsMap.set(p.sourceShapeId, p);
+        }
+    }
+    const uniqueParts = Array.from(uniquePartsMap.values());
+    console.log('uniqueParts', uniqueParts);
+    uniqueParts.forEach((p, i) => {
+        console.log(`Part ${i}:`, p, 'polygons:', p.polygons);
+    })
+
+    precomputeBinNfps(uniqueParts, this.binPolygon, rotations, this.config, this.nfpCache);
+    precomputePartNfps(uniqueParts, rotations, this.config, this.nfpCache);
+
     // return a placement for the paths/rotations worker
     // happens inside a webworker
     this.placePaths = function(paths) {
-
-        if (!this.binPolygon) {
+        console.log('[PlacementWorker.placePaths] called');
+        console.log('[PlacementWorker.placePaths] this.polygonOffset:', this.polygonOffset);
+        if (!this.binPolygon || !Array.isArray(this.binPolygon) || this.binPolygon.length === 0) {
+            console.error('[PLACE ERROR] Invalid or empty binPolygon:', this.binPolygon);
             return null;
         }
-
+        // Validate all part polygons before placement
+        for (let i = 0; i < paths.length; i++) {
+            if (!paths[i].polygons || !paths[i].polygons[0] || paths[i].polygons[0].length === 0) {
+                console.warn(`[PLACE WARNING] Skipping invalid or empty polygon for part ${paths[i].id}`);
+                continue;
+            }
+        }
         if(this.binPolygon && Array.isArray(this.binPolygon)) {
-            // Check if polygonOffset is a function before calling it
             if (typeof this.polygonOffset === 'function') {
                 const padded = this.polygonOffset(this.binPolygon, {x: -10, y: -10});
-                if (padded && padded.length > 0) {
+            if (padded && padded.length > 0) {
                     this.binPolygon = padded;
                 }
             }
         }
-
-        var i, j, k, m, n, path;
-
+        var i;
         // rotate paths by given rotation
         var rotated = [];
         for (i = 0; i < paths.length; i++) {
@@ -94,245 +234,81 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             r.id = paths[i].id;
             rotated.push(r);
         }
-
         paths = rotated;
-
         var allplacements = [];
         var fitness = 0;
         var binarea = Math.abs(GeometryUtil.polygonArea(this.binPolygon));
-        var key, nfp;
-
-        while (paths.length > 0) {
+        var scale = this.config.clipperScale || 10000000;
+        var unplaced = paths.slice();
             var placed = [];
             var placements = [];
-            fitness += 1; // Add 1 for each bin opened. The lower the fitness, the better.
-
-            for (i = 0; i < paths.length; i++){
-                path = paths[i];
-
-                // inner NFP
-                key = JSON.stringify({
-                    A: -1,
-                    B: path.id,
-                    inside: true,
-                    Arotation: 0,
-                    Brotation: path.rotation,
-                });
-                var binNfp = this.nfpCache[key];
-
-                // part unplaceable skip
-                if (!binNfp || binNfp.length == 0) { continue;}
-
-                var position = null;
-                if (placed.length > 0) {
-                    // first placement, put it on the left
-                    for (j = 0; j < binNfp.length; j++){
-                        for (k=0; k < binNfp[j].length; k++) {
-                            if(
-                                position === null ||
-                                binNfp[j][k].x - path[0].x < position.x
-                            ) {
-                                position = {
-                                    x: binNfp[j][k].x - path[0].x,
-                                    y: binNfp[j][k].y - path[0].y,
-                                    id: path.id,
-                                    rotation: path.rotation,
-                                };
-                            }
-                        }
-                    }
-
-                    placements.push(position);
-                    placed.push(path);
-
+        while (unplaced.length > 0) {
+            var part = unplaced[0];
+            // 1. Get NFP between bin and part
+            console.log(`[NFP USAGE] Requesting BIN NFP for part ${part.id} (rot:${part.rotation})`);
+            var binNfp = getOrCreateNfp(
+                { id: -1, polygons: [this.binPolygon], rotation: 0 },
+                part,
+                this.config,
+                this.nfpCache,
+                'outer'
+            );
+            if (!binNfp || binNfp.length === 0) {
+                // Could not place this part
+                console.warn(`[NFP FAIL] No bin NFP found for part ${part.id} (rot:${part.rotation})`);
+                unplaced.shift();
                     continue;
                 }
-
-                var clipperBinNfp = [];
-                for (j = 0; j < binNfp.length; j++){
-                    clipperBinNfp.push(toClipperCoordinates(binNfp[j]));
+            // 2. For each already placed part, get NFP and intersect
+            let validRegion = binNfp;
+            for (let j = 0; j < placed.length; j++) {
+                var placedPart = placed[j];
+                console.log(`[NFP USAGE] Requesting PART NFP for placed ${placedPart.id} (rot:${placedPart.rotation}) vs part ${part.id} (rot:${part.rotation})`);
+                var partNfp = getOrCreateNfp(
+                    placedPart,
+                    part,
+                    this.config,
+                    this.nfpCache,
+                    'inner'
+                );
+                if (!partNfp || partNfp.length === 0) {
+                    console.warn(`[NFP FAIL] No part NFP found for placed ${placedPart.id} (rot:${placedPart.rotation}) vs part ${part.id} (rot:${part.rotation})`);
+                    validRegion = [];
+                    break;
                 }
-
-                ClipperLib.JS.ScaleUpPaths(clipperBinNfp, this.config.clipperScale);
-               
-                var clipper = new ClipperLib.Clipper();
-                var combinedNfp = new ClipperLib.Paths();
-
-                for (j = 0; j < placed.length; j++) {
-                    key = JSON.stringify({
-                        A: placed[j].id,
-                        B: path.id,
-                        inside: false,
-                        Arotation: placed[j].rotation,
-                        Brotation: path.rotation,
-                    });
-                    nfp = this.nfpCache[key];
-
-                    if (!nfp) {
-                        continue;
-                    }
-
-                    for (k = 0; k < nfp.length; k++) {
-                        var clone = toClipperCoordinates(nfp[k]);
-                        for (m = 0; m < clone.length; m++){
-                            clone[m].X += placed[j].x;
-                            clone[m].Y += placed[j].y;
-                        }
-
-                        ClipperLib.JS.ScaleUpPath(clone, this.config.clipperScale);
-                        clone = ClipperLib.Clipper.CleanPolygon(
-                            clone,
-                            0.0001 * this.config.clipperScale
-                        );
-                        var area = Math.abs(ClipperLib.Clipper.Area(clone));
-                        if(
-                            clone.length > 2 &&
-                            area > 0.1 * this.config.clipperScale * this.config.clipperScale
-                        ) {
-                            clipper.AddPath(clone, ClipperLib.PolyType.ptSubject, true);
-                        }
-                    }
-                }
-
-                if(
-                    !clipper.Execute(
-                        ClipperLib.ClipType.ctUnion,
-                        combinedNfp,
-                        ClipperLib.PolyFillType.pftNonZero,
-                        ClipperLib.PolyFillType.pftNonZero
-                    )
-                ) { 
-                    continue;
-                }
-
-                //difference with bin polygon
-                var finalNfp = new ClipperLib.Paths();
-                clipper = new ClipperLib.Clipper();
-
-                clipper.AddPath(combinedNfp, ClipperLib.PolyType.ptClip, true);
-                clipper.AddPath(clipperBinNfp, ClipperLib.PolyType.ptSubject, true);
-                if(
-                    !clipper.Execute(
-                        ClipperLib.ClipType.ctDifference,
-                        finalNfp,
-                        ClipperLib.PolyFillType.pftNonZero,
-                        ClipperLib.PolyFillType.pftNonZero
-                    )
-                ) {
-                    continue;
-                }
-
-                finalNfp = ClipperLib.Clipper.CleanPolygons(finalNfp, 0.0001 * this.config.clipperScale);
-
-                for(j = 0; j < finalNfp.length; j++) {
-                    var area = Math.abs(ClipperLib.Clipper.Area(finalNfp[j]));
-                    if(
-                        finalNfp[j].length < 3 ||
-                        area < 0.1 * this.config.clipperScale * this.config.clipperScale
-                    ) {
-                        finalNfp.splice(j, 1);
-                        j--;
-                    }
-                }
-
-                if(!finalNfp || finalNfp.length == 0) {
-                    continue;
-                }
-
-                var f = [];
-                for (j = 0; j < finalNfp.length; j++) {
-                    // back to normal scale
-                    f.push(toNestCoordinates(finalNfp[j], this.config.clipperScale));
-                }
-                finalNfp = f;
-
-                //Choose the placement that results in the smallest bounding box
-                var minwidth = null;
-                var minarea = null;
-                var minx = null;
-                var nf, area, shiftvector;
-
-                for (j = 0; j < finalNfp.length; j++) {
-                    nf = finalNfp[j];
-                    if (Math.abs(GeometryUtil.polygonArea(nf)) < 2) {
-                        continue;
-                    }
-
-                    for ( k = 0; k < nf.length; k++) {
-                        var allpoints = [];
-                        for ( m = 0; m < placed.length; m++) {
-                            for (n = 0; n < placed[m].length; n++) {
-                                allpoints.push({
-                                    x: placed[m][n].x + placements[m].x,
-                                    y: placed[m][n].y + placements[m].y,
-                                });
-                            }
-                        }
-
-                        shiftvector = {
-                            x: nf[k].x - path[0].x,
-                            y: nf[k].y - path[0].y,
-                            id: path.id,
-                            rotation: path.rotation,
-                            nfp : combinedNfp,
-                        };
-
-                        for (m = 0; m < path.length; m++) {
-                            allpoints.push({
-                                x: path[m].x + shiftvector.x,
-                                y: path[m].y + shiftvector.y,
-                            });
-                        }
-
-                        var rectbounds = GeometryUtil.getPolygonBounds(allpoints);
-
-                        // weight width more to help compress in direction of gravity
-                        area = rectbounds.width * 2 + rectbounds.height;
-
-                        if(
-                            minarea === null || 
-                            area < minarea || 
-                            (GeometryUtil.almostEqual(minarea, area) &&
-                                (minx === null || shiftvector.x < minx))
-                        ) {
-                            minarea = area;
-                            minwidth = rectbounds.width;
-                            position = shiftvector;
-                            minx = shiftvector.x;
-                        }
-                    }
-                }
-                if(position) {
-                    placed.push(path);
-                    placements.push(position);
+                validRegion = intersectPolygons(validRegion, partNfp, scale);
+                if (!validRegion || validRegion.length === 0) {
+                    console.warn(`[NFP FAIL] No valid region after intersection for part ${part.id}`);
+                    break;
                 }
             }
-
-            if(minwidth) {
-                fitness += minwidth / binarea;
-            }
-
-            for (i = 0; i < placed.length; i++) {
-                var index = paths.indexOf(placed[i]);
-                if (index >= 0) {
-                    paths.splice(index, 1);
+            // 3. Pick a point from the valid region
+            if (validRegion && validRegion.length > 0) {
+                const placementPoint = pickBottomLeftPoint(validRegion);
+                if (placementPoint) {
+                    console.log(`[NFP PLACE] Placing part ${part.id} at (${placementPoint.x}, ${placementPoint.y})`);
+                    part.x = placementPoint.x;
+                    part.y = placementPoint.y;
+                    placed.push(part);
+                    placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
+                    unplaced.shift();
+                    continue;
                 }
             }
-
+            // If we get here, could not place part
+            console.warn(`[NFP PLACE FAIL] Could not place part ${part.id}`);
+            unplaced.shift();
+        }
+        // Fitness: penalize for unplaced parts
+        fitness += 2 * unplaced.length;
+        // Optionally, add more fitness logic here
             if (placements && placements.length > 0) {
                 allplacements.push(placements);
-            } else {
-                break;
-            }
         }
-
-        // There were parts that could not be placed
-        fitness += 2 * paths.length;
-
         return {
             placements: allplacements,
             fitness: fitness,
-            paths: paths,
+            paths: unplaced,
             area: binarea,
         };
     };

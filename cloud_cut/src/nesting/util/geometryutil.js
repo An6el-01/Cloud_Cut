@@ -170,6 +170,8 @@ function _lineIntersect(A, B, E, F, infinite){
     return { x: x, y: y };
 }
 
+
+
 // Export the GeometryUtil object
 module.exports = {
     GeometryUtil: {
