@@ -65,6 +65,7 @@ export default function Packing() {
     const [showRetailPackConfirmDialog, setShowRetailPackConfirmDialog] = useState(false);
     const [checkedRetailPacks, setCheckedRetailPacks] = useState<Record<string, boolean>>({});
     const [pendingRetailPackOrders, setPendingRetailPackOrders] = useState<RetailPackOrders>([]);
+    const [pendingOrderToSelect, setPendingOrderToSelect] = useState<string | null>(null);
     
     type RetailPackOrders = { retailPackName: string; orderIds: string[] }[];
 
@@ -190,75 +191,25 @@ export default function Packing() {
             op: 'ui.interaction.function'
         }, async () => {
             try {
-                // Set loading state
                 setIsRefreshing(true);
-                
-                // First set the active tab to orders
                 setActiveTab('orders');
-                
-                // Get current state to check for order items
                 const state = store.getState();
-                
-                // Directly set the selected order so the UI can prepare for it
-                dispatch(setSelectedOrderId(orderId));
-                
-                // Fetch packing orders from Supabase
-                const { data: packingOrders, error: ordersError } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .eq('status', 'Pending')
-                    .eq('manufactured', true)
-                    .eq('packed', false)
-                    .order('order_date', { ascending: false });
-                
-                if (ordersError) {
-                    throw ordersError;
-                }
-                
-                // Check if the order exists in the fetched data
-                const orderExists = packingOrders.some(order => order.order_id === orderId);
-                
-                if (!orderExists) {
-                    return;
-                }
-                
-                // Sort orders by priority
-                const sortedOrders = [...packingOrders].sort((a, b) => {
+                // Calculate the sorted orders here to match the UI
+                const sortedOrders = [...orders].sort((a, b) => {
                     const orderItemsA = state.orders.orderItems[a.order_id as string] as OrderItem[] || [];
                     const orderItemsB = state.orders.orderItems[b.order_id as string] as OrderItem[] || [];
-                    
                     const priorityA = orderItemsA.length > 0 ? Math.min(...orderItemsA.map(item => item.priority ?? 10)) : 10;
                     const priorityB = orderItemsB.length > 0 ? Math.min(...orderItemsB.map(item => item.priority ?? 10)) : 10;
-                    
                     return priorityA - priorityB;
                 });
-                
-                // Find the index of the selected order in the sorted list
                 const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
-                
-                // Calculate which page the order should be on
                 const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
-                
                 if (targetPage !== currentPage) {
-                    // Navigate to the correct page
-                    await handlePageChange(targetPage);
-                    
-                    // Re-set the selected order ID after navigation
-                    dispatch(setSelectedOrderId(orderId));
-                    
-                    // Wait for the DOM to update with the new page
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                    // Attempt to scroll to the selected row after navigation
-                    const selectedRow = document.getElementById(`order-row-${orderId}`);
-                    if (selectedRow) {
-                        selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                    setPendingOrderToSelect(orderId);
+                    handlePageChange(targetPage);
                 } else {
-                    // Wait for the DOM to update
+                    dispatch(setSelectedOrderId(orderId));
                     await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                    // Scroll to the selected row
                     const selectedRow = document.getElementById(`order-row-${orderId}`);
                     if (selectedRow) {
                         selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -736,6 +687,19 @@ export default function Packing() {
     const startIndex = (currentPage - 1) * ordersPerPage;
     const endIndex = startIndex + ordersPerPage;
     const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
+
+    useEffect(() => {
+        if (pendingOrderToSelect) {
+            dispatch(setSelectedOrderId(pendingOrderToSelect));
+            setTimeout(() => {
+                const selectedRow = document.getElementById(`order-row-${pendingOrderToSelect}`);
+                if (selectedRow) {
+                    selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 100);
+            setPendingOrderToSelect(null);
+        }
+    }, [orders, currentPage, pendingOrderToSelect, dispatch]);
 
     return (
         <div className="min-h-screen">

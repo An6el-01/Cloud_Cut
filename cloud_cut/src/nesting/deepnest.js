@@ -1551,16 +1551,31 @@ GeneticAlgorithm.prototype.randomWeightedIndividual = function (exclude) {
 GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
     console.log("Passing binPolygon to PlacementWorker:", this.config.binPolygon);
     console.log("Passing placement to PlacementWorker:", individual.placement);
-    individual.placement.forEach((p, i) => {
-        console.log(`Placement part ${i}:`, p, 'polygons:', p.polygons);
-    });
+
+
+    // Filter out invalid parts
+    const validPlacement = individual.placement.filter(p => {
+        const isValid = p && p.polygons && Array.isArray(p.polygons[0]) && p.polygons[0].length > 0;
+        if (!isValid) {
+            console.warn('Filtering out invalid part:', p);
+        }
+        return isValid;
+    }).map(p => ({
+        ...p,
+        polygons: p.polygons.map(poly => Array.isArray(poly) ? poly : [])
+    }));
+
+    if (validPlacement.length === 0){
+        console.error('No valid parts to place');
+        return Number.MAX_VALUE;
+    }
 
     // Create a new worker for this evaluation
     const worker = new PlacementWorker(
         this.config.binPolygon,
-        individual.placement,
-        individual.placement.map(p => p.id),
-        individual.rotation.map(r => r || 0),
+        validPlacement,
+        validPlacement.map(p => p.id),
+        validPlacement.map((p, i) => individual.rotation[i] || 0),
         this.config,
         this.nfpCache,
         this.polygonOffset
@@ -1568,7 +1583,7 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
 
     {/**This Is Failing!!! */}
     // Place the parts and get the result
-    const result = worker.place(individual.placement);
+    const result = worker.place(validPlacement);
 
     if (!result || !result.success) {
         console.log('Placement failed, returning high fitness value');

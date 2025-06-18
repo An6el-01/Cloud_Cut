@@ -2,7 +2,6 @@
 
 import Navbar from "@/components/Navbar";
 import ManuConfirm from "@/components/manuConfirm";
-import MediumSheetConfirm from "@/components/mediumSheetConfirm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -1301,11 +1300,11 @@ export default function Manufacturing() {
               {calculateTotalItems(data.items)}
             </span>
           </td>
-          <td className="px-6 py-4 text-center">
+          {/* <td className="px-6 py-4 text-center">
             <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
               {lowestPriority}
             </span>
-          </td>
+          </td> */}
           <td className="px-6 py-4 text-center">0%</td>
           <td className="px-6 py-4 text-center">0 mins</td>
         </tr>
@@ -1664,7 +1663,7 @@ export default function Manufacturing() {
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Foam Sheet</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Nesting ID</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Pieces</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Priority</th>
+                          {/* <th className="px-6 py-4 text-center text-lg font-semibold text-black">Priority</th> */}
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
                         </tr>
@@ -2594,29 +2593,29 @@ export default function Manufacturing() {
             <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full w-full flex flex-col">
               <div className="px-6 py-5  bg-black/90">
                 <h2 className="text-2xl font-bold text-white text-center">
-                  {selectedFoamSheet ? (
-                    <div className="flex items-center justify-center">
-                      <span className="relative">
-                        <span className="font-semibold relative inline-block">{formatMediumSheetName(selectedFoamSheet)}
-                        </span>
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="relative inline-block">
-                      Select a Medium Sheet
-                    </span>
-                  )}
+                  Confirm Completion
                 </h2>
               </div>
               <div className="flex-1 overflow-auto p-4">
-                <div className="h-full">
+                <div className="h-full">   
                   <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
                     <div className="w-full h-full bg-white/90 rounded-xl shadow-lg p-8 flex flex-col items-center justify-center">
                       <h2
                         id="dialog-title"
                         className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center tracking-tight"
                       >
-                        Confirm Completion
+                        {selectedFoamSheet ? (
+                          <div className="flex items-center justify-center">
+                            <span className="relative">
+                              <span className="font-semibold relative inline-block">{formatMediumSheetName(selectedFoamSheet)}
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="relative inline-block">
+                            Select a Medium Sheet
+                          </span>
+                        )}
                       </h2>
                       <div className="w-full max-w-3xl bg-gray-50 rounded-lg shadow-inner p-8 mb-6 border border-gray-200 flex flex-col gap-6">
                         <div className="flex items-center justify-between">
@@ -2658,7 +2657,7 @@ export default function Manufacturing() {
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">Total Sheets</span>
+                          <span className="text-xl font-medium text-gray-700">Total Medium Sheets</span>
                           <span className="text-xl font-semibold text-gray-900">
                             {selectedMediumSheetQuantity || '-'}
                           </span>
@@ -2691,49 +2690,6 @@ export default function Manufacturing() {
           }}
           onConfirm={handleManufactureOrder}
           orderId={selectedOrderId}
-        />
-      )}
-
-      {/*  Medium Sheet Confirmation Dialog */}
-      {showMediumSheetConfirmDialog && (
-        <MediumSheetConfirm
-          isOpen={showMediumSheetConfirmDialog}
-          onClose={() => {
-            console.log("Manufacturing: MediumSheetConfirm onClose triggered, current dialog state:", {
-              orderIdsToPacking,
-              orderIdsToMarkCompleted,
-              currentOrderProgress,
-              pendingItemToComplete
-            });
-            setShowMediumSheetConfirmDialog(false);
-            // Clear any pending item state
-            setPendingItemToComplete(null);
-            // Reset all checkbox states
-            setAllMediumSheetOrdersChecked(false);
-            setCheckedOrders(new Set());
-            // Reset progress
-            setCurrentOrderProgress('0');
-            // Reset order arrays
-            setOrderIdsToPacking([]);
-            setOrderIdsToMarkCompleted([]);
-
-            // Log state after resetting
-            console.log("Manufacturing: State after dialog close:", {
-              showConfirmDialog: false,
-              pendingItemToComplete: null,
-              orderIdsToPacking: [],
-              orderIdsToMarkCompleted: [],
-              currentOrderProgress: '0'
-            });
-          }}
-          onConfirm={handleMarkManufactured}
-          orderId={selectedOrderId}
-          orderIdsToPacking={orderIdsToPacking}
-          orderIdsToMarkCompleted={orderIdsToMarkCompleted}
-          orderProgress={currentOrderProgress}
-          mediumSheetTotalQuantity={selectedMediumSheetQuantity}
-          selectedMediumSheet={selectedFoamSheet ? formatMediumSheetName(selectedFoamSheet) : undefined}
-          sku={selectedFoamSheet || undefined}
         />
       )}
     </div>

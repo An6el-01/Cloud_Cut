@@ -212,15 +212,25 @@ export class NestingProcessor {
                 continue;
               }
 
-              // Add to parts array
+              if (!scaledPolygon || !Array.isArray(scaledPolygon) || scaledPolygon.length === 0) {
+                console.error('Invalid polygon for SKU:', item.sku, scaledPolygon);
+                continue;
+              }
               for (let q = 0; q < item.quantity; q++) {
-                parts.push({
+                const part = {
                   id: `${item.sku}-${parts.length}`,
                   polygons: [scaledPolygon],
-                  quantity: 1, // Each part is a single instance
+                  quantity: 1,
                   source: item,
                   rotation: 0
-                });
+                };
+
+                // validate the part before pushing
+                if (!part.polygons || !Array.isArray(part.polygons[0]) || part.polygons[0].length === 0) {
+                  console.error('Invalid part structure:', part);
+                  continue;
+                }
+                parts.push(part);
               }
               console.log(`Successfully processed ${item.sku} with ${item.quantity} polygons`);
             } else {

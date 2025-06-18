@@ -7,26 +7,54 @@ const { GeometryUtil } = require('./geometryUtilLib');
 
 const { GeometryUtil: OldGeometryUtil } = require("./geometryutil");
 
-function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
-    const key = { A: A.id, B: B.id, Arotation: A.rotation, Brotation: B.rotation };
+function getOrCreateNfp(A, B, inside, searchEdges) {
+    // Add detailed logging
+    console.log('getOrCreateNfp called with:', {
+        A: {
+            id: A?.id,
+            hasPolygons: !!A?.polygons,
+            polygonLength: A?.polygons?.[0]?.length
+        },
+        B: {
+            id: B?.id,
+            hasPolygons: !!B?.polygons,
+            polygonLength: B?.polygons?.[0]?.length
+        }
+    });
 
-    if (!A || !A.polygons || !A.polygons[0] || A.polygons[0].length === 0 ||
-        !B || !B.polygons || !B.polygons[0] || B.polygons[0].length === 0) {
-        console.error('[NFP ERROR] Invalid part(s) passed to getOrCreateNfp:', {A, B});
+    // Validate inputs
+    if (!A || !A.polygons || !Array.isArray(A.polygons[0]) || A.polygons[0].length === 0) {
+        console.error('[NFP ERROR] Invalid bin polygon:', A);
         return [];
     }
 
-    let nfp = nfpCache.find(key, type === 'inner' );
-    if (nfp) {
-        console.log(`[NFP CACHE HIT] ${type.toUpperCase()} NFP for A:${A.id} (rot:${A.rotation}) B:${B.id} (rot:${B.rotation})`);
-    } else {
-        console.log(`[NFP GENERATE] ${type.toUpperCase()} NFP for A:${A.id} (rot:${A.rotation}) B:${B.id} (rot:${B.rotation})`);
-        nfp = type === 'outer'
-            ? getOuterNfp(A.polygons[0], B.polygons[0], false, nfpCache)
-            : getInnerNfp(A.polygons[0], B.polygons[0], config, nfpCache);
-        nfpCache.insert({ ...key, nfp }, type === 'inner');
+    if (!B || !B.polygons || !Array.isArray(B.polygons[0]) || B.polygons[0].length === 0) {
+        console.error('[NFP ERROR] Invalid part polygon:', B);
+        return [];
     }
-    return nfp;
+
+    // Ensure we're working with the first polygon of each
+    const binPolygon = A.polygons[0];
+    const partPolygon = B.polygons[0];
+
+    // Create cache key
+    const cacheKey = `${A.id}-${B.id}-${inside ? 'inside' : 'outside'}`;
+    
+    // Check cache
+    if (this.nfpCache.has(cacheKey)) {
+        console.log('[NFP CACHE HIT]', cacheKey);
+        return this.nfpCache.get(cacheKey);
+    }
+
+    // Calculate NFP
+    try {
+        const nfp = this.calculateNfp(binPolygon, partPolygon, inside, searchEdges);
+        this.nfpCache.set(cacheKey, nfp);
+        return nfp;
+    } catch (error) {
+        console.error('[NFP ERROR] Failed to calculate NFP:', error);
+        return [];
+    }
 }
 
 function toClipperCoordinates(polygon){
@@ -74,16 +102,26 @@ function rotatePolygon(polygon, degrees){
 }
 
 function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, polygonOffset) {
+    console.log("[PlacementWorker] Constructor called");
+    console.log("[PlacementWorker] binPolygon:", binPolygon);
+    
+    // Validate bin polygon
+    if (!binPolygon || !Array.isArray(binPolygon) || binPolygon.length < 3) {
+        throw new Error('Invalid bin polygon: must be an array of at least 3 points');
+    }
 
-    this.binPolygon = binPolygon;
+    this.binPolygon = {
+        id: -1,
+        polygons: [binPolygon],
+        rotation: 0
+    };
+    
     this.paths = paths;
     this.ids = ids;
     this.rotations = rotations;
     this.config = config;
     this.nfpCache = nfpCache || {};
     this.polygonOffset = polygonOffset;
-    console.log('[PlacementWorker] Constructor called');
-    console.log('[PlacementWorker] binPolygon:', this.binPolygon);
     console.log('[PlacementWorker] typeof polygonOffset:', typeof this.polygonOffset);
     console.log('[PlacementWorker] polygonOffset:', this.polygonOffset);
     console.log("PlacementWorker initialized with binPolygon:", this.binPolygon);

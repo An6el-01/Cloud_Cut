@@ -88,8 +88,11 @@
     }
     else
     {*/
-    if (typeof document !== "undefined") window.ClipperLib = ClipperLib;
-    else self["ClipperLib"] = ClipperLib;
+    if (typeof window !== "undefined") {
+      window.ClipperLib = ClipperLib;
+    } else if (typeof self !== "undefined") {
+      self["ClipperLib"] = ClipperLib;
+    }
     //}
     var navigator_appName;
     if (!isNode) {

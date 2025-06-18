@@ -70,6 +70,8 @@ const Navbar = () => {
 
           {/* Navigation Links */}
           <div className="flex items-center space-x-4">
+
+            {/**Only Allow Medium Sheet Role to have access to Medium Sheets Tab */}
             {!isPackerRole && (
               <Link
                 href="/manufacturing"
@@ -86,6 +88,13 @@ const Navbar = () => {
             >
               Packing
             </Link>
+            {/**Retail Packer Role */}
+            <Link
+              href="/picking"
+              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+            >
+              Picking
+            </Link>
 
             {!isPackerRole && (
               <Link
@@ -95,6 +104,8 @@ const Navbar = () => {
                 My Team
               </Link>
             )}
+
+            {/**medium Sheet role access */}
             {!isPackerRole && (
               <Link
                 href="/stock"

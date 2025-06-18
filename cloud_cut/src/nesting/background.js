@@ -1,7 +1,10 @@
 'use strict';
 
 const { NfpCache } = require('./nfpDb');
-const ClipperLib = require('./util/clipperLib');
+let ClipperLib;
+if (typeof window !== 'undefined') {
+  ClipperLib = require('./util/clipperLib');
+}
 const { GeometryUtil } = require('./util/geometryUtilLib');
 
 function toClipperCoordinates(polygon){
