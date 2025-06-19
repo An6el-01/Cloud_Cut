@@ -41,9 +41,11 @@ export default function Packing() {
     const selectedOrderItems = useSelector(selectedItemsSelector);
     const { currentPage, loading, error } = useSelector((state: RootState) => state.orders);
     const selectedRowRef = useRef<HTMLTableRowElement>(null);
+    const tableContainerRef = useRef<HTMLDivElement>(null);
     const ordersPerPage = 15;
     const totalPages = Math.ceil(totalOrders / ordersPerPage);
-    const selectedOrder = orders.find((o) => o.order_id === selectedOrderId)
+    const allOrders = useSelector((state: RootState) =>  state.orders.allOrders);
+    const selectedOrder = allOrders.find((o) => o.order_id === selectedOrderId)
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showOrderFinishedDialog, setShowOrderFinishedDialog] = useState(false);
     const [showStartPackingModal, setShowStartPackingModal] = useState(false);
@@ -93,6 +95,20 @@ export default function Packing() {
             return acc;
         }, {} as Record<string, number>)
     );
+
+    // Calculate sortedOrders once and use everywhere
+    const sortedOrders = useMemo(() => {
+        return [...allOrders].sort((a, b) => {
+            const priorityA = orderPriorities[a.order_id] || 0;
+            const priorityB = orderPriorities[b.order_id] || 0;
+            return priorityA - priorityB;
+        });
+    }, [allOrders, orderPriorities]);
+
+    // Calculate pagination for sorted orders
+    const startIndex = (currentPage - 1) * ordersPerPage;
+    const endIndex = startIndex + ordersPerPage;
+    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
 
     useEffect(() => {
         // Set the current view first
@@ -193,15 +209,6 @@ export default function Packing() {
             try {
                 setIsRefreshing(true);
                 setActiveTab('orders');
-                const state = store.getState();
-                // Calculate the sorted orders here to match the UI
-                const sortedOrders = [...orders].sort((a, b) => {
-                    const orderItemsA = state.orders.orderItems[a.order_id as string] as OrderItem[] || [];
-                    const orderItemsB = state.orders.orderItems[b.order_id as string] as OrderItem[] || [];
-                    const priorityA = orderItemsA.length > 0 ? Math.min(...orderItemsA.map(item => item.priority ?? 10)) : 10;
-                    const priorityB = orderItemsB.length > 0 ? Math.min(...orderItemsB.map(item => item.priority ?? 10)) : 10;
-                    return priorityA - priorityB;
-                });
                 const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
                 const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
                 if (targetPage !== currentPage) {
@@ -209,11 +216,6 @@ export default function Packing() {
                     handlePageChange(targetPage);
                 } else {
                     dispatch(setSelectedOrderId(orderId));
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    const selectedRow = document.getElementById(`order-row-${orderId}`);
-                    if (selectedRow) {
-                        selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
                 }
             } catch (error) {
                 Sentry.captureException(error);
@@ -623,19 +625,6 @@ export default function Packing() {
         }
     };
     
-    // Add a new selector to get sorted orders
-    const sortedOrders = useSelector((state: RootState) => {
-        // Get all orders in the packing view
-        const allOrders = state.orders.allOrders;
-        
-        // Sort all orders by priority
-        return [...allOrders].sort((a, b) => {
-            const priorityA = orderPriorities[a.order_id] || 0;
-            const priorityB = orderPriorities[b.order_id] || 0;
-            return priorityA - priorityB;
-        });
-    });
-
     const markAllRetailPacksAsPacked = async (retailPackOrders: RetailPackOrders) => {
         Sentry.startSpan({
             name: 'markAllRetailPacksAsPacked',
@@ -681,12 +670,6 @@ export default function Packing() {
     useEffect(() => {
         setCheckedRetailPacks({});
     }, [retailPackPage]);
-
-
-    // Calculate pagination for sorted orders
-    const startIndex = (currentPage - 1) * ordersPerPage;
-    const endIndex = startIndex + ordersPerPage;
-    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
 
     useEffect(() => {
         if (pendingOrderToSelect) {
@@ -770,7 +753,7 @@ export default function Packing() {
                                 )}
                             </div>
                         </div>
-                        <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col">
+                        <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col" ref={tableContainerRef}>
                             {loading ? (
                                 <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
                                     <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
