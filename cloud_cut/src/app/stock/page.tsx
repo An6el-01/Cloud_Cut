@@ -52,10 +52,10 @@ export default function Stock() {
     const [editingItem, setEditingItem] = useState<StockItem | null>(null);
     const [editValue, setEditValue] = useState<number>(0);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
-    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets'>('2 X 1 Sheets');
+    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes'>('2 X 1 Sheets');
     const [showSheetBookingOut, setShowSheetBookingOut] = useState(false);
     const [damageTrackingTab, setDamageTrackingTab] = useState<'Aesthetic' | 'Dimensional'>('Aesthetic');
-    const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets'>('2 X 1 Sheets');
+    const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets' | 'Packing Boxes'>('2 X 1 Sheets');
 
 
     // Check if user has restricted role
@@ -288,7 +288,7 @@ export default function Stock() {
         setDeleteConfirmItem(null);
     }
 
-    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1 Sheets') => {
+    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes') => {
         setTableTab(tab);
         setCurrentPage(1);  // Reset to page 1 when switching tabs
     };
@@ -373,7 +373,7 @@ export default function Stock() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                             <h1 className="text-white text-3xl font-semibold">
-                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : '2 X 1 Stock'}
+                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : tableTab === '2 X 1 Sheets' ? '2 X 1 Stock' : 'Packing Box Stock'}
                             </h1>
 
                             <div className="flex flex-wrap items-center gap-3">
@@ -467,6 +467,13 @@ export default function Stock() {
                                     onClick={() => handleTableTabChange('Medium Sheets')}
                                 >
                                     Medium Sheets
+                                </button>
+                                <button
+                                    className={`px-4 py-2 text-md font-medium ${tableTab === 'Packing Boxes' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                    style={{ marginBottom: '-1px' }}
+                                    onClick={() => handleTableTabChange('Packing Boxes')}
+                                >
+                                    Packing Boxes
                                 </button>
                                
                             </div>
@@ -624,6 +631,24 @@ export default function Stock() {
                                 </div>
                             </div>
                                                     
+                        ) : tableTab === 'Packing Boxes' ? (
+                            <div className="flex-1 flex flex-col">
+                                <div className="flex-1 overflow-y-auto">
+                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-20 table-auto">
+                                        <thead className="bg-gray-100/90 sticky top-0">
+                                            <tr>
+                                                <th className="px-4 py-4 text-left text-black text-md">Packing Box</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Edit</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            
+                                        </tbody>
+                                    </table>
+                                </div>  
+                            </div>
                         ) : loading ? (
                             <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
                                 <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
@@ -968,6 +993,7 @@ export default function Stock() {
                 </div>
                         
             )}
+
 
             {/* Delete Confirmation Modal */}
             {deleteConfirmItem && (

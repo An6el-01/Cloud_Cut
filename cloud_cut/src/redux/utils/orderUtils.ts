@@ -143,6 +143,7 @@ export const processItemsForOrders = async (
         item_name: item.item_name,
         quantity: item.quantity,
         completed: false,
+        picked: false,
         foamsheet: item.foamsheet || '',
         extra_info: item.extra_info || '',
         priority: item.priority || 0,
@@ -187,6 +188,7 @@ export const processItemsForOrders = async (
         item_name: item.item_name,
         quantity: item.quantity,
         completed: true, // Set to true for archived items
+        picked: true, // set to true for archived items
         foamsheet: item.foamsheet || '',
         extra_info: item.extra_info || '',
         priority: item.priority || 0,

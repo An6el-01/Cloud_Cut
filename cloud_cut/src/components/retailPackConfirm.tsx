@@ -50,6 +50,27 @@ export default function RetailPackConfirm({
 
     const handleConfirm = () => {
         console.log("RetailPackConfirm: Confirm button clicked");
+        console.log("RetailPackConfirm: retailPackOrders =", retailPackOrders);
+        console.log("RetailPackConfirm: orderIdsForMarkCompleted =", orderIdsForMarkCompleted);
+        setIsLoading(true);
+        
+        // Call the onConfirm prop with the orderIdsForMarkCompleted
+        if (orderIdsForMarkCompleted && orderIdsForMarkCompleted.length > 0) {
+            console.log("RetailPackConfirm: Calling onConfirm with orderIdsForMarkCompleted:", orderIdsForMarkCompleted);
+            onConfirm(orderIdsForMarkCompleted);
+        } else if (retailPackOrders && retailPackOrders.length > 0) {
+            // If we have retailPackOrders, extract all order IDs and call onConfirm
+            const allOrderIds = retailPackOrders.flatMap(pack => pack.orderIds);
+            console.log("RetailPackConfirm: Calling onConfirm with allOrderIds:", allOrderIds);
+            onConfirm(allOrderIds);
+        } else {
+            console.log("RetailPackConfirm: No data to confirm");
+        }
+        
+        // Reset state after a short delay to allow the parent to process
+        setTimeout(() => {
+            setIsLoading(false);
+        }, 1000);
     } 
 
 

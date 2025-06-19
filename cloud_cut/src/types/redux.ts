@@ -27,6 +27,7 @@ export interface OrderItem {
     item_name: string;
     quantity: number;
     completed: boolean,
+    picked: boolean,
     foamsheet: string,
     extra_info: string,
     priority: number,

@@ -123,7 +123,7 @@ export const selectArchivedOrders = createSelector(
       // Use a single query to get all items at once
       const { data: items, error: itemsError } = await supabase
         .from('archived_order_items')
-        .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at, archived_at')
+        .select('id, order_id, sku_id, item_name, quantity, completed, picked, foamsheet, extra_info, priority, created_at, updated_at, archived_at')
         .in('order_id', orderIds);
 
       if (itemsError) {

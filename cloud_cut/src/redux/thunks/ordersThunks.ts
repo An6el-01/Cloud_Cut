@@ -25,6 +25,7 @@ interface OrderUpdate {
   id: number | undefined; 
   order_id: string;
   status: string | null;
+  manufactured?: boolean;
   updated_at: string;
 }
 
@@ -95,7 +96,7 @@ export const syncOrders = createAsyncThunk(
       // Get ALL order IDs from both active and archived tables - important to do this first
       const { data: existingActiveOrders, error: activeOrdersError } = await supabase
           .from('orders')
-          .select('id, order_id, status');
+          .select('id, order_id, status, manufactured');
 
       if (activeOrdersError) {
         console.error('Error fetching active orders:', activeOrdersError);
@@ -115,6 +116,8 @@ export const syncOrders = createAsyncThunk(
       const existingActiveOrderIds = new Set(existingActiveOrders?.map(o => o.order_id) || []);
       const existingArchivedOrderIds = new Set(existingArchivedOrders?.map(o => o.order_id) || []);
       const activeOrderMap = new Map(existingActiveOrders?.map(o => [o.order_id, o.id]) || []);
+      // Create a map to store existing manufactured values
+      const existingManufacturedMap = new Map(existingActiveOrders?.map(o => [o.order_id, o.manufactured]) || []);
       
       const totalExistingOrders = existingActiveOrderIds.size + existingArchivedOrderIds.size;
       console.log(`Found ${existingActiveOrderIds.size} active orders and ${existingArchivedOrderIds.size} archived orders (${totalExistingOrders} total)`);
@@ -142,10 +145,14 @@ export const syncOrders = createAsyncThunk(
             // If status is "Despatched", change it to "Completed" for orders in our database
             const updatedStatus = status === 'Despatched' ? 'Completed' : status;
             
+            // Get the existing manufactured value to preserve it
+            const existingManufactured = existingManufacturedMap.get(order_id);
+            
             ordersToUpdate.push({
               id: activeOrderMap.get(order_id) as number | undefined,
               order_id: order_id,
               status: updatedStatus,
+              manufactured: existingManufactured as boolean | undefined,
               updated_at: new Date().toISOString()
             });
           }
@@ -301,7 +308,7 @@ export const syncOrders = createAsyncThunk(
       // Get all active orders that need manufacturing status update
       const { data: activeOrdersToUpdate, error: manufacturingOrdersError } = await supabase
         .from('orders')
-        .select('order_id')
+        .select('order_id, manufactured')
         .in('order_id', [...existingActiveOrderIds, ...newlyAddedOrderIds]);
       
       if (manufacturingOrdersError) {
@@ -332,22 +339,31 @@ export const syncOrders = createAsyncThunk(
             return acc;
           }, {});
           
-          // Update manufacturing status for each order
-          const updates = Object.entries(itemsByOrder).map(([orderId, items]) => ({
-            order_id: orderId,
-            manufactured: shouldOrderBeManufactured(items),
-            updated_at: new Date().toISOString()
-          }));
+          // Only update orders that don't already have a manufactured value set
+          const updates = Object.entries(itemsByOrder)
+            .filter(([orderId, items]) => {
+              // Find the existing order to check its current manufactured status
+              const existingOrder = batch.find(o => o.order_id === orderId);
+              // Only update if manufactured is null/undefined or false
+              return !existingOrder?.manufactured;
+            })
+            .map(([orderId, items]) => ({
+              order_id: orderId,
+              manufactured: shouldOrderBeManufactured(items),
+              updated_at: new Date().toISOString()
+            }));
           
           // Update orders in batches
-          const { error: manufacturingUpdateError } = await supabase
-            .from('orders')
-            .upsert(updates, { onConflict: 'order_id' });
-          
-          if (manufacturingUpdateError) {
-            console.error('Error updating manufacturing status:', manufacturingUpdateError);
-          } else {
-            console.log(`Updated manufacturing status for ${updates.length} orders`);
+          if (updates.length > 0) {
+            const { error: manufacturingUpdateError } = await supabase
+              .from('orders')
+              .upsert(updates, { onConflict: 'order_id' });
+            
+            if (manufacturingUpdateError) {
+              console.error('Error updating manufacturing status:', manufacturingUpdateError);
+            } else {
+              console.log(`Updated manufacturing status for ${updates.length} orders`);
+            }
           }
           
           // Small delay to prevent rate limiting

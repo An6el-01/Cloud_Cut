@@ -159,6 +159,41 @@ export const ordersSlice = createSlice({
         }
       }
     },
+    updateItemPickedStatus: (
+      state,
+      action: PayloadAction<{ orderId: string; itemId: string; picked: boolean }>
+    ) => {
+      const orderId = action.payload.orderId;
+      const itemId = action.payload.itemId;
+      const picked = action.payload.picked;
+      const items = state.orderItems[orderId];
+      
+      if (items) {
+        const item = items.find(i => i.id === itemId);
+        if (item) {
+          // Only update if the value is actually different
+          if (item.picked !== picked) {
+            item.picked = picked;
+            
+            // Update the item in Supabase
+            supabase
+              .from('order_items')
+              .update({ 
+                picked: picked, 
+                updated_at: new Date().toISOString() 
+              })
+              .eq('id', itemId)
+              .then(({ error }) => {
+                if (error) {
+                  console.error('Error updating item picked status in Supabase:', error);
+                  // Revert the change if the update failed
+                  item.picked = !picked;
+                }
+              });
+          }
+        }
+      }
+    },
     setSyncStatus: (state, action: PayloadAction<'idle' | 'syncing' | 'error'>) => {
       state.syncStatus = action.payload;
     },
@@ -259,6 +294,7 @@ export const {
   updateOrderStatus, 
   updateOrderManufacturedStatus,
   updateItemCompleted, 
+  updateItemPickedStatus,
   setSyncStatus,
   addOrder,
   updateOrder,

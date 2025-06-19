@@ -2619,13 +2619,13 @@ export default function Manufacturing() {
                       </h2>
                       <div className="w-full max-w-3xl bg-gray-50 rounded-lg shadow-inner p-8 mb-6 border border-gray-200 flex flex-col gap-6">
                         <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">Stock</span>
+                          <span className="text-xl font-medium text-gray-700">Stock:</span>
                           <span className="text-xl font-semibold text-gray-900">
                             {selectedFoamSheet ? (finishedStockBySku[selectedFoamSheet] ?? '-') : '-'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">To Cut</span>
+                          <span className="text-xl font-medium text-gray-700">To Cut:</span>
                           <span className="flex items-center gap-4">
                             <span className="text-xl font-semibold text-gray-900">
                               {selectedFoamSheet
@@ -2657,7 +2657,7 @@ export default function Manufacturing() {
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">Total Medium Sheets</span>
+                          <span className="text-xl font-medium text-gray-700">Total Medium Sheets:</span>
                           <span className="text-xl font-semibold text-gray-900">
                             {selectedMediumSheetQuantity || '-'}
                           </span>
