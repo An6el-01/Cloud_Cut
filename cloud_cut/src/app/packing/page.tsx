@@ -2,7 +2,7 @@
 
 import NavBar from "@/components/Navbar";
 import StartPacking from "@/components/orderStartedPacking";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import {
@@ -27,10 +27,172 @@ import { OrderItem, Order } from "@/types/redux";
 import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
-import RetailPackConfirm from "@/components/retailPackConfirm";
+import { createPortal } from "react-dom";
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
+// Define Types used by Dropdown Component
+type SortField = 'retail_pack' | 'medium_sheets' | 'all';
+type SortDirection = 'asc' | 'desc';
+
+// Custom Dropdown Component
+const FilterDropdown = ({
+    sortConfig,
+    onSortChange,
+} : {
+    sortConfig: {field: SortField, direction: SortDirection},
+    onSortChange: (field: SortField) => void
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    //Handle click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (
+                dropdownRef.current &&
+                !dropdownRef.current.contains(event.target as Node) &&
+                buttonRef.current &&
+                !buttonRef.current.contains(event.target as Node)
+            ) {
+                setIsOpen(false);
+            }
+        };
+
+        if (isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isOpen]);
+
+    //Handle escape key
+    useEffect(() => {
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsOpen(false);
+            }
+        };
+
+        if (isOpen) {
+            document.addEventListener('keydown', handleEscape);
+        }
+
+        return () => {
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [isOpen]);
+
+    //Cleanup on unmount
+    useEffect(() => {
+        return () => setIsOpen(false);
+    }, []);
+
+    // Calculate position for the dropdown
+    const [dropdownStyle, setDropdownStyle] = useState({
+        top: 0,
+        left: 0,
+        width: 0
+    });
+
+    // Update dropdown position when opened
+    useEffect(() => {
+        if (isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setDropdownStyle({
+                top: rect.bottom + window.scrollY,
+                left: rect.left + window.scrollX,
+                width: rect.width
+            });
+        }
+    }, [isOpen]);
+
+    // Toggle dropdown
+    const toggleDropdown = () => {
+        setIsOpen(prev => !prev);
+    };
+
+    //Handle option selection
+    const handleOptionClick = (field: SortField) => {
+        onSortChange(field);
+        setIsOpen(false);
+    };
+
+    return(
+        <div className="relative">
+            {/**Button trigger */}
+            <button
+                ref={buttonRef}
+                type="button"
+                className="inline-flex justify-between items-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700
+                hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                id="sort-menu-button"
+                aria-expanded={isOpen}
+                aria-haspopup="true"
+                onClick={async () => {toggleDropdown()}}
+            >
+                {sortConfig.field === 'medium_sheets' ? 'Filter: Medium Sheets' :
+                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' : 'Filter: All'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="ml-2 -mr-1 h-5 w-5 text-gray-400" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
+
+            {/**Dropdown Menu Portal */}
+            {isOpen && typeof document !== 'undefined' && createPortal(
+                <div
+                    ref={dropdownRef}
+                    className="origin-top-right absolute mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none"
+                    role="menu"
+                    aria-orientation="vertical"
+                    aria-labelledby="sort-menu-button"
+                    tabIndex={-1}
+                    style={{
+                        top: dropdownStyle.top,
+                        left: dropdownStyle.left,
+                        width: dropdownStyle.width,
+                        zIndex: 9999,
+                        position: 'absolute'
+                    }}
+                >
+                    <div className="py-1" role="none">
+                        <button
+                            className={`${sortConfig.field === 'all' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full
+                            px-4 py-2 text-sm hover:bg-gray-100`}
+                            role="menuitem"
+                            tabIndex={-1}
+                            onClick={async () => {handleOptionClick('all')}}
+                        >
+                            All Orders
+                        </button>
+                        <button
+                            className={`${sortConfig.field === 'medium_sheets' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full
+                            px-4 py-2 text-sm hover:bg-gray-100`}
+                            role="menuitem"
+                            tabIndex={-1}
+                            onClick={async () => {handleOptionClick('medium_sheets')}}
+                        >
+                            Medium Sheets
+                        </button>
+                        <button
+                            className={`${sortConfig.field === 'retail_pack' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full
+                            px-4 py-2 text-sm hover:bg-gray-100`}
+                            role="menuitem"
+                            tabIndex={-1}
+                            onClick={async () => {handleOptionClick('retail_pack')}}
+                        >
+                            Retail Pack
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
+        </div>
+    );
+};
 
 export default function Packing() {
     const dispatch = useDispatch<AppDispatch>();
@@ -57,7 +219,41 @@ export default function Packing() {
     const [ordersWithRetailPacks, setOrdersWithRetailPacks] = useState<Record<string, Order[]>>({});
     const [loadingRetailPackOrders, setLoadingRetailPackOrders] = useState(false);
     const [pendingOrderToSelect, setPendingOrderToSelect] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
     
+    // Sorting functionality
+    const [sortConfig, setSortConfig] = useState<{field: SortField, direction: SortDirection}>({
+        field: 'all',
+        direction: 'desc'
+    });
+
+    // Request a sort by field
+    const handleFilterChange = useCallback((field: SortField) => {
+        Sentry.startSpan({
+            name: 'handleFilterChange-Packing',
+            op: 'ui.interaction.filtering'
+        }, async () => {
+            // The dropdown now controls filtering. Direction is not used for filtering.
+            setSortConfig({ field, direction: 'desc' });
+        });
+    }, []);
+    
+    // Get all order items from the state
+    const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
+
+    // Calculate metrics for sorting by medium sheets and retail packs
+    const orderMetrics = useMemo(() => {
+        const metrics: Record<string, { medium_sheets: number, retail_pack: number }> = {};
+        for (const order of allOrders) {
+            const items = allOrderItems[order.order_id] || [];
+            metrics[order.order_id] = {
+                medium_sheets: items.filter(item => item.item_name?.toLowerCase().includes('medium sheet')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0),
+                retail_pack: items.filter(item => item.item_name?.toLowerCase().includes('retail pack')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0)
+            };
+        }
+        return metrics;
+    }, [allOrders, allOrderItems]);
 
     const orderProgress = useSelector((state: RootState) =>
         state.orders.allOrders.reduce((acc, order) => {
@@ -86,10 +282,42 @@ export default function Packing() {
         });
     }, [allOrders, orderPriorities]);
 
+    useEffect(() => {
+        let result = [...allOrders];
+
+        // Apply search filter
+        if (searchTerm) {
+            const lowerCaseSearchTerm = searchTerm.toLowerCase();
+            result = result.filter(order =>
+                order.order_id.toLowerCase().includes(lowerCaseSearchTerm) ||
+                order.customer_name.toLowerCase().includes(lowerCaseSearchTerm)
+            );
+        }
+
+        // Apply filter for medium sheets or retail packs
+        if (sortConfig.field === 'medium_sheets') {
+            result = result.filter(order => (orderMetrics[order.order_id]?.medium_sheets ?? 0) > 0);
+        } else if (sortConfig.field === 'retail_pack') {
+            result = result.filter(order => (orderMetrics[order.order_id]?.retail_pack ?? 0) > 0);
+        }
+
+        // Apply sorting
+        result.sort((a, b) => {
+            const priorityA = orderPriorities[a.order_id] || 0;
+            const priorityB = orderPriorities[b.order_id] || 0;
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+            return 0; // No secondary sort
+        });
+
+        setFilteredOrders(result);
+    }, [allOrders, searchTerm, sortConfig, orderPriorities, orderMetrics]);
+
     // Calculate pagination for sorted orders
     const startIndex = (currentPage - 1) * ordersPerPage;
     const endIndex = startIndex + ordersPerPage;
-    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
+    const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
 
     useEffect(() => {
         // Set the current view first
@@ -190,7 +418,7 @@ export default function Packing() {
             try {
                 setIsRefreshing(true);
                 setActiveTab('orders');
-                const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
+                const orderIndex = filteredOrders.findIndex(order => order.order_id === orderId);
                 const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
                 if (targetPage !== currentPage) {
                     setPendingOrderToSelect(orderId);
@@ -342,9 +570,6 @@ export default function Packing() {
         });
     };
 
-    // Get all order items from the state
-    const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
-
     // Function to find orders with retail pack
     const findOrdersWithRetailPack = (retailPack: string | null) => {
         if (!retailPack) return [];
@@ -469,6 +694,17 @@ export default function Packing() {
         }
     }, [orders, currentPage, pendingOrderToSelect, dispatch]);
 
+    //Clear Search Function
+    const handleClearSearch = () => {
+        return Sentry.startSpan({
+            name: 'handleClearSearch-Admin',
+            op: 'ui.interaction.search'
+        }, async () => {
+            setSearchTerm("");
+        });
+    }
+
+
     return (
         <div className="min-h-screen">
             <NavBar />
@@ -477,24 +713,49 @@ export default function Packing() {
                 <div className="container mx-auto pt-40 mb-8 p-6 flex justify-center gap-8">  
                     {/**Packing Orders Section */}
                     <div className="flex-1 max-w-3xl">
-                        <div className="bg-[#1d1d1d]/90 rounded-t-lg flex justify-between items-center backdrop-blur-sm p-4">
-                            <div className="flex items-center">
-                                <h1 className="text-2xl font-bold text-white">
-                                    {selectedRetailPack ? `${selectedRetailPack} Orders` : 'Orders Ready For Packing'}
-                                </h1>
-                                {selectedRetailPack && (
-                                    <div className="ml-4 flex items-center">                                        
-                                        <button 
-                                            onClick={() => setSelectedRetailPack(null)} 
-                                            className="px-2 py-1 bg-gray-700 text-white rounded-md hover:bg-gray-600 flex items-center text-sm"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                            Clear
-                                        </button>
+                        <div className="bg-[#1d1d1d]/90 rounded-t-lg flex flex-wrap justify-between items-center backdrop-blur-sm p-4 gap-4">
+                            <h1 className="text-2xl font-bold text-white">
+                                Orders Queue
+                            </h1>
+                            <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+
+                                {/**Search Bar */}
+                                <div className="relative w-full sm:w-64">
+                                    <input
+                                        type="text"
+                                        placeholder="Search by Order ID or Customer Name"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full pl-10 pr-10 py-2 text-sm text-black bg-white/90 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        aria-label="Search packing orders"
+                                    />
+                                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                        </svg>
                                     </div>
-                                )}
+                                    {searchTerm && (
+                                        <button
+                                            onClick={async () => {handleClearSearch()}}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            aria-label="Clear search"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <path d="m15 9-6 6"/>
+                                            <path d="m9 9 6 6"/>
+                                            </svg>
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/**Sorting Dropdown*/}
+                                <div className="w-full sm:w-56">
+                                    <FilterDropdown
+                                        sortConfig={sortConfig}
+                                        onSortChange={handleFilterChange}
+                                    />
+                                </div>
                             </div>
                         </div>
                         <div className="overflow-x-auto bg-white h-[calc(100vh-300px)] flex flex-col" ref={tableContainerRef}>
@@ -513,10 +774,10 @@ export default function Packing() {
                                     >Retry
                                     </button>
                                 </div>
-                            ) : !selectedRetailPack && orders.length === 0 ? (
+                            ) : !selectedRetailPack && filteredOrders.length === 0 ? (
                                 <div className="text-center py-4">
                                     <p className="text-black">No orders found</p>
-                                    <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
+                                    <p className="text-sm text-gray-400 mt-1">Try refreshing the page or changing your filter</p>
                                 </div>
                             ) : (
                                 <>
@@ -623,7 +884,7 @@ export default function Packing() {
                                             {selectedRetailPack ? (
                                                 `Showing ${findOrdersWithRetailPack(selectedRetailPack).length} orders with ${selectedRetailPack}`
                                             ) : (
-                                                `Showing ${(currentPage - 1) * ordersPerPage + 1} to ${Math.min(currentPage * ordersPerPage, totalOrders)} of ${totalOrders} pending orders`
+                                                `Showing ${(currentPage - 1) * ordersPerPage + 1} to ${Math.min(currentPage * ordersPerPage, filteredOrders.length)} of ${filteredOrders.length} pending orders`
                                             )}
                                         </div>
                                         {!selectedRetailPack && (
