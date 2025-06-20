@@ -37,6 +37,51 @@ export default function StartPacking({
     const [pendingUpdates, setPendingUpdates] = useState<Record<string, boolean>>({});
     const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Add state for packing boxes
+    const [packingBoxes, setPackingBoxes] = useState<Array<{id: string, boxType: string, quantity: number}>>([
+        { id: '1', boxType: '', quantity: 1 }
+    ]);
+
+    // Sample packing box types - you can replace with actual data from your system
+    const packingBoxTypes = [
+        'Box 00',
+        'Box 1',
+        'Box 2A',
+        'Box 2B',
+        'Box 4A',
+        'Box 4B',
+        'Box 6A',
+        'Box 6B',
+        'Box 8A',
+        'Box 8B',
+        'Box 9A/B',
+        'Box 10',
+        'Box 11B',
+        'Box 12A',
+        'Box 70',
+        'Box 2X1'
+    ];
+
+    // Function to add a new packing box row
+    const addPackingBoxRow = () => {
+        const newId = (packingBoxes.length + 1).toString();
+        setPackingBoxes(prev => [...prev, { id: newId, boxType: '', quantity: 1 }]);
+    };
+
+    // Function to remove a packing box row
+    const removePackingBoxRow = (id: string) => {
+        if (packingBoxes.length > 1) {
+            setPackingBoxes(prev => prev.filter(box => box.id !== id));
+        }
+    };
+
+    // Function to update packing box data
+    const updatePackingBox = (id: string, field: 'boxType' | 'quantity', value: string | number) => {
+        setPackingBoxes(prev => prev.map(box => 
+            box.id === id ? { ...box, [field]: value } : box
+        ));
+    };
+
     // Add an effect to update the checkedItems set whenever selectedOrderItems changes
     useEffect(() => {
         if (selectedOrderItems) {
@@ -375,7 +420,7 @@ export default function StartPacking({
             aria-labelledby="dialog-title"
         >
             <div
-                className="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full border border-gray-200 transform transition-all duration-300 scale-100 relative overflow-hidden"
+                className="bg-white p-8 rounded-xl shadow-2xl max-w-4xl w-full min-h-[700px] border border-gray-200 transform transition-all duration-300 scale-100 relative overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Close button (X) in the top right */}
@@ -437,15 +482,15 @@ export default function StartPacking({
                     <>
                         <div className="grid grid-cols-3 gap-5 mb-6">
                             <div className="bg-gray-50 p-3 rounded-lg">
-                                <p className="text-sm text-gray-500 mb-1">Order Date</p>
+                                <p className="text-sm text-gray-500 mb-1 underline">Order Date:</p>
                                 <p className="font-medium text-gray-800">{new Date(selectedOrder.order_date).toLocaleDateString()}</p>
                             </div>
                             <div className="bg-gray-50 p-3 rounded-lg">
-                                <p className="text-sm text-gray-500 mb-1">Customer</p>
+                                <p className="text-sm text-gray-500 mb-1 underline">Customer:</p>
                                 <p className="font-medium text-gray-800" title={selectedOrder.customer_name}>{selectedOrder.customer_name}</p>
                             </div>
                             <div className="bg-gray-50 p-3 rounded-lg">
-                                <p className="text-sm text-gray-500 mb-1">External Link</p>
+                                <p className="text-sm text-gray-500 mb-1 underline">External Link:</p>
                                 <a
                                     href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${selectedOrder.id}`}
                                     target="_blank"
@@ -459,185 +504,241 @@ export default function StartPacking({
                                 </a>
                             </div>
                         </div>
+                        {/* Side-by-side tables for Items and Packing Boxes */}
+                        <div className="flex flex-col md:flex-row gap-6 mb-6">
+                            {/* Items Table */}
+                            <div className="md:w-1/2 w-full">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="font-semibold text-lg text-gray-800">Items:</h3>
+                                    {/* Progress Indicator */}
+                                    {selectedOrderItems.length > 0 && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium text-gray-600">
+                                                {checkedItems.size}/{selectedOrderItems.length}
+                                            </span>
+                                            <div className="w-32 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                                <div
+                                                    className="bg-green-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                                                    style={{ 
+                                                        width: `${selectedOrderItems.length > 0 
+                                                            ? (checkedItems.size / selectedOrderItems.length) * 100 
+                                                            : 0}%` 
+                                                    }}
+                                                    aria-hidden="true"
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {selectedOrder.id && selectedOrderItems.length === 0 && !loading ? (
+                                    <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-lg border border-gray-200 animate-pulse">
+                                        <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                                        <p className="text-gray-600 font-medium">Loading order items...</p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                                        <div className="max-h-[300px] overflow-y-auto">
+                                            <table className="w-full">
+                                                <thead className="bg-gray-50 border-b border-gray-200">
+                                                    <tr>
+                                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">FoamSheet</th>
+                                                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                                                        <th className="px-4 py-3 text-center">
+                                                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={allItemsPacked}
+                                                                        onChange={(e) => {
+                                                                            const newCheckedState = e.target.checked;
+                                                                            setAllItemsPacked(newCheckedState);
+                                                                            // Create a batch of updates for all items
+                                                                            const newUpdates: Record<string, boolean> = {};
+                                                                            selectedOrderItems.forEach(item => {
+                                                                                newUpdates[item.id] = newCheckedState;
+                                                                                setCheckedItems(prev => {
+                                                                                    const newSet = new Set(prev);
+                                                                                    if (newCheckedState) {
+                                                                                        newSet.add(item.sku_id);
+                                                                                    } else {
+                                                                                        newSet.delete(item.sku_id);
+                                                                                    }
+                                                                                    return newSet;
+                                                                                });
+                                                                            });
+                                                                            setPendingUpdates(prev => ({...prev, ...newUpdates}));
+                                                                        }}
+                                                                        className="sr-only peer"
+                                                                        aria-label="Mark all items as packed"
+                                                                    />
+                                                                    <div className="w-6 h-6 border-2 border-gray-300 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                                                        {allItemsPacked && (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                        )}
+                                                                    </div>
+                                                                </label>
+                                                            </div>
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-200 bg-white">
+                                                    {(() => {
+                                                        // Group items by SKU
+                                                        const groupedItems = selectedOrderItems.reduce((acc, item) => {
+                                                            const key = item.sku_id;
+                                                            if (!acc[key]) {
+                                                                acc[key] = {
+                                                                    ...item,
+                                                                    quantity: 0,
+                                                                    completed: false
+                                                                };
+                                                            }
+                                                            acc[key].quantity += item.quantity;
+                                                            // If any item with this SKU is completed, mark the group as completed
+                                                            if (item.completed) {
+                                                                acc[key].completed = true;
+                                                            }
+                                                            return acc;
+                                                        }, {} as Record<string, OrderItem>);
 
-                        <div className="mb-6">
-                            <div className="flex justify-between items-center mb-3">
-                                <h3 className="font-semibold text-lg text-gray-800">Items:</h3>
-
-                                {/**Progress Indicator */}
-                                {selectedOrderItems.length > 0 && (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-gray-600">
-                                            {checkedItems.size}/{selectedOrderItems.length}
-                                        </span>
-                                        <div className="w-32 bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                                            <div
-                                                className="bg-green-600 h-2.5 rounded-full transition-all duration-500 ease-out"
-                                                style={{ 
-                                                    width: `${selectedOrderItems.length > 0 
-                                                        ? (checkedItems.size / selectedOrderItems.length) * 100 
-                                                        : 0}%` 
-                                                }}
-                                                aria-hidden="true"
-                                            ></div>
+                                                        // Convert grouped items to array and sort them
+                                                        return Object.values(groupedItems)
+                                                            .sort((a, b) => a.item_name.localeCompare(b.item_name))
+                                                            .map((item) => (
+                                                                <tr key={item.sku_id} className="hover:bg-gray-50 transition-colors">
+                                                                    <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.item_name}</td>
+                                                                    <td className="px-4 py-3 text-sm text-gray-600">{item.foamsheet}</td>
+                                                                    <td className="px-4 py-3 text-sm text-center text-gray-600">{item.quantity}</td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        <div className="flex justify-center">
+                                                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={checkedItems.has(item.sku_id)}
+                                                                                    onChange={(e) => {
+                                                                                        const newCheckedState = e.target.checked;
+                                                                                        setCheckedItems(prev => {
+                                                                                            const newSet = new Set(prev);
+                                                                                            if (newCheckedState) {
+                                                                                                newSet.add(item.sku_id);
+                                                                                            } else {
+                                                                                                newSet.delete(item.sku_id);
+                                                                                            }
+                                                                                            return newSet;
+                                                                                        });
+                                                                                        const itemsToUpdate = selectedOrderItems
+                                                                                            .filter(i => i.sku_id === item.sku_id);
+                                                                                        const newUpdates: Record<string, boolean> = {};
+                                                                                        itemsToUpdate.forEach(i => {
+                                                                                            newUpdates[i.id] = newCheckedState;
+                                                                                        });
+                                                                                        setPendingUpdates(prev => ({...prev, ...newUpdates}));
+                                                                                        const currentGroupedItems = {...groupedItems};
+                                                                                        currentGroupedItems[item.sku_id].completed = newCheckedState;
+                                                                                        const allChecked = Object.values(currentGroupedItems)
+                                                                                            .every(i => i.completed);
+                                                                                        setAllItemsPacked(allChecked);
+                                                                                    }}
+                                                                                    className="sr-only peer"
+                                                                                    aria-label={`Mark ${item.item_name} as ${item.completed ? "packed" : "unpacked"}`}
+                                                                                />
+                                                                                <div className="w-6 h-6 border-2 border-gray-300 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
+                                                                                    {checkedItems.has(item.sku_id) && (
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                                        </svg>
+                                                                                    )}
+                                                                                </div>
+                                                                            </label>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            ));
+                                                    })()}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 )}
                             </div>
-
-                            {/**Loading Indicator For Items */}
-                            {selectedOrder.id && selectedOrderItems.length === 0 && !loading ? (
-                                <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-lg border border-gray-200 animate-pulse">
-                                    <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-                                    <p className="text-gray-600 font-medium">Loading order items...</p>
+                            {/* Packing Boxes Table */}
+                            <div className="md:w-1/2 w-full">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="font-semibold text-lg text-gray-800">Packing Boxes:</h3>
                                 </div>
-                            ) : (
-                                <div className="overflow-hidden rounded-lg border border-gray-200">
-                                    <div className="max-h-[250px] overflow-y-auto">
+                                <div className="overflow-visible rounded-lg border border-gray-200">
+                                    <div className="max-h-[300px] overflow-y-auto overflow-x-visible">
                                         <table className="w-full">
                                             <thead className="bg-gray-50 border-b border-gray-200">
                                                 <tr>
-                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">FoamSheet</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Packing Box</th>
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
-                                                    <th className="px-4 py-3 text-center">
-                                                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={allItemsPacked}
-                                                                    onChange={(e) => {
-                                                                        const newCheckedState = e.target.checked;
-                                                                        setAllItemsPacked(newCheckedState);
-                                                                        
-                                                                        // Create a batch of updates for all items
-                                                                        const newUpdates: Record<string, boolean> = {};
-                                                                        selectedOrderItems.forEach(item => {
-                                                                            newUpdates[item.id] = newCheckedState;
-                                                                            
-                                                                            // Update the checked items set
-                                                                            setCheckedItems(prev => {
-                                                                                const newSet = new Set(prev);
-                                                                                if (newCheckedState) {
-                                                                                    newSet.add(item.sku_id);
-                                                                                } else {
-                                                                                    newSet.delete(item.sku_id);
-                                                                                }
-                                                                                return newSet;
-                                                                            });
-                                                                        });
-                                                                        
-                                                                        // Queue all updates together
-                                                                        setPendingUpdates(prev => ({...prev, ...newUpdates}));
-                                                                    }}
-                                                                    className="sr-only peer"
-                                                                    aria-label="Mark all items as packed"
-                                                                />
-                                                                <div className="w-6 h-6 border-2 border-gray-300 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                                                    {allItemsPacked && (
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                        </svg>
-                                                                    )}
-                                                                </div>
-                                                            </label>
-                                                        </div>
-                                                    </th>
+                                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Delete</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-200 bg-white">
-                                                {(() => {
-                                                    // Group items by SKU
-                                                    const groupedItems = selectedOrderItems.reduce((acc, item) => {
-                                                        const key = item.sku_id;
-                                                        if (!acc[key]) {
-                                                            acc[key] = {
-                                                                ...item,
-                                                                quantity: 0,
-                                                                completed: false
-                                                            };
-                                                        }
-                                                        acc[key].quantity += item.quantity;
-                                                        // If any item with this SKU is completed, mark the group as completed
-                                                        if (item.completed) {
-                                                            acc[key].completed = true;
-                                                        }
-                                                        return acc;
-                                                    }, {} as Record<string, OrderItem>);
-
-                                                    // Convert grouped items to array and sort them
-                                                    return Object.values(groupedItems)
-                                                        .sort((a, b) => a.item_name.localeCompare(b.item_name))
-                                                        .map((item) => (
-                                                            <tr key={item.sku_id} className="hover:bg-gray-50 transition-colors">
-                                                                <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.item_name}</td>
-                                                                <td className="px-4 py-3 text-sm text-gray-600">{item.foamsheet}</td>
-                                                                <td className="px-4 py-3 text-sm text-center text-gray-600">{item.quantity}</td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    <div className="flex justify-center">
-                                                                        <label className="relative inline-flex items-center cursor-pointer">
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={checkedItems.has(item.sku_id)}
-                                                                                onChange={(e) => {
-                                                                                    const newCheckedState = e.target.checked;
-                                                                                    
-                                                                                    // Update UI state immediately
-                                                                                    setCheckedItems(prev => {
-                                                                                        const newSet = new Set(prev);
-                                                                                        if (newCheckedState) {
-                                                                                            newSet.add(item.sku_id);
-                                                                                        } else {
-                                                                                            newSet.delete(item.sku_id);
-                                                                                        }
-                                                                                        return newSet;
-                                                                                    });
-                                                                                    
-                                                                                    // Queue updates for all items with this SKU
-                                                                                    const itemsToUpdate = selectedOrderItems
-                                                                                        .filter(i => i.sku_id === item.sku_id);
-                                                                                    
-                                                                                    const newUpdates: Record<string, boolean> = {};
-                                                                                    itemsToUpdate.forEach(i => {
-                                                                                        newUpdates[i.id] = newCheckedState;
-                                                                                    });
-                                                                                    
-                                                                                    setPendingUpdates(prev => ({...prev, ...newUpdates}));
-                                                                                    
-                                                                                    // Update allItemsPacked state based on current UI
-                                                                                    const currentGroupedItems = {...groupedItems};
-                                                                                    currentGroupedItems[item.sku_id].completed = newCheckedState;
-                                                                                    
-                                                                                    const allChecked = Object.values(currentGroupedItems)
-                                                                                        .every(i => i.completed);
-                                                                                    
-                                                                                    setAllItemsPacked(allChecked);
-                                                                                }}
-                                                                                className="sr-only peer"
-                                                                                aria-label={`Mark ${item.item_name} as ${item.completed ? "packed" : "unpacked"}`}
-                                                                            />
-                                                                            <div className="w-6 h-6 border-2 border-gray-300 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                                                                {checkedItems.has(item.sku_id) && (
-                                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                                    </svg>
-                                                                                )}
-                                                                            </div>
-                                                                        </label>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        ));
-                                                })()}
+                                                {packingBoxes.map((box) => (
+                                                    <tr key={box.id} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-4 py-3 relative">
+                                                            <select
+                                                                value={box.boxType}
+                                                                onChange={(e) => updatePackingBox(box.id, 'boxType', e.target.value)}
+                                                                className="w-full px-6 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm relative z-20"
+                                                                style={{ minWidth: '120px' }}
+                                                            >
+                                                                <option value="">Select Box</option>
+                                                                {packingBoxTypes.map((type) => (
+                                                                    <option key={type} value={type}>
+                                                                        {type}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                value={box.quantity}
+                                                                onChange={(e) => updatePackingBox(box.id, 'quantity', parseInt(e.target.value) || 1)}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-center"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <button
+                                                                onClick={() => removePackingBoxRow(box.id)}
+                                                                disabled={packingBoxes.length === 1}
+                                                                className="text-red-500 hover:text-red-700 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors duration-200 p-1 rounded-full hover:bg-red-50"
+                                                                aria-label="Delete packing box row"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
+                                    {/* Add Row Button */}
+                                    <div className="mt-3">
+                                        <button
+                                            onClick={addPackingBoxRow}
+                                            className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200 text-sm font-medium"
+                                        >
+                                            + Add a Row
+                                        </button>
+                                    </div>
                                 </div>
-                            )}
+                            </div>
                         </div>
                     </>
                 )}
 
+                {/**Confirm Button */}
                 <div className="flex justify-center gap-3 mt-6">
                     
                     {showDespatch ? (
@@ -670,7 +771,7 @@ export default function StartPacking({
                             type="button"
                             ref={confirmButtonRef}
                             onClick={handleConfirmClick}
-                            className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-sm"
+                            className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-sm mt-10"
                             aria-label="Confirm and proceed to despatch"
                         >
                             Confirm & Continue
