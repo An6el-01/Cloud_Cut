@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { updateItemCompleted, setCurrentView, updateOrderPickingStatus } from "@/redux/slices/ordersSlice";
 import { supabase } from "@/utils/supabase";
+import { fetchFinishedStockFromSupabase } from "@/redux/thunks/stockThunk";
 
 export default function StartPacking({
     isOpen,
@@ -32,6 +33,7 @@ export default function StartPacking({
     const closeButtonRef = useRef<HTMLButtonElement>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
     const {loading} = useSelector((state: RootState) => state.orders)
+    const {items: stockItems} = useSelector((state: RootState) => state.stock)
     const [allItemsPacked, setAllItemsPacked] = useState(false);
     const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
     const [pendingUpdates, setPendingUpdates] = useState<Record<string, boolean>>({});
@@ -41,6 +43,32 @@ export default function StartPacking({
     const [packingBoxes, setPackingBoxes] = useState<Array<{id: string, boxType: string, quantity: number}>>([
         { id: '1', boxType: '', quantity: 1 }
     ]);
+
+    // Add state for dropdown visibility
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+
+    // Track stock changes for potential rollback - no longer needed since we don't update immediately
+    // const [stockChanges, setStockChanges] = useState<Record<string, {originalStock: number, newStock: number, quantity: number}>>({});
+
+    // Mapping between box types and SKUs
+    const boxTypeToSku: Record<string, string> = {
+        'Box 00': 'SHA00',
+        'Box 1': 'SHA01',
+        'Box 2A': 'SHA02A',
+        'Box 2B': 'SHA02B',
+        'Box 4A': 'SHA04A',
+        'Box 4B': 'SHA04B',
+        'Box 6A': 'SHA06A',
+        'Box 6B': 'SHA06B',
+        'Box 8A': 'SHA08A',
+        'Box 8B': 'SHA08B',
+        'Box 9A/B': 'SHA09AB',
+        'Box 10': 'SHA10',
+        'Box 11B': 'SHA11B',
+        'Box 12A': 'SHA12A',
+        'Box 70': 'SHA70',
+        'Box 2X1': 'SHA2X1'
+    };
 
     // Sample packing box types - you can replace with actual data from your system
     const packingBoxTypes = [
@@ -62,6 +90,72 @@ export default function StartPacking({
         'Box 2X1'
     ];
 
+    // Function to get current stock for a box type
+    const getCurrentStock = (boxType: string): number => {
+        const sku = boxTypeToSku[boxType];
+        if (!sku) return 0;
+        
+        const stockItem = stockItems.find(item => item.sku === sku);
+        return stockItem?.stock || 0;
+    };
+
+    // Function to update stock for a packing box
+    const updatePackingBoxStock = async (boxType: string, quantity: number) => {
+        const sku = boxTypeToSku[boxType];
+        if (!sku) {
+            return false;
+        }
+
+        const stockItem = stockItems.find(item => item.sku === sku);
+        if (!stockItem) {
+            return false;
+        }
+
+        if (stockItem.stock < quantity) {
+            return false;
+        }
+
+        try {
+            // Track the change for potential rollback
+            // setStockChanges(prev => ({
+            //     ...prev,
+            //     [boxType]: {
+            //         originalStock: stockItem.stock,
+            //         newStock: stockItem.stock - quantity,
+            //         quantity: quantity
+            //     }
+            // }));
+
+            // Update stock in Supabase
+            const { error } = await supabase
+                .from('finished_stock')
+                .update({
+                    stock: stockItem.stock - quantity,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('sku', sku);
+
+            if (error) {
+                console.error('Error updating stock:', error);
+                return false;
+            }
+
+            // Refresh stock data
+            await dispatch(fetchFinishedStockFromSupabase({ page: 1, perPage: 15 }));
+
+            // Clear any previous error messages for this box type
+            return true;
+        } catch (error) {
+            console.error('Error updating packing box stock:', error);
+            return false;
+        }
+    };
+
+    // Function to rollback stock changes - no longer needed
+    // const rollbackStockChanges = async () => {
+    //     // Rollback functionality removed since we don't update stock immediately
+    // };
+
     // Function to add a new packing box row
     const addPackingBoxRow = () => {
         const newId = (packingBoxes.length + 1).toString();
@@ -81,6 +175,48 @@ export default function StartPacking({
             box.id === id ? { ...box, [field]: value } : box
         ));
     };
+
+    // Function to toggle dropdown
+    const toggleDropdown = (id: string) => {
+        setOpenDropdownId(openDropdownId === id ? null : id);
+    };
+
+    // Function to select an option
+    const selectOption = async (boxId: string, option: string) => {
+        updatePackingBox(boxId, 'boxType', option);
+        setOpenDropdownId(null);
+        
+        // Don't update stock immediately - wait for order completion
+    };
+
+    // Function to handle quantity change
+    const handleQuantityChange = async (boxId: string, quantity: number) => {
+        updatePackingBox(boxId, 'quantity', quantity);
+        
+        // Don't update stock immediately - wait for order completion
+    };
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (openDropdownId) {
+                const target = event.target as Element;
+                if (!target.closest('.custom-dropdown')) {
+                    setOpenDropdownId(null);
+                }
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [openDropdownId]);
+
+    // Fetch stock data when component opens
+    useEffect(() => {
+        if (isOpen) {
+            dispatch(fetchFinishedStockFromSupabase({ page: 1, perPage: 15 }));
+        }
+    }, [isOpen, dispatch]);
 
     // Add an effect to update the checkedItems set whenever selectedOrderItems changes
     useEffect(() => {
@@ -167,7 +303,7 @@ export default function StartPacking({
 
     // Handle escape key press to close modal
     useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
+        const handleKeyDown = async (event: KeyboardEvent) => {
             if (event.key === "Escape" && isOpen) {
                 resetPickingStatus();
                 onClose();
@@ -188,7 +324,7 @@ export default function StartPacking({
     }, [isOpen, onClose, dispatch, selectedOrder]);
 
     //Click outside to close
-    const handleBackdropCLick = (e: React.MouseEvent) => {
+    const handleBackdropCLick = async (e: React.MouseEvent) => {
         if (dialogRef.current && e.target === dialogRef.current) {
             resetPickingStatus();
             onClose();
@@ -199,10 +335,33 @@ export default function StartPacking({
         setShowDespatch(true);
     };
 
+    const handleCloseClick = async () => {
+        resetPickingStatus();
+        onClose();
+    };
+
     const handleDoneClick = async () => {
         try {
             setIsProcessing(true);
-            // 1. Set all items as completed
+            
+            // 1. Process packing box stock updates
+            const packingBoxUpdates = packingBoxes
+                .filter(box => box.boxType && box.quantity > 0)
+                .map(box => ({ boxType: box.boxType, quantity: box.quantity }));
+            
+            if (packingBoxUpdates.length > 0) {
+                console.log('Processing packing box stock updates:', packingBoxUpdates);
+                
+                for (const update of packingBoxUpdates) {
+                    const success = await updatePackingBoxStock(update.boxType, update.quantity);
+                    if (!success) {
+                        throw new Error(`Failed to update stock for ${update.boxType}`);
+                    }
+                }
+                console.log('All packing box stock updates completed');
+            }
+
+            // 2. Set all items as completed
             const orderItems = selectedOrderItems || [];
             for (const item of orderItems) {
                 if (!item.completed) {
@@ -216,7 +375,7 @@ export default function StartPacking({
 
             console.log(`Processing order: ${selectedOrder.order_id}`);
 
-            // 2. Update order status to Completed
+            // 3. Update order status to Completed
             const { error: updateError } = await supabase
                 .from('orders')
                 .update({
@@ -230,7 +389,7 @@ export default function StartPacking({
             if (updateError) throw new Error(`Failed to update order: ${updateError.message}`);
             console.log(`Updated order status to Completed`);
 
-            // 3. Fetch the complete order data to copy to archived_orders
+            // 4. Fetch the complete order data to copy to archived_orders
             let orderData;
             try {
                 const { data: orderDataArray, error: fetchError } = await supabase
@@ -256,7 +415,7 @@ export default function StartPacking({
                 };
             }
 
-            // 4. Insert into archived_orders
+            // 5. Insert into archived_orders
             try {
                 const timestamp = new Date().toISOString();
                 
@@ -309,7 +468,7 @@ export default function StartPacking({
                 }
             }
 
-            // 5. Get all order items
+            // 6. Get all order items
             const { data: itemsData, error: itemsError } = await supabase
                 .from('order_items')
                 .select('id, order_id, sku_id, item_name, quantity, completed, foamsheet, extra_info, priority, created_at, updated_at')
@@ -320,7 +479,7 @@ export default function StartPacking({
 
             // If we have items to archive, proceed with archiving
             if (itemsData && itemsData.length > 0) {
-                // 6. Update all items' completed status to true
+                // 7. Update all items' completed status to true
                 const { error: updateItemsError } = await supabase
                     .from('order_items')
                     .update({ completed: true })
@@ -329,7 +488,7 @@ export default function StartPacking({
                 if (updateItemsError) throw new Error(`Failed to update order items: ${updateItemsError.message}`);
                 console.log(`Updated all items to completed`);
 
-                // 7. Move all items to archived_order_items
+                // 8. Move all items to archived_order_items
                 // Prepare items for insertion (remove ids)
                 const timestamp = new Date().toISOString();
                 const archivedItems = itemsData.map(item => {
@@ -358,7 +517,7 @@ export default function StartPacking({
                     }
                 }
 
-                // 8. Delete the original order items
+                // 9. Delete the original order items
                 const { error: deleteItemsError } = await supabase
                     .from('order_items')
                     .delete()
@@ -370,7 +529,7 @@ export default function StartPacking({
                 console.log(`No items found for order ${selectedOrder.order_id}`);
             }
 
-            // 9. Delete the original order
+            // 10. Delete the original order
             const { error: deleteOrderError } = await supabase
                 .from('orders')
                 .delete()
@@ -403,10 +562,12 @@ export default function StartPacking({
         setPendingUpdates(prev => ({...prev, [itemId]: completed}));
     };
 
-    const handleCloseClick = () => {
-        resetPickingStatus();
-        onClose();
-    };
+    // Cleanup function when modal closes - no longer needed since we don't update stock immediately
+    // useEffect(() => {
+    //     return () => {
+    //         // No cleanup needed since we don't update stock immediately
+    //     };
+    // }, []);
 
     if (!isOpen) return null;
 
@@ -420,7 +581,7 @@ export default function StartPacking({
             aria-labelledby="dialog-title"
         >
             <div
-                className="bg-white p-8 rounded-xl shadow-2xl max-w-4xl w-full min-h-[700px] border border-gray-200 transform transition-all duration-300 scale-100 relative overflow-hidden"
+                className="bg-white p-8 rounded-xl shadow-2xl max-w-4xl w-full min-h-[700px] border border-gray-200 transform transition-all duration-300 scale-100 relative"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Close button (X) in the top right */}
@@ -544,43 +705,8 @@ export default function StartPacking({
                                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">FoamSheet</th>
                                                         <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
-                                                        <th className="px-4 py-3 text-center">
-                                                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={allItemsPacked}
-                                                                        onChange={(e) => {
-                                                                            const newCheckedState = e.target.checked;
-                                                                            setAllItemsPacked(newCheckedState);
-                                                                            // Create a batch of updates for all items
-                                                                            const newUpdates: Record<string, boolean> = {};
-                                                                            selectedOrderItems.forEach(item => {
-                                                                                newUpdates[item.id] = newCheckedState;
-                                                                                setCheckedItems(prev => {
-                                                                                    const newSet = new Set(prev);
-                                                                                    if (newCheckedState) {
-                                                                                        newSet.add(item.sku_id);
-                                                                                    } else {
-                                                                                        newSet.delete(item.sku_id);
-                                                                                    }
-                                                                                    return newSet;
-                                                                                });
-                                                                            });
-                                                                            setPendingUpdates(prev => ({...prev, ...newUpdates}));
-                                                                        }}
-                                                                        className="sr-only peer"
-                                                                        aria-label="Mark all items as packed"
-                                                                    />
-                                                                    <div className="w-6 h-6 border-2 border-gray-300 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                                                        {allItemsPacked && (
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                            </svg>
-                                                                        )}
-                                                                    </div>
-                                                                </label>
-                                                            </div>
+                                                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        Select
                                                         </th>
                                                     </tr>
                                                 </thead>
@@ -669,41 +795,82 @@ export default function StartPacking({
                                 <div className="flex justify-between items-center mb-3">
                                     <h3 className="font-semibold text-lg text-gray-800">Packing Boxes:</h3>
                                 </div>
-                                <div className="overflow-visible rounded-lg border border-gray-200">
-                                    <div className="max-h-[300px] overflow-y-auto overflow-x-visible">
+                                
+                                
+                                <div className="rounded-lg border border-gray-200">
                                         <table className="w-full">
                                             <thead className="bg-gray-50 border-b border-gray-200">
                                                 <tr>
                                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Packing Box</th>
+                                                    {/* <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th> */}
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Delete</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-200 bg-white">
-                                                {packingBoxes.map((box) => (
-                                                    <tr key={box.id} className="hover:bg-gray-50 transition-colors">
-                                                        <td className="px-4 py-3 relative">
-                                                            <select
-                                                                value={box.boxType}
-                                                                onChange={(e) => updatePackingBox(box.id, 'boxType', e.target.value)}
-                                                                className="w-full px-6 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm relative z-20"
-                                                                style={{ minWidth: '120px' }}
-                                                            >
-                                                                <option value="">Select Box</option>
-                                                                {packingBoxTypes.map((type) => (
-                                                                    <option key={type} value={type}>
-                                                                        {type}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
+                                                {packingBoxes.map((box) => {
+                                                    const currentStock = getCurrentStock(box.boxType);
+                                                    
+                                                    return (
+                                                        <tr key={box.id} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-4 py-3">
+                                                            <div className="relative custom-dropdown">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleDropdown(box.id)}
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-left flex justify-between items-center"
+                                                                    style={{ minWidth: '120px' }}
+                                                                >
+                                                                    <span className={box.boxType ? 'text-gray-900' : 'text-gray-500'}>
+                                                                        {box.boxType || 'Select Box'}
+                                                                    </span>
+                                                                    <svg 
+                                                                        className={`h-4 w-4 text-gray-400 transition-transform ${openDropdownId === box.id ? 'rotate-180' : ''}`} 
+                                                                        fill="none" 
+                                                                        stroke="currentColor" 
+                                                                        viewBox="0 0 24 24"
+                                                                    >
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                    </svg>
+                                                                </button>
+                                                                
+                                                                {openDropdownId === box.id && (
+                                                                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                                                        <div className="py-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => selectOption(box.id, '')}
+                                                                                className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                                                                            >
+                                                                                Select Box
+                                                                            </button>
+                                                                    {packingBoxTypes.map((type) => {
+                                                                        const stock = getCurrentStock(type);
+                                                                        return (
+                                                                            <button
+                                                                                key={type}
+                                                                                type="button"
+                                                                                onClick={() => selectOption(box.id, type)}
+                                                                                className="w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex justify-between items-center"
+                                                                            >
+                                                                        <span>{type}</span>
+                                                                        <span className="text-xs text-gray-500">({stock} in stock)</span>
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                         <td className="px-4 py-3">
                                                             <input
                                                                 type="number"
                                                                 min="1"
+                                                                max={currentStock}
                                                                 value={box.quantity}
-                                                                onChange={(e) => updatePackingBox(box.id, 'quantity', parseInt(e.target.value) || 1)}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-center"
+                                                                onChange={(e) => handleQuantityChange(box.id, parseInt(e.target.value) || 1)}
+                                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-center`}
                                                             />
                                                         </td>
                                                         <td className="px-4 py-3 text-center">
@@ -719,12 +886,12 @@ export default function StartPacking({
                                                             </button>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
-                                    </div>
                                     {/* Add Row Button */}
-                                    <div className="mt-3">
+                                    <div className="mt-3 p-3">
                                         <button
                                             onClick={addPackingBoxRow}
                                             className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200 text-sm font-medium"

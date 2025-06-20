@@ -88,15 +88,25 @@ export default function Stock() {
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.stock.toString().includes(searchQuery)
         );
+
+    const packingBoxItems = items
+        .filter(item => item.sku?.toUpperCase().startsWith('SHA'))
+        .filter(item => 
+            item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.stock.toString().includes(searchQuery)
+        );
         
     
     // Calculate pagination
     const totalPages = Math.ceil(mediumSheetItems.length / itemsPerPage);
     const totalTwoByOnePages = Math.ceil(twoByOneItems.length / itemsPerPage);
+    const totalPackingBoxPages = Math.ceil(packingBoxItems.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
     const currentMediumSheetItems = mediumSheetItems.slice(startIndex, endIndex);
     const currentTwoByOneItems = twoByOneItems.slice(startIndex, endIndex);
+    const currentPackingBoxItems = packingBoxItems.slice(startIndex, endIndex);
 
 
     const handleRefresh = () => {
@@ -373,7 +383,7 @@ export default function Stock() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                             <h1 className="text-white text-3xl font-semibold">
-                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : tableTab === '2 X 1 Sheets' ? '2 X 1 Stock' : 'Packing Box Stock'}
+                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : tableTab === '2 X 1 Sheets' ? '2 X 1 Stock' : 'Packing Boxes Stock'}
                             </h1>
 
                             <div className="flex flex-wrap items-center gap-3">
@@ -638,16 +648,146 @@ export default function Stock() {
                                         <thead className="bg-gray-100/90 sticky top-0">
                                             <tr>
                                                 <th className="px-4 py-4 text-left text-black text-md">Packing Box</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            
+                                            {currentPackingBoxItems.length > 0 ? (
+                                                currentPackingBoxItems.map((item: StockItem) => (
+                                                    <tr
+                                                        key={item.id}
+                                                        className="transition-all duration-200 text-center h-16"
+                                                    >
+                                                        <td className="px-4 py-2 text-left">
+                                                            <div className="flex items-center">
+                                                                <span className="text-black text-lg">
+                                                                    {item.item_name}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center">
+                                                            <span className="text-black text-lg">
+                                                                {item.sku}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            {editingItem?.id === item.id ? (
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editValue}
+                                                                        onChange={(e) => setEditValue(Number(e.target.value))}
+                                                                        className="w-20 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        min="0"
+                                                                    />
+                                                                    <button
+                                                                        onClick={handleSave}
+                                                                        className="p-1 text-green-600 hover:text-green-700"
+                                                                        aria-label="Save Changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={handleCancel}
+                                                                        className="p-1 text-red-600 hover:text-red-700"
+                                                                        aria-label="Cancel Changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                    {item.stock}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            <button
+                                                                className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleEdit(item);
+                                                                }}
+                                                                aria-label="Edit an item"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <Image
+                                                                    src="/editPencil.png"
+                                                                    alt=""
+                                                                    width={15}
+                                                                    height={15}
+                                                                />
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            <button
+                                                                className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDelete(item);
+                                                                }}
+                                                                aria-label="Delete an item"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <Image
+                                                                    src="/binClosed.png"
+                                                                    alt=""
+                                                                    width={15}
+                                                                    height={15}
+                                                                />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                                                        No packing box items found
+                                                    </td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
-                                </div>  
+                                </div>
+                                {/* Packing Boxes Pagination Controls */}
+                                <div className="sticky bottom-0 flex justify-center items-center gap-4 py-4 bg-white border-t border-gray-200">
+                                    <button
+                                        onClick={() => handlePageChange(currentPage - 1)}
+                                        disabled={currentPage === 1}
+                                        className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {Array.from({ length: totalPackingBoxPages }, (_, i) => i + 1).map((pageNum) => (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => handlePageChange(pageNum)}
+                                                className={`w-8 h-8 rounded-md ${
+                                                    currentPage === pageNum
+                                                        ? 'bg-red-600 text-white'
+                                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                } transition-colors`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => handlePageChange(currentPage + 1)}
+                                        disabled={currentPage === totalPackingBoxPages}
+                                        className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
                             </div>
                         ) : loading ? (
                             <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">

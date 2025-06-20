@@ -50,13 +50,13 @@ export const syncFinishedStock = createAsyncThunk(
                 };
             });
 
-            // Filter for medium sheets and  2 X 1)
+            // Filter for medium sheets, 2 X 1, and packing boxes
             const stockItems = inventoryItems.filter(item => 
-                item.sku?.toUpperCase().startsWith('SFS')
+                item.sku?.toUpperCase().startsWith('SFS') || item.sku?.toUpperCase().startsWith('SHA')
             );
 
-            console.log('Filtered medium sheet and 2 X 1 items:', stockItems);
-            console.log(`Found ${stockItems.length} medium sheet and 2 X 1 items`);
+            console.log('Filtered medium sheet, 2 X 1, and packing box items:', stockItems);
+            console.log(`Found ${stockItems.length} medium sheet, 2 X 1, and packing box items`);
 
             // Use SKU as unique identifier and combine stock levels for items with the same SKU
             const uniqueItems = new Map();
@@ -137,7 +137,7 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         console.log('Raw data from Supabase:', typedItems);
         console.log(`Fetched ${typedItems.length} items from Supabase`);
         
-        // Filter for both medium sheets and 2 X 1 items
+        // Filter for medium sheets, 2 X 1 items, and packing boxes
         const filteredItems = typedItems.filter(item => {
             const sku = item.sku?.toUpperCase() || '';
             // Check for medium sheet patterns
@@ -147,7 +147,10 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
             // Check for 2 X 1 pattern (SFS followed by numbers, no hyphen)
             const isTwoByOne = /^SFS\d+[A-Z]$/.test(sku);
             
-            return isMediumSheet || isTwoByOne;
+            // Check for packing box pattern (SHA)
+            const isPackingBox = sku.startsWith('SHA');
+            
+            return isMediumSheet || isTwoByOne || isPackingBox;
         });
 
         // Define color order for sorting
