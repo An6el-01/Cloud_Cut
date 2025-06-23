@@ -79,6 +79,7 @@ export default function Manufacturing() {
   const svgRef = useRef<SVGSVGElement>(null);
   const [currentMediumStock, setCurrentMediumStock] = useState(0)
   const [adjustedMediumSheetQuantity, setAdjustedMediumSheetQuantity] = useState(selectedMediumSheetQuantity || 0)
+  const [nestLocks, setNestLocks] = useState<Record<string, boolean>>({});
 
   // Improved function for tab changes that completely prevents changes for operators
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
@@ -1246,6 +1247,15 @@ export default function Manufacturing() {
     return items.reduce((total, item) => total + item.quantity, 0);
   };
 
+  // Helper to calculate the area of a polygon
+  function polygonArea(points: { x: number, y: number }[]): number {
+    let area = 0;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      area += (points[j].x + points[i].x) * (points[j].y - points[i].y);
+    }
+    return Math.abs(area / 2);
+  }
+
   // Update the table content in the first section
   const renderNestingQueueTable = () => {
     if (Object.keys(nestingQueueData).length === 0) {
@@ -1267,6 +1277,44 @@ export default function Manufacturing() {
     return Object.entries(nestingQueueData).map(([foamSheet, data], index) => {
       // Calculate the lowest priority from all items in this foam sheet
       const lowestPriority = Math.min(...data.items.map((item: NestingItem) => item.priority || 10));
+
+      // --- Yield calculation ---
+      // Always use the fallback bin polygon (standard foam sheet size)
+      const binPolygon = [
+        { x: 0, y: 0 },
+        { x: 1000, y: 0 },
+        { x: 1000, y: 2000 },
+        { x: 0, y: 2000 },
+        { x: 0, y: 0 }
+      ];
+      const binArea = polygonArea(binPolygon);
+      // Get all placed parts (first sheet only)
+      const placements = data.nestingResult?.placements?.[0]?.parts || [];
+      const totalPartsArea = placements.reduce((sum, part) => {
+        if (part.polygons && part.polygons[0]) {
+          return sum + polygonArea(part.polygons[0]);
+        }
+        return sum;
+      }, 0);
+      const yieldPercent = binArea > 0 ? (totalPartsArea / binArea) * 100 : 0;
+      // --- End yield calculation ---
+
+      // --- Time calculation For Parts---
+      // Each piece takes 1 min 45 sec (105 seconds)
+      const totalPieces = calculateTotalItems(data.items);
+      const totalSeconds = totalPieces * 105;
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      const timeString = `${minutes}m ${seconds}s`;
+      // --- End time calculation ---
+
+      // --- Nesting ID ---
+      const nestingId = `NST-${index + 1}`;
+      // --- End Nesting ID ---
+
+      // --- Lock state ---
+      const isLocked = !!nestLocks[foamSheet];
+      // --- End Lock state ---
 
       return (
         <tr
@@ -1299,17 +1347,47 @@ export default function Manufacturing() {
               </span>
             </div>
           </td>
-          <td className="px-6 py-4 text-center">No Data</td>
+          <td className="px-6 py-4 text-center">{nestingId}</td>
           <td className="px-6 py-4 text-center">
             <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-              {calculateTotalItems(data.items)}
+              {totalPieces}
             </span>
           </td>
           {/* <td className="px-6 py-4 text-center text-lg font-semibold text-black">
             {lowestPriority}
           </td> */}
-          <td className="px-6 py-4 text-center">0%</td>
-          <td className="px-6 py-4 text-center">0 mins</td>
+          <td className="px-6 py-4 text-center">
+            {yieldPercent > 0 ? `${yieldPercent.toFixed(1)}%` : '—'}
+          </td>
+          <td className="px-6 py-4 text-center">{timeString}</td>
+           {/* Lock icon column */}
+           <td className="px-6 py-4 text-center">
+            <button
+              type="button"
+              aria-label={isLocked ? 'Unlock nest' : 'Lock nest'}
+              onClick={e => {
+                e.stopPropagation();
+                setNestLocks(prev => ({ ...prev, [foamSheet]: !isLocked }));
+              }}
+              className="focus:outline-none"
+            >
+              {isLocked ? (
+                // Locked icon
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
+                  <path d="M7 11V7a5 5 0 0110 0v4" stroke="#374151" strokeWidth="2" fill="none" />
+                  <circle cx="12" cy="15" r="1.5" fill="#374151" />
+                </svg>
+              ) : (
+                // Unlocked icon
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
+                  <path d="M7 11V7a5 5 0 0110 0" stroke="#374151" strokeWidth="2" fill="none" />
+                  <circle cx="12" cy="15" r="1.5" fill="#374151" />
+                </svg>
+              )}
+            </button>
+          </td>
         </tr>
       );
     });
@@ -1669,6 +1747,7 @@ export default function Manufacturing() {
                           {/* <th className="px-6 py-4 text-center text-lg font-semibold text-black">Priority</th> */}
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Lock</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
