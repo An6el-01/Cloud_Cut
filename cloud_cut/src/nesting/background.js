@@ -83,17 +83,27 @@ function getFrame(polygon) {
 }
 
 function getOuterNfp(A, B, inside, nfpCache) {
+    console.log(`[OUTER NFP DEBUG] getOuterNfp called with:`, {
+        A_length: A?.length,
+        B_length: B?.length,
+        inside: inside,
+        A_has_children: !!(A?.children && A.children.length > 0),
+        B_has_children: !!(B?.children && B.children.length > 0)
+    });
+
     // try the file cache if the calculation will take a long time
     if (nfpCache) {
         var doc = nfpCache.find({ A: A.source, B: B.source, Arotation: A.rotation, Brotation: B.rotation });
 
         if(doc){
+            console.log(`[OUTER NFP DEBUG] Found NFP in file cache`);
             return doc;
         }
     }
 
     // not found in cache
     if(inside || (A.children && A.children.length > 0)){
+        console.log(`[OUTER NFP DEBUG] Using ClipperLib for inside/complex polygons`);
         if(!A.children){
             A.children = [];
         }
@@ -103,14 +113,32 @@ function getOuterNfp(A, B, inside, nfpCache) {
 
         // For inside or complex polygons, use ClipperLib directly
         var Ac = toClipperCoordinates(A);
+        console.log(`[OUTER NFP DEBUG] A converted to Clipper coordinates:`, {
+            Ac_length: Ac?.length,
+            Ac_first_point: Ac?.[0],
+            Ac_last_point: Ac?.[Ac?.length - 1]
+        });
+        
         ClipperLib.JS.ScaleUpPath(Ac, 10000000);
         var Bc = toClipperCoordinates(B);
+        console.log(`[OUTER NFP DEBUG] B converted to Clipper coordinates:`, {
+            Bc_length: Bc?.length,
+            Bc_first_point: Bc?.[0],
+            Bc_last_point: Bc?.[Bc?.length - 1]
+        });
+        
         ClipperLib.JS.ScaleUpPath(Bc, 10000000);
         for(let i = 0; i < Bc.length; i++){
             Bc[i].X *= -1;
             Bc[i].Y *= -1;
         }
+        
+        console.log(`[OUTER NFP DEBUG] Calling ClipperLib.Clipper.MinkowskiSum...`);
         var solution = ClipperLib.Clipper.MinkowskiSum(Ac, Bc, true);
+        console.log(`[OUTER NFP DEBUG] MinkowskiSum result:`, {
+            solution_length: solution?.length,
+            solution_type: typeof solution
+        });
 
         var clipperNfp;
         var largestArea = null;
@@ -123,7 +151,13 @@ function getOuterNfp(A, B, inside, nfpCache) {
             }
         }
 
+        console.log(`[OUTER NFP DEBUG] Selected NFP from solution:`, {
+            clipperNfp_length: clipperNfp?.length,
+            largestArea: largestArea
+        });
+
         if (!clipperNfp) {
+            console.error(`[OUTER NFP DEBUG] No valid NFP found in solution`);
             return null;
         }
 
@@ -135,15 +169,32 @@ function getOuterNfp(A, B, inside, nfpCache) {
         var nfp = [clipperNfp];
     }
     else{
+        console.log(`[OUTER NFP DEBUG] Using ClipperLib for simple polygons`);
         var Ac = toClipperCoordinates(A);
+        console.log(`[OUTER NFP DEBUG] A converted to Clipper coordinates:`, {
+            Ac_length: Ac?.length,
+            Ac_first_point: Ac?.[0]
+        });
+        
         ClipperLib.JS.ScaleUpPath(Ac, 10000000);
         var Bc = toClipperCoordinates(B);
+        console.log(`[OUTER NFP DEBUG] B converted to Clipper coordinates:`, {
+            Bc_length: Bc?.length,
+            Bc_first_point: Bc?.[0]
+        });
+        
         ClipperLib.JS.ScaleUpPath(Bc, 10000000);
         for(let i = 0; i < Bc.length; i++){
             Bc[i].X *= -1;
             Bc[i].Y *= -1;
         }
+        
+        console.log(`[OUTER NFP DEBUG] Calling ClipperLib.Clipper.MinkowskiSum...`);
         var solution = ClipperLib.Clipper.MinkowskiSum(Ac, Bc, true);
+        console.log(`[OUTER NFP DEBUG] MinkowskiSum result:`, {
+            solution_length: solution?.length,
+            solution_type: typeof solution
+        });
 
         var clipperNfp;
         var largestArea = null;
@@ -156,7 +207,13 @@ function getOuterNfp(A, B, inside, nfpCache) {
             }
         }
 
+        console.log(`[OUTER NFP DEBUG] Selected NFP from solution:`, {
+            clipperNfp_length: clipperNfp?.length,
+            largestArea: largestArea
+        });
+
         if (!clipperNfp) {
+            console.error(`[OUTER NFP DEBUG] No valid NFP found in solution`);
             return null;
         }
 
@@ -168,13 +225,25 @@ function getOuterNfp(A, B, inside, nfpCache) {
         var nfp = [clipperNfp];
     }
 
+    console.log(`[OUTER NFP DEBUG] Final NFP before processing:`, {
+        nfp_length: nfp?.length,
+        nfp_type: typeof nfp
+    });
+
     if(!nfp || nfp.length == 0){
+        console.error(`[OUTER NFP DEBUG] NFP is empty or null`);
         return null;
     }
 
     nfp = nfp.pop();
 
+    console.log(`[OUTER NFP DEBUG] Final NFP after pop:`, {
+        nfp_length: nfp?.length,
+        nfp_type: typeof nfp
+    });
+
     if (!nfp || nfp.length == 0){
+        console.error(`[OUTER NFP DEBUG] Final NFP is empty or null`);
         return null;
     }
 
@@ -187,7 +256,10 @@ function getOuterNfp(A, B, inside, nfpCache) {
             nfp: nfp
         };
         nfpCache.insert(doc);
+        console.log(`[OUTER NFP DEBUG] Stored NFP in file cache`);
     }
+    
+    console.log(`[OUTER NFP DEBUG] Returning NFP with ${nfp.length} points`);
     return nfp;
 }
 
@@ -202,6 +274,11 @@ function innerNfpToClipperCoordinates(nfp, config) {
 }
 
 function getInnerNfp(A, B, config, nfpCache){
+
+    if (typeof GeometryUtil !== 'undefined') {
+
+  }
+  
     if(typeof A.source !== 'undefined' && typeof B.source !== 'undefined' && nfpCache){
         var doc = nfpCache.find({ A: A.source, B: B.source, Arotation: 0, Brotation: B.rotation }, true);
 
@@ -210,15 +287,88 @@ function getInnerNfp(A, B, config, nfpCache){
         }
     }
 
+    // --- DEBUG: Check winding and closure ---
+    function isClosed(polygon) {
+        return polygon.length > 2 && (polygon[0].x === polygon[polygon.length-1].x && polygon[0].y === polygon[polygon.length-1].y);
+    }
+    function ensureCCW(polygon) {
+        if (GeometryUtil.polygonArea(polygon) < 0) {
+            return polygon.slice().reverse();
+        }
+        return polygon;
+    }
+    function closePolygon(polygon) {
+        if (polygon.length > 2 && (polygon[0].x !== polygon[polygon.length-1].x || polygon[0].y !== polygon[polygon.length-1].y)) {
+            return polygon.concat([polygon[0]]);
+        }
+        return polygon;
+    }
+
+    // --- Force winding and closure ---
+    A = ensureCCW(closePolygon(A));
+    B = ensureCCW(closePolygon(B));
+
+
+    // --- DEBUG: Check for duplicate points ---
+    function hasDuplicatePoints(polygon) {
+        const seen = new Set();
+        for (const pt of polygon) {
+            const key = `${pt.x.toFixed(6)},${pt.y.toFixed(6)}`;
+            if (seen.has(key)) return true;
+            seen.add(key);
+        }
+        return false;
+    }
+
+
+    // --- DEBUG: Check for self-intersections ---
+    function segmentsIntersect(a1, a2, b1, b2) {
+        function ccw(p1, p2, p3) {
+            return (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
+        }
+        return (ccw(a1, b1, b2) !== ccw(a2, b1, b2)) && (ccw(a1, a2, b1) !== ccw(a1, a2, b2));
+    }
+    function hasSelfIntersection(polygon) {
+        for (let i = 0; i < polygon.length; i++) {
+            const a1 = polygon[i];
+            const a2 = polygon[(i + 1) % polygon.length];
+            for (let j = i + 1; j < polygon.length; j++) {
+                const b1 = polygon[j];
+                const b2 = polygon[(j + 1) % polygon.length];
+                // Skip adjacent segments
+                if (Math.abs(i - j) <= 1 || (i === 0 && j === polygon.length - 1) || (j === 0 && i === polygon.length - 1)) continue;
+                if (segmentsIntersect(a1, a2, b1, b2)) return true;
+            }
+        }
+        return false;
+    }
+
+
     var frame = getFrame(A);
 
     var nfp = getOuterNfp(frame, B, true, nfpCache);
 
-    if(!nfp || !nfp.children || nfp.children.length == 0){
+    console.log(`[INNER NFP DEBUG] getOuterNfp returned:`, {
+        nfp_type: typeof nfp,
+        nfp_length: nfp?.length,
+        has_children: !!(nfp?.children),
+        children_length: nfp?.children?.length
+    });
+
+    if(!nfp || nfp.length == 0){
+        console.log(`[INNER NFP DEBUG] NFP is null or empty, returning null`);
         return null;
     }
 
-    var holes = {};
+    // Handle both flat array and object with children
+    var nfpArray = Array.isArray(nfp) ? nfp : (nfp.children || [nfp]);
+
+    console.log(`[INNER NFP DEBUG] Processed NFP array:`, {
+        nfpArray_length: nfpArray.length,
+        nfpArray_type: typeof nfpArray
+    });
+
+    var holes = [];
     if (A.children && A.children.length > 0){
         for(let i = 0; i < A.children.length; i++){
             var hnfp = getOuterNfp(A.children[i], B, false, nfpCache);
@@ -229,10 +379,21 @@ function getInnerNfp(A, B, config, nfpCache){
     }
 
     if(holes.length == 0){
-        return nfp.children;
+        console.log(`[INNER NFP DEBUG] No holes, returning NFP array wrapped in array`);
+        // Return as array of arrays (polygons) as expected by intersectPolygons
+        // Ensure nfpArray is properly formatted as an array of arrays
+        if (Array.isArray(nfpArray) && nfpArray.length > 0) {
+            // If nfpArray is a flat array of points, wrap it in another array
+            if (nfpArray[0] && typeof nfpArray[0] === 'object' && nfpArray[0].x !== undefined) {
+                return [nfpArray];
+            }
+            // If nfpArray is already an array of arrays, return as is
+            return nfpArray;
+        }
+        return [];
     }
 
-    var clipperNfp = innerNfpToClipperCoordinates(nfp.children, config);
+    var clipperNfp = innerNfpToClipperCoordinates(nfpArray, config);
     var clipperHoles = innerNfpToClipperCoordinates(holes, config);
 
     var finalNfp = new ClipperLib.Paths();
@@ -242,10 +403,12 @@ function getInnerNfp(A, B, config, nfpCache){
     clipper.AddPaths(clipperNfp, ClipperLib.PolyType.ptSubject, true);
 
     if (!clipper.Execute(ClipperLib.ClipType.ctDifference, finalNfp, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero)){
-        return nfp.children;
+        console.log(`[INNER NFP DEBUG] Clipper operation failed, returning original NFP array`);
+        return nfpArray;
     }
 
     if (finalNfp.length == 0){
+        console.log(`[INNER NFP DEBUG] Final NFP is empty, returning null`);
         return null;
     }
 
@@ -265,6 +428,8 @@ function getInnerNfp(A, B, config, nfpCache){
         };
         nfpCache.insert(doc, true);
     }
+    
+    console.log(`[INNER NFP DEBUG] Returning final NFP with ${f.length} polygons`);
     return f;
 }
 

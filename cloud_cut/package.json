@@ -29,6 +29,7 @@
     "react-redux": "^9.2.0",
     "recharts": "^2.12.2",
     "resend": "^4.1.2",
+    "simplify-js": "^1.2.4",
     "zod": "^3.22.4"
   },
   "devDependencies": {

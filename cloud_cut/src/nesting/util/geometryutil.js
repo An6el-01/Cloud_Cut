@@ -2086,6 +2086,78 @@ module.exports = {
 
       return rotated;
     },
+
+    // Graham's scan algorithm for convex hull
+    getConvexHull: function (points) {
+      if (points.length < 3) {
+        return points;
+      }
+
+      // Find the point with the lowest y-coordinate (and leftmost if tied)
+      var start = 0;
+      for (var i = 1; i < points.length; i++) {
+        if (points[i].y < points[start].y || 
+            (points[i].y === points[start].y && points[i].x < points[start].x)) {
+          start = i;
+        }
+      }
+
+      // Sort points by polar angle with respect to start point
+      var sorted = points.slice();
+      var startPoint = sorted[start];
+      sorted.splice(start, 1);
+      
+      sorted.sort(function(a, b) {
+        var angleA = Math.atan2(a.y - startPoint.y, a.x - startPoint.x);
+        var angleB = Math.atan2(b.y - startPoint.y, b.x - startPoint.x);
+        if (angleA !== angleB) {
+          return angleA - angleB;
+        }
+        // If angles are equal, sort by distance from start point
+        var distA = (a.x - startPoint.x) * (a.x - startPoint.x) + (a.y - startPoint.y) * (a.y - startPoint.y);
+        var distB = (b.x - startPoint.x) * (b.x - startPoint.x) + (b.y - startPoint.y) * (b.y - startPoint.y);
+        return distA - distB;
+      });
+
+      // Remove duplicate points (same angle and distance)
+      var unique = [startPoint];
+      for (var i = 0; i < sorted.length; i++) {
+        if (i === 0 || 
+            Math.abs(sorted[i].x - sorted[i-1].x) > 0.001 || 
+            Math.abs(sorted[i].y - sorted[i-1].y) > 0.001) {
+          unique.push(sorted[i]);
+        }
+      }
+
+      if (unique.length < 3) {
+        return unique;
+      }
+
+      // Graham's scan
+      var hull = [unique[0], unique[1]];
+      for (var i = 2; i < unique.length; i++) {
+        while (hull.length > 1 && this.crossProduct(hull[hull.length - 2], hull[hull.length - 1], unique[i]) <= 0) {
+          hull.pop();
+        }
+        hull.push(unique[i]);
+      }
+
+      // Ensure the hull is closed
+      if (hull.length > 2) {
+        var first = hull[0];
+        var last = hull[hull.length - 1];
+        if (Math.abs(first.x - last.x) > 0.001 || Math.abs(first.y - last.y) > 0.001) {
+          hull.push({ x: first.x, y: first.y });
+        }
+      }
+
+      return hull;
+    },
+
+    // Helper function for cross product
+    crossProduct: function (o, a, b) {
+      return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    },
   },
 };
 

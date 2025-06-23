@@ -7,64 +7,168 @@ const { GeometryUtil } = require('./geometryUtilLib');
 
 const { GeometryUtil: OldGeometryUtil } = require("./geometryutil");
 
-function getOrCreateNfp(A, B, inside, searchEdges) {
-    // Add detailed logging
-    console.log('getOrCreateNfp called with:', {
-        A: {
-            id: A?.id,
-            hasPolygons: !!A?.polygons,
-            polygonLength: A?.polygons?.[0]?.length
-        },
-        B: {
-            id: B?.id,
-            hasPolygons: !!B?.polygons,
-            polygonLength: B?.polygons?.[0]?.length
-        }
+function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
+    console.log(`[NFP DEBUG] getOrCreateNfp called with:`, {
+        A_id: A.id,
+        B_id: B.id,
+        A_rotation: A.rotation,
+        B_rotation: B.rotation,
+        type: type,
+        A_polygons_length: A.polygons?.[0]?.length,
+        B_polygons_length: B.polygons?.[0]?.length
     });
 
-    // Validate inputs
-    if (!A || !A.polygons || !Array.isArray(A.polygons[0]) || A.polygons[0].length === 0) {
-        console.error('[NFP ERROR] Invalid bin polygon:', A);
-        return [];
+    // Validate input parts
+    if (!A || !B || !A.polygons || !B.polygons || !A.polygons[0] || !B.polygons[0]) {
+        console.error(`[NFP ERROR] Invalid parts provided:`, { A, B });
+        return null;
     }
 
-    if (!B || !B.polygons || !Array.isArray(B.polygons[0]) || B.polygons[0].length === 0) {
-        console.error('[NFP ERROR] Invalid part polygon:', B);
-        return [];
+    // Ensure parts have required properties for caching
+    if (!A.id || !B.id) {
+        console.warn(`[NFP WARNING] Parts missing id property:`, { A_id: A.id, B_id: B.id });
+        // Create temporary IDs if missing
+        A.id = A.id || `temp_${Math.random().toString(36).substr(2, 9)}`;
+        B.id = B.id || `temp_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // Ensure we're working with the first polygon of each
-    const binPolygon = A.polygons[0];
-    const partPolygon = B.polygons[0];
+    // Ensure parts have source properties for caching
+    if (!A.source) {
+        A.source = A.id;
+    }
+    if (!B.source) {
+        B.source = B.id;
+    }
 
-    // Create cache key
-    const cacheKey = `${A.id}-${B.id}-${inside ? 'inside' : 'outside'}`;
+    console.log(`[NFP DEBUG] Parts are valid, checking cache...`);
+
+    // Check cache first using the correct interface
+    const cacheKey = {
+        A: A.id,
+        B: B.id,
+        Arotation: A.rotation,
+        Brotation: B.rotation
+    };
     
-    // Check cache
-    if (this.nfpCache.has(cacheKey)) {
-        console.log('[NFP CACHE HIT]', cacheKey);
-        return this.nfpCache.get(cacheKey);
+    if (nfpCache && nfpCache.find) {
+        const cachedNfp = nfpCache.find(cacheKey, type === 'inner');
+        if (cachedNfp) {
+            console.log(`[NFP DEBUG] Found NFP in cache for ${A.id} vs ${B.id}`);
+            return normalizeNfpFormat(cachedNfp, type);
+        }
     }
+
+    console.log(`[NFP DEBUG] NFP not in cache, calculating...`);
 
     // Calculate NFP
-    try {
-        const nfp = this.calculateNfp(binPolygon, partPolygon, inside, searchEdges);
-        this.nfpCache.set(cacheKey, nfp);
-        return nfp;
-    } catch (error) {
-        console.error('[NFP ERROR] Failed to calculate NFP:', error);
+    let nfp;
+    if (type === 'outer') {
+        nfp = getOuterNfp(A.polygons[0], B.polygons[0], false, nfpCache);
+    } else {
+        nfp = getInnerNfp(A.polygons[0], B.polygons[0], config, nfpCache);
+    }
+
+    console.log(`[NFP DEBUG] Calculated NFP result:`, {
+        nfp_length: nfp?.length,
+        nfp_type: typeof nfp,
+        is_null: nfp === null,
+        is_undefined: nfp === undefined
+    });
+
+    // Normalize the NFP format before caching
+    const normalizedNfp = normalizeNfpFormat(nfp, type);
+
+    // Cache the normalized result using the correct interface
+    if (nfpCache && nfpCache.insert) {
+        console.log(`[NFP DEBUG] Stored NFP in cache`);
+        nfpCache.insert({
+            ...cacheKey,
+            nfp: normalizedNfp
+        }, type === 'inner');
+    }
+
+    return normalizedNfp;
+}
+
+// Helper function to normalize NFP format
+function normalizeNfpFormat(nfp, type) {
+    if (!nfp || nfp.length === 0) {
         return [];
     }
+
+    console.log(`[NFP NORMALIZE] Normalizing NFP:`, {
+        nfp_type: typeof nfp,
+        nfp_length: nfp?.length,
+        nfp_sample: nfp?.[0],
+        type: type
+    });
+
+    // Handle different input formats
+    let normalizedNfp;
+
+    if (Array.isArray(nfp)) {
+        if (nfp.length === 0) {
+            return [];
+        }
+
+        // Check if nfp is a flat array of points
+        if (nfp[0] && typeof nfp[0] === 'object' && nfp[0].x !== undefined) {
+            // Flat array of points - wrap in another array
+            normalizedNfp = [nfp];
+        } else if (Array.isArray(nfp[0])) {
+            // Already array of arrays - use as is
+            normalizedNfp = nfp;
+        } else {
+            // Unknown format - try to handle gracefully
+            console.warn(`[NFP NORMALIZE] Unknown array format:`, nfp);
+            normalizedNfp = [nfp];
+        }
+    } else if (nfp && typeof nfp === 'object' && nfp.children) {
+        // Object with children property
+        normalizedNfp = Array.isArray(nfp.children) ? nfp.children : [nfp.children];
+    } else {
+        // Unknown format - wrap in array
+        console.warn(`[NFP NORMALIZE] Unknown object format:`, nfp);
+        normalizedNfp = [nfp];
+    }
+
+    // Validate the normalized result
+    if (!Array.isArray(normalizedNfp)) {
+        console.error(`[NFP NORMALIZE] Failed to normalize NFP:`, nfp);
+        return [];
+    }
+
+    // Ensure each element is an array of points
+    for (let i = 0; i < normalizedNfp.length; i++) {
+        if (!Array.isArray(normalizedNfp[i])) {
+            console.warn(`[NFP NORMALIZE] Element ${i} is not an array:`, normalizedNfp[i]);
+            normalizedNfp[i] = [normalizedNfp[i]];
+        }
+    }
+
+    console.log(`[NFP NORMALIZE] Final normalized NFP:`, {
+        length: normalizedNfp.length,
+        sample_element_length: normalizedNfp[0]?.length,
+        sample_point: normalizedNfp[0]?.[0]
+    });
+
+    return normalizedNfp;
 }
 
 function toClipperCoordinates(polygon){
-    var clone = {};
+    console.log(`[CLIPPER DEBUG] toClipperCoordinates called with polygon length:`, polygon?.length);
+    var clone = [];
     for (var i = 0; i < polygon.length; i++){
         clone.push({
             X: polygon[i].x,
             Y: polygon[i].y,
         });
     }
+    console.log(`[CLIPPER DEBUG] Converted to Clipper coordinates:`, {
+        clone_length: clone.length,
+        first_point: clone[0],
+        last_point: clone[clone.length - 1]
+    });
     return clone;
 }
 
@@ -102,17 +206,25 @@ function rotatePolygon(polygon, degrees){
 }
 
 function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, polygonOffset) {
-    console.log("[PlacementWorker] Constructor called");
-    console.log("[PlacementWorker] binPolygon:", binPolygon);
+    console.log('[PLACEMENT WORKER DEBUG] Constructor called with:', {
+        binPolygon_type: typeof binPolygon,
+        binPolygon_length: binPolygon?.length,
+        binPolygon_isArray: Array.isArray(binPolygon),
+        paths_length: paths?.length,
+        config_type: typeof config,
+        config_keys: config ? Object.keys(config) : 'undefined',
+        nfpCache_type: typeof nfpCache
+    });
     
     // Validate bin polygon
     if (!binPolygon || !Array.isArray(binPolygon) || binPolygon.length < 3) {
         throw new Error('Invalid bin polygon: must be an array of at least 3 points');
     }
 
+    // Fix: Only wrap binPolygon if it is a flat array of points, not already an array of arrays
     this.binPolygon = {
         id: -1,
-        polygons: [binPolygon],
+        polygons: Array.isArray(binPolygon[0]) ? binPolygon : [binPolygon],
         rotation: 0
     };
     
@@ -122,24 +234,69 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
     this.config = config;
     this.nfpCache = nfpCache || {};
     this.polygonOffset = polygonOffset;
-    console.log('[PlacementWorker] typeof polygonOffset:', typeof this.polygonOffset);
-    console.log('[PlacementWorker] polygonOffset:', this.polygonOffset);
-    console.log("PlacementWorker initialized with binPolygon:", this.binPolygon);
-    console.log("PlacementWorker initialized with paths:", this.paths);
 
-    // Bind methods to this instance
-    this.place = this.place.bind(this);
-    this.placePaths = this.placePaths.bind(this);
+    // Create a fallback cache if nfpCache is not available
+    if (!this.nfpCache) {
+        console.warn('[PLACEMENT WORKER] No NFP cache provided, creating fallback cache');
+        this.nfpCache = {
+            db: {},
+            find: function(key, inner) {
+                const cacheKey = `${key.A}-${key.B}-${key.Arotation}-${key.Brotation}-${inner ? 'inner' : 'outer'}`;
+                return this.db[cacheKey] || null;
+            },
+            insert: function(doc, inner) {
+                if (!doc.nfp) return;
+                const cacheKey = `${doc.A}-${doc.B}-${doc.Arotation}-${doc.Brotation}-${inner ? 'inner' : 'outer'}`;
+                this.db[cacheKey] = doc.nfp;
+            }
+        };
+    }
 
     // Helper: Intersect two sets of polygons using ClipperLib
     function intersectPolygons(a, b, scale) {
+        console.log(`[INTERSECT DEBUG] intersectPolygons called with:`, {
+            a_type: typeof a,
+            a_length: a?.length,
+            a_isArray: Array.isArray(a),
+            a_sample: a?.[0],
+            a_sample_type: typeof a?.[0],
+            a_sample_isArray: Array.isArray(a?.[0]),
+            b_type: typeof b,
+            b_length: b?.length,
+            b_isArray: Array.isArray(b),
+            b_sample: b?.[0],
+            b_sample_type: typeof b?.[0],
+            b_sample_isArray: Array.isArray(b?.[0]),
+            scale: scale
+        });
+
         // a and b are arrays of polygons (arrays of points)
         const clipper = new ClipperLib.Clipper();
         const solution = new ClipperLib.Paths();
         // Convert to Clipper coordinates and scale up
         function toClipper(poly) {
+            console.log(`[INTERSECT DEBUG] toClipper called with:`, {
+                poly_type: typeof poly,
+                poly_length: poly?.length,
+                poly_isArray: Array.isArray(poly),
+                poly_sample: poly?.[0],
+                poly_sample_type: typeof poly?.[0]
+            });
+            
+            if (!Array.isArray(poly)) {
+                console.error(`[INTERSECT ERROR] poly is not an array:`, poly);
+                throw new Error(`poly.map is not a function - poly is ${typeof poly}`);
+            }
+            
             return poly.map(pt => ({ X: Math.round(pt.x * scale), Y: Math.round(pt.y * scale) }));
         }
+        
+        // Ensure a and b are arrays of arrays (polygons)
+        if (!Array.isArray(a) || !Array.isArray(b)) {
+            console.error(`[INTERSECT ERROR] a or b is not an array:`, { a, b });
+            throw new Error(`Expected arrays but got ${typeof a} and ${typeof b}`);
+        }
+        
         const aClip = a.map(toClipper);
         const bClip = b.map(toClipper);
         clipper.AddPaths(aClip, ClipperLib.PolyType.ptSubject, true);
@@ -154,23 +311,115 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         return solution.map(poly => poly.map(pt => ({ x: pt.X / scale, y: pt.Y / scale })));
     }
 
-    // Helper: Pick the bottom-left-most point from a set of polygons
-    function pickBottomLeftPoint(polygons) {
-        let minX = Infinity, minY = Infinity, best = null;
-        polygons.forEach(poly => {
-            poly.forEach(pt => {
-                if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
-                    minX = pt.x;
-                    minY = pt.y;
-                    best = pt;
-                }
-            });
-        });
-        return best;
+    // Helper: Check if a point is inside a polygon using ray casting algorithm
+    function pointInPolygon(point, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            if (((polygon[i].y > point.y) !== (polygon[j].y > point.y)) &&
+                (point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)) {
+                inside = !inside;
+            }
+        }
+        return inside;
     }
 
+    // Convert pickBottomLeftPoint to a method of PlacementWorker
+    this.pickBottomLeftPoint = function(polygons) {
+        if (!polygons || polygons.length === 0) {
+            console.warn('[PLACE DEBUG] No polygons provided to pickBottomLeftPoint');
+            return null;
+        }
+
+        console.log(`[PLACE DEBUG] pickBottomLeftPoint called with ${polygons.length} polygons`);
+
+        // Collect all points from all polygons
+        let allPoints = [];
+        polygons.forEach(polygon => {
+            if (polygon && Array.isArray(polygon)) {
+                allPoints.push(...polygon);
+            }
+        });
+
+        if (allPoints.length === 0) {
+            console.warn('[PLACE DEBUG] No points found in polygons');
+            return null;
+        }
+
+        // Find the bottom-left point
+        let best = allPoints[0];
+        let minX = best.x;
+        let minY = best.y;
+
+        allPoints.forEach(pt => {
+            if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
+                minX = pt.x;
+                minY = pt.y;
+                best = pt;
+            }
+        });
+        
+        // Validate that the picked point is within bin bounds
+        if (best && this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0]) {
+            const binPolygon = this.binPolygon.polygons[0];
+            if (pointInPolygon(best, binPolygon)) {
+                console.log(`[PLACE DEBUG] Picked valid point (${best.x}, ${best.y}) inside bin polygon`);
+                return best;
+            } else {
+                console.warn(`[PLACE DEBUG] Picked point (${best.x}, ${best.y}) is outside bin polygon, finding alternative`);
+            }
+        }
+        
+        // If bottom-left point is outside bounds, find the best point within bounds
+        if (this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0]) {
+            const binPolygon = this.binPolygon.polygons[0];
+            let bestInBounds = null;
+            let bestDistance = Infinity;
+            
+            for (const pt of allPoints) {
+                if (pointInPolygon(pt, binPolygon)) {
+                    // Calculate distance from origin (0,0) - prefer points closer to origin
+                    const distance = Math.sqrt(pt.x * pt.x + pt.y * pt.y);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestInBounds = pt;
+                    }
+                }
+            }
+            
+            if (bestInBounds) {
+                console.log(`[PLACE DEBUG] Found alternative point (${bestInBounds.x}, ${bestInBounds.y}) within bin bounds`);
+                return bestInBounds;
+            }
+        }
+        
+        // If no valid point found, forcibly use (0,0) if inside bin, else the lowest point in bin
+        if (this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0]) {
+            const binPolygon = this.binPolygon.polygons[0];
+            const origin = { x: 0, y: 0 };
+            if (pointInPolygon(origin, binPolygon)) {
+                console.warn(`[PLACE DEBUG] Forcibly using (0,0) as placement point`);
+                return origin;
+            }
+            // Otherwise, pick the lowest y, then lowest x point in the bin
+            let minY = Infinity, minX = Infinity, lowest = null;
+            for (const pt of binPolygon) {
+                if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
+                    minY = pt.y;
+                    minX = pt.x;
+                    lowest = pt;
+                }
+            }
+            if (lowest) {
+                console.warn(`[PLACE DEBUG] Forcibly using lowest point in bin (${lowest.x}, ${lowest.y})`);
+                return lowest;
+            }
+        }
+        console.warn(`[PLACE DEBUG] No valid point found, using fallback (0,0)`);
+        return { x: 0, y: 0 };
+    };
+
     function precomputeBinNfps(parts, binPolygon, rotations, config, nfpCache) {
-        console.log(`[NFP PRECOMPUTE] Starting bin-part NFP precomputation for ${parts.length} parts and ${rotations.length} rotations.`);
+
         for (const part of parts){
             for (const rot of rotations){
                 const rotatedPoly = rotatePolygon(part.polygons[0], rot);
@@ -180,7 +429,11 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                     rotation: rot
                 };
                 getOrCreateNfp(
-                    { id: -1, polygons: [binPolygon], rotation:0 },
+                    {
+                        id: -1,
+                        polygons: binPolygon.polygons,
+                        rotation: 0,
+                    },
                     partRot,
                     config,
                     nfpCache,
@@ -188,11 +441,10 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 );
             }
         }
-        console.log(`[NFP PRECOMPUTE] Finished bin-part NFP precomputation.`);
     }
 
     function precomputePartNfps(parts, rotations, config, nfpCache) {
-        console.log(`[NFP PRECOMPUTE] Starting part-part NFP precomputation for ${parts.length} parts and ${rotations.length} rotations.`);
+
         for (const partA of parts){
             for (const partB of parts){
                 for (const rotA of rotations){
@@ -220,7 +472,6 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 }
             }
         }
-        console.log(`[NFP PRECOMPUTE] Finished part-part NFP precomputation.`);
     }
 
     const uniquePartsMap = new Map();
@@ -230,22 +481,31 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         }
     }
     const uniqueParts = Array.from(uniquePartsMap.values());
-    console.log('uniqueParts', uniqueParts);
-    uniqueParts.forEach((p, i) => {
-        console.log(`Part ${i}:`, p, 'polygons:', p.polygons);
-    })
 
     precomputeBinNfps(uniqueParts, this.binPolygon, rotations, this.config, this.nfpCache);
     precomputePartNfps(uniqueParts, rotations, this.config, this.nfpCache);
 
     // return a placement for the paths/rotations worker
     // happens inside a webworker
-    this.placePaths = function(paths) {
-        console.log('[PlacementWorker.placePaths] called');
-        console.log('[PlacementWorker.placePaths] this.polygonOffset:', this.polygonOffset);
-        if (!this.binPolygon || !Array.isArray(this.binPolygon) || this.binPolygon.length === 0) {
+    this.placePaths = function() {
+        // Use the paths that were passed to the constructor
+        let paths = this.paths || [];
+
+        // Apply rotations to paths
+        paths = paths.map((path, index) => ({
+            ...path,
+            rotation: this.rotations[index] || 0
+        }));
+
+        // Unwrap binPolygon if it's an object with a polygons property
+        let binPoly = this.binPolygon;
+        if (binPoly && binPoly.polygons && Array.isArray(binPoly.polygons[0])) {
+            binPoly = binPoly.polygons[0];
+        }
+
+        if (!binPoly || binPoly.length === 0) {
             console.error('[PLACE ERROR] Invalid or empty binPolygon:', this.binPolygon);
-            return null;
+            return { success: false, placements: [] };
         }
         // Validate all part polygons before placement
         for (let i = 0; i < paths.length; i++) {
@@ -266,10 +526,10 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         // rotate paths by given rotation
         var rotated = [];
         for (i = 0; i < paths.length; i++) {
-            var r = rotatePolygon(paths[i], paths[i].rotation);
-            r.rotation = paths[i].rotation;
-            r.source = paths[i].source;
-            r.id = paths[i].id;
+            var r = {
+                ...paths[i],
+                polygons: [rotatePolygon(paths[i].polygons[0], paths[i].rotation)]
+            };
             rotated.push(r);
         }
         paths = rotated;
@@ -282,10 +542,16 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             var placements = [];
         while (unplaced.length > 0) {
             var part = unplaced[0];
+            
+            console.log(`[PLACE DEBUG] Attempting to place part ${part.id} (rotation: ${part.rotation})`);
+
             // 1. Get NFP between bin and part
-            console.log(`[NFP USAGE] Requesting BIN NFP for part ${part.id} (rot:${part.rotation})`);
             var binNfp = getOrCreateNfp(
-                { id: -1, polygons: [this.binPolygon], rotation: 0 },
+                {
+                    id: -1,
+                    polygons: this.binPolygon.polygons,
+                    rotation: 0,
+                },
                 part,
                 this.config,
                 this.nfpCache,
@@ -295,13 +561,25 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 // Could not place this part
                 console.warn(`[NFP FAIL] No bin NFP found for part ${part.id} (rot:${part.rotation})`);
                 unplaced.shift();
-                    continue;
-                }
+                continue;
+            }
+
+            console.log(`[PLACE DEBUG] Got bin NFP with ${binNfp.length} regions`);
+
+            // Validate binNfp format
+            if (!Array.isArray(binNfp)) {
+                console.error(`[NFP ERROR] binNfp is not an array:`, binNfp);
+                unplaced.shift();
+                continue;
+            }
+
             // 2. For each already placed part, get NFP and intersect
             let validRegion = binNfp;
             for (let j = 0; j < placed.length; j++) {
                 var placedPart = placed[j];
-                console.log(`[NFP USAGE] Requesting PART NFP for placed ${placedPart.id} (rot:${placedPart.rotation}) vs part ${part.id} (rot:${part.rotation})`);
+
+                console.log(`[PLACE DEBUG] Checking against placed part ${placedPart.id}`);
+
                 var partNfp = getOrCreateNfp(
                     placedPart,
                     part,
@@ -314,7 +592,32 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                     validRegion = [];
                     break;
                 }
-                validRegion = intersectPolygons(validRegion, partNfp, scale);
+
+                // Validate partNfp format
+                if (!Array.isArray(partNfp)) {
+                    console.error(`[NFP ERROR] partNfp is not an array:`, partNfp);
+                    validRegion = [];
+                    break;
+                }
+
+                console.log(`[PLACE DEBUG] About to call intersectPolygons with:`, {
+                    validRegion_length: validRegion.length,
+                    validRegion_sample: validRegion[0],
+                    partNfp_length: partNfp.length,
+                    partNfp_sample: partNfp[0]
+                });
+
+                try {
+                    validRegion = intersectPolygons(validRegion, partNfp, scale);
+                    console.log(`[PLACE DEBUG] Intersection result: ${validRegion?.length || 0} regions`);
+                } catch (error) {
+                    console.error(`[INTERSECT ERROR] Failed to intersect polygons:`, error);
+                    console.error(`[INTERSECT ERROR] validRegion:`, validRegion);
+                    console.error(`[INTERSECT ERROR] partNfp:`, partNfp);
+                    validRegion = [];
+                    break;
+                }
+
                 if (!validRegion || validRegion.length === 0) {
                     console.warn(`[NFP FAIL] No valid region after intersection for part ${part.id}`);
                     break;
@@ -322,15 +625,25 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             }
             // 3. Pick a point from the valid region
             if (validRegion && validRegion.length > 0) {
-                const placementPoint = pickBottomLeftPoint(validRegion);
+                console.log(`[PLACE DEBUG] Found valid region with ${validRegion.length} polygons`);
+                
+                // --- Ensure validRegion is always an array of arrays of points ---
+                // If validRegion is a flat array of points (i.e., first element has x/y), wrap it
+                if (Array.isArray(validRegion) && validRegion.length > 0 && validRegion[0] && validRegion[0].x !== undefined) {
+                    validRegion = [validRegion];
+                }
+
+                const placementPoint = this.pickBottomLeftPoint(validRegion);
                 if (placementPoint) {
-                    console.log(`[NFP PLACE] Placing part ${part.id} at (${placementPoint.x}, ${placementPoint.y})`);
+                    console.log(`[PLACE DEBUG] Placed part ${part.id} at (${placementPoint.x}, ${placementPoint.y})`);
                     part.x = placementPoint.x;
                     part.y = placementPoint.y;
                     placed.push(part);
                     placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
                     unplaced.shift();
                     continue;
+                } else {
+                    console.warn(`[PLACE DEBUG] No placement point found for part ${part.id}`);
                 }
             }
             // If we get here, could not place part
@@ -339,85 +652,62 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         }
         // Fitness: penalize for unplaced parts
         fitness += 2 * unplaced.length;
-        // Optionally, add more fitness logic here
-            if (placements && placements.length > 0) {
-                allplacements.push(placements);
+        
+        // If no parts were placed, return failure
+        if (placements.length === 0) {
+            console.warn('[PLACE FAIL] No parts could be placed');
+            return {
+                success: false,
+                placements: [],
+                fitness: Number.MAX_VALUE,
+                error: 'No parts could be placed'
+            };
         }
+        
+        // Optionally, add more fitness logic here
+        if (placements && placements.length > 0) {
+            allplacements.push(placements);
+        }
+        
+        // Return the full placed part objects with correct x/y/rotation
         return {
-            placements: allplacements,
+            success: true,
+            placements: placed.map(part => ({
+                ...part,
+                x: part.x,
+                y: part.y,
+                rotation: part.rotation,
+                id: part.id,
+                polygons: part.polygons,
+                source: part.source,
+                children: part.children || [],
+            })),
             fitness: fitness,
             paths: unplaced,
             area: binarea,
         };
     };
-}
 
-PlacementWorker.prototype.place = function(placement) {
-    return this.placePaths(placement);
-};
+    // Add calculateBounds method to the internal placePaths function
+    this.calculateBounds = function(polygon) {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
 
-PlacementWorker.prototype.placePaths = function(placement) {
-    try {
-        // Initialize placement results
-        const placements = [];
-        const PADDING = 10; // 10mm padding
-        let currentX = PADDING; // Start with padding
-        let currentY = PADDING; // Start with padding
-        let maxY = PADDING; // Start with padding
-
-        // Place each path
-        for (let i = 0; i < placement.length; i++) {
-            const part = placement[i];
-            const rotation = this.rotations[i] || 0;
-
-            // Get the first polygon from the part
-            const polygon = part.polygons[0];
-            if (!polygon) {
-                console.error('No polygon found for part:', part);
-                continue;
-            }
-
-            // Rotate the polygon if needed
-            const rotatedPolygon = rotation !== 0 ? rotatePolygon(polygon, rotation) : polygon;
-
-            // Calculate polygon bounds
-            const bounds = this.calculateBounds(rotatedPolygon);
-            const width = bounds.maxX - bounds.minX;
-            const height = bounds.maxY - bounds.minY;
-
-            // Check if we need to move to next row
-            if (currentX + width > 1000 - PADDING) { // Account for padding on right side
-                currentX = PADDING; // Reset to left padding
-                currentY = maxY;
-            }
-
-            // Place the polygon
-            placements.push({
-                x: currentX + PADDING, // Add padding and don't subtract minX
-                y: currentY - bounds.minY,
-                rotation: rotation,
-                id: part.id,
-                source: part.source
-            });
-
-            // Update positions
-            currentX += width + PADDING; // Add padding between parts
-            maxY = Math.max(maxY, currentY + height);
+        for (const point of polygon) {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
         }
 
-        return {
-            success: true,
-            placements: placements,
-            area: (maxY + PADDING) * 1000, // Total area used including bottom padding
-            compactness: 1 - ((maxY + PADDING) * 1000) / (1000 * 1000) // Compactness score
-        };
-    } catch (error) {
-        console.error('Error in placePaths:', error);
-        return {
-            success: false,
-            error: error.message
-        };
-    }
+        return { minX, minY, maxX, maxY };
+    };
+}
+
+PlacementWorker.prototype.place = function() {
+    return this.placePaths();
 };
 
 PlacementWorker.prototype.calculateBounds = function(polygon) {

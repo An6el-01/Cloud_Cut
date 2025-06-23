@@ -6,6 +6,7 @@
 import { SvgParser } from './svgparser';
 import { GeometryUtil } from './util/geometryutil';
 import { NfpCache } from './nfpDb';
+import simplify from 'simplify-js';
 
 const { PlacementWorker } = require('./util/placementWorker');
 
@@ -84,7 +85,6 @@ export class DeepNest {
                     svg: svg,
                 });
             }
-
             var parts = this.getParts(svg.children, filename);
             for ( var i = 0; i < parts.length; i++) {
                 this.parts.push(parts[i]);
@@ -190,7 +190,7 @@ export class DeepNest {
                 }
             }
 
-            var simple = window.simplify(copy, tolerance, true);
+            var simple = simplify(copy, tolerance, true);
             //now a polygon again
             simple.pop();
 
@@ -203,9 +203,18 @@ export class DeepNest {
             }
 
             // Log before calling polygonOffset
-            console.log('[simplifyPolygon] Calling polygonOffset for main offset:', { simple, inside, tolerance });
             var offsets = this.polygonOffset(simple, inside ? -tolerance : tolerance);
-            console.log('[simplifyPolygon] polygonOffset result:', offsets);
+
+            // Defensive check for NaN in offsets
+            if (Array.isArray(offsets)) {
+                for (let i = 0; i < offsets.length; i++) {
+                    for (let j = 0; j < offsets[i].length; j++) {
+                        if (isNaN(offsets[i][j].x) || isNaN(offsets[i][j].y)) {
+                            console.warn(`[simplifyPolygon] polygonOffset result has NaN at polygon ${i}, point ${j}:`, offsets[i][j]);
+                        }
+                    }
+                }
+            }
 
             var offset = null;
             var offsetArea = 0;
@@ -243,9 +252,7 @@ export class DeepNest {
             for(j = 1; j < numshells; j++) {
                 var delta = j * (tolerance / numshells);
                 delta = inside ? -delta : delta;
-                console.log(`[simplifyPolygon] Calling polygonOffset for shell j=${j} with delta=${delta}`);
                 var shell = this.polygonOffset(simple, delta);
-                console.log(`[simplifyPolygon] polygonOffset result for shell j=${j}:`, shell);
                 if (shell.length > 0) {
                     shell = shell[0];
                 }
@@ -265,7 +272,7 @@ export class DeepNest {
                 var test = clone(offset);
                 test[i] = { x: target.x, y: target.y };
 
-                if(!extractExceptionKeysForMessage(test, polygon, inside)){
+                if (!exterior(test, polygon, inside)) {
                     o.x = target.x;
                     o.y = target.y;
                 } else {
@@ -465,8 +472,8 @@ export class DeepNest {
                 var clone = [];
                 for (var i = 0; i < polygon.length; i++) {
                     clone.push({
-                        X: polygon[i].x / scale,
-                        Y: polygon[i].y / scale
+                        x: polygon[i].X / scale,
+                        y: polygon[i].Y / scale
                     });
                 }
                 return clone;
@@ -976,7 +983,6 @@ export class DeepNest {
 
         eventEmitter.on("background-response", (event, payload) => {
             eventEmitter.send("setPlacements", payload);
-            console.log("ipc response: ", payload);
             if (!GA) {
                 //user might have quit while they were away
                 return;
@@ -1141,9 +1147,7 @@ export class DeepNest {
         // use the clipper library to return an offset to the given polygon. Positive offset expands the polygon, negative contracts
         // note that this returns an array of polygons
         DeepNest.prototype.polygonOffset = function (polygon, offset) {
-            console.log('[polygonOffset] Called with:', { polygon, offset });
             if (!offset || offset == 0 || GeometryUtil.almostEqual(offset, 0)) {
-                console.log('[polygonOffset] No offset needed, returning original polygon');
                 return polygon;
             }
 
@@ -1167,7 +1171,13 @@ export class DeepNest {
             for (var i = 0; i < newpaths.length; i++) {
                 result.push(this.clipperToSvg(newpaths[i]));
             }
-            console.log('[polygonOffset] Returning result:', result);
+            for (let i = 0; i < result.length; i++) {
+                for (let j = 0; j < result[i].length; j++) {
+                    if (isNaN(result[i][j].x) || isNaN(result[i][j].y)) {
+                        console.warn(`[polygonOffset] Result has NaN at polygon ${i}, point ${j}:`, result[i][j]);
+                    }
+                }
+            }
             return result;
         };
 
@@ -1215,24 +1225,39 @@ export class DeepNest {
 
         // converts a polygon from normal float coordinates to integer coordinates used by clipper, as well as x/y -> X/Y
         this.svgToClipper = function (polygon, scale) {
+            if (!polygon || !Array.isArray(polygon)) {
+            } else {
+                for (let i = 0; i < polygon.length; i++) {
+                    if (!polygon[i] || isNaN(polygon[i].x) || isNaN(polygon[i].y)) {
+                        console.warn(`[svgToClipper] Input polygon has NaN at index ${i}:`, polygon[i]);
+                    }
+                }
+            }
             var clip = [];
             for ( var i = 0; i < polygon.length; i++) {
                 clip.push({ X: polygon[i].x, Y: polygon[i].y });
             }
-
             ClipperLib.JS.ScaleUpPath(clip, scale || config.clipperScale);
-
+            for (let i = 0; i < clip.length; i++) {
+                if (isNaN(clip[i].X) || isNaN(clip[i].Y)) {
+                    console.warn(`[svgToClipper] Output has NaN at index ${i}:`, clip[i]);
+                }
+            }
             return clip;
         };
 
         this.clipperToSvg = function (polygon) {
             var normal = [];
-
             for (var i = 0; i < polygon.length; i++) {
                 normal.push({
                     x: polygon[i].X / config.clipperScale,
                     y: polygon[i].Y / config.clipperScale,
                 });
+            }
+            for (let i = 0; i < normal.length; i++) {
+                if (isNaN(normal[i].x) || isNaN(normal[i].y)) {
+                    console.warn(`[clipperToSvg] Output has NaN at index ${i}:`, normal[i]);
+                }
             }
             return normal;
         };
@@ -1333,7 +1358,6 @@ export class DeepNest {
 
     async nest(parts, config) {
         try {
-            console.log('Starting nesting process with parts:', parts);
             
             // Create a bin polygon based on the config
             const binPolygon = [
@@ -1382,7 +1406,6 @@ function deepClonePart(part) {
 }
 
 function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
-    console.log('[GeneticAlgorithm] Constructor called with:', { adam, config, polygonOffset, nfpCache });
     this.config = {
         populationSize: 10,
         mutationRate: 10,
@@ -1391,15 +1414,16 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
         fitnessThreshold: 0.1,
         ...config
     };
+    
+    // Ensure binPolygon is provided
     if (!this.config.binPolygon) {
-        this.config.binPolygon = defaultBinPolygon;
+        console.error('No binPolygon provided to GeneticAlgorithm');
+        throw new Error('binPolygon is required for nesting');
     }
-    console.log('[GeneticAlgorithm] config as construction:', this.config);
+    
     this.nfpCache = nfpCache;
     this.polygonOffset = polygonOffset;
-    console.log('[GeneticAlgorithm] typeof polygonOffset:', typeof polygonOffset);
-    console.log('[GeneticAlgorithm] polygonOffset:', polygonOffset);
-    console.log('[GeneticAlgorithm] binPolygon:', this.config.binPolygon);
+
 
     // Ensure polygonOffset is a function
     if (typeof this.polygonOffset !== 'function') {
@@ -1549,9 +1573,6 @@ GeneticAlgorithm.prototype.randomWeightedIndividual = function (exclude) {
 };
 
 GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
-    console.log("Passing binPolygon to PlacementWorker:", this.config.binPolygon);
-    console.log("Passing placement to PlacementWorker:", individual.placement);
-
 
     // Filter out invalid parts
     const validPlacement = individual.placement.filter(p => {
@@ -1571,6 +1592,12 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
     }
 
     // Create a new worker for this evaluation
+    console.log('[GA DEBUG] Creating PlacementWorker with config:', {
+        binPolygon: this.config.binPolygon,
+        config_keys: Object.keys(this.config),
+        nfpCache: this.nfpCache ? 'present' : 'missing'
+    });
+    
     const worker = new PlacementWorker(
         this.config.binPolygon,
         validPlacement,
@@ -1581,9 +1608,20 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
         this.polygonOffset
     );
 
-    {/**This Is Failing!!! */}
     // Place the parts and get the result
-    const result = worker.place(validPlacement);
+    const result = worker.place();
+
+    // --- FIX: Propagate placement coordinates back to individual's placement array ---
+    if (result && result.success && result.placements) {
+        for (const placed of result.placements) {
+            const part = individual.placement.find(p => p.id === placed.id);
+            if (part) {
+                part.x = placed.x;
+                part.y = placed.y;
+                part.rotation = placed.rotation;
+            }
+        }
+    }
 
     if (!result || !result.success) {
         console.log('Placement failed, returning high fitness value');
@@ -1696,7 +1734,6 @@ GeneticAlgorithm.prototype.calculatePartCenter = function(placement) {
 GeneticAlgorithm.prototype.run = async function() {
     // Run for the specified number of generations
     for (let i = 0; i < this.config.generations; i++) {
-        console.log(`Running generation ${i + 1}/${this.config.generations}`);
         
         // Evaluate fitness for all individuals
         for (let individual of this.population) {
@@ -1712,12 +1749,9 @@ GeneticAlgorithm.prototype.run = async function() {
         const best = this.population.reduce((best, current) => {
             return (!best || current.fitness < best.fitness) ? current : best;
         }, null);
-        
-        console.log(`Generation ${i + 1} best fitness:`, best.fitness);
-        
+                
         // If we've found a good enough solution, stop early
         if (best && best.fitness < this.config.fitnessThreshold) {
-            console.log('Found solution meeting fitness threshold');
             break;
         }
     }
