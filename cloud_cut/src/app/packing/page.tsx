@@ -32,8 +32,8 @@ import { createPortal } from "react-dom";
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
 // Define Types used by Dropdown Component
-type SortField = 'retail_pack' | 'medium_sheets' | 'all';
-type SortDirection = 'asc' | 'desc';
+type SortField = 'retail_pack' | 'medium_sheets' | 'accessories' | 'all';
+type SortDirection = 'asc' | 'desc'; 
 
 // Custom Dropdown Component
 const FilterDropdown = ({
@@ -135,7 +135,8 @@ const FilterDropdown = ({
                 onClick={async () => {toggleDropdown()}}
             >
                 {sortConfig.field === 'medium_sheets' ? 'Filter: Medium Sheets' :
-                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' : 'Filter: All'}
+                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' : 
+                sortConfig.field === 'accessories' ? 'Filter: Accessories' : 'Filter: All'}
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="ml-2 -mr-1 h-5 w-5 text-gray-400" aria-hidden="true">
                     <path d="M6 9l6 6 6-6"/>
                 </svg>
@@ -185,6 +186,14 @@ const FilterDropdown = ({
                             onClick={async () => {handleOptionClick('retail_pack')}}
                         >
                             Retail Pack
+                        </button>
+                        <button
+                            className={`${sortConfig.field === 'accessories' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full px-4 py-2 text-sm hover:bg-gray-100`}
+                            role="menuitem"
+                            tabIndex={-1}
+                            onClick={async () => {handleOptionClick('accessories')}}
+                        >
+                            Accessories
                         </button>
                     </div>
                 </div>,
@@ -242,46 +251,6 @@ export default function Packing() {
     // Get all order items from the state
     const allOrderItems = useSelector((state: RootState) => state.orders.orderItems);
 
-    // Calculate metrics for sorting by medium sheets and retail packs
-    const orderMetrics = useMemo(() => {
-        const metrics: Record<string, { medium_sheets: number, retail_pack: number }> = {};
-        for (const order of allOrders) {
-            const items = allOrderItems[order.order_id] || [];
-            metrics[order.order_id] = {
-                medium_sheets: items.filter(item => item.item_name?.toLowerCase().includes('medium sheet')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0),
-                retail_pack: items.filter(item => item.item_name?.toLowerCase().includes('retail pack')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0)
-            };
-        }
-        return metrics;
-    }, [allOrders, allOrderItems]);
-
-    const orderProgress = useSelector((state: RootState) =>
-        state.orders.allOrders.reduce((acc, order) => {
-            acc[order.order_id] = selectOrderProgress(order.order_id)(state);
-            return acc;
-        }, {} as Record<string, string>)
-    );
-
-    // Calculate priorities for all orders
-    const orderPriorities = useSelector((state: RootState) =>
-        state.orders.allOrders.reduce((acc, order) => {
-            const orderItems = state.orders.orderItems[order.order_id] || [];
-            acc[order.order_id] = orderItems.length > 0
-                ? Math.max(...orderItems.map((item) => item.priority || 0))
-                : 0;
-            return acc;
-        }, {} as Record<string, number>)
-    );
-
-    // Calculate sortedOrders once and use everywhere
-    const sortedOrders = useMemo(() => {
-        return [...allOrders].sort((a, b) => {
-            const priorityA = orderPriorities[a.order_id] || 0;
-            const priorityB = orderPriorities[b.order_id] || 0;
-            return priorityA - priorityB;
-        });
-    }, [allOrders, orderPriorities]);
-
     useEffect(() => {
         let result = [...allOrders];
 
@@ -296,15 +265,36 @@ export default function Packing() {
 
         // Apply filter for medium sheets or retail packs
         if (sortConfig.field === 'medium_sheets') {
-            result = result.filter(order => (orderMetrics[order.order_id]?.medium_sheets ?? 0) > 0);
+            result = result.filter(order => {
+                const items = allOrderItems[order.order_id] || [];
+                const mediumSheets = items.filter(item => item.item_name?.toLowerCase().includes('medium sheet')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
+                return mediumSheets > 0;
+            });
         } else if (sortConfig.field === 'retail_pack') {
-            result = result.filter(order => (orderMetrics[order.order_id]?.retail_pack ?? 0) > 0);
+            result = result.filter(order => {
+                const items = allOrderItems[order.order_id] || [];
+                const retailPack = items.filter(item => item.item_name?.toLowerCase().includes('retail pack')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
+                return retailPack > 0;
+            });
+        } else if (sortConfig.field === 'accessories') {
+            result = result.filter(order => {
+                const items = allOrderItems[order.order_id] || [];
+                // Filter items that don't have SKUs starting with SFI, SFS, SFP, SFC
+                const accessories = items.filter(item => {
+                    if (!item.sku_id) return false;
+                    const sku = item.sku_id.toUpperCase();
+                    return !sku.startsWith('SFI') && !sku.startsWith('SFS') && !sku.startsWith('SFP') && !sku.startsWith('SFC');
+                });
+                return accessories.length > 0;
+            });
         }
 
         // Apply sorting
         result.sort((a, b) => {
-            const priorityA = orderPriorities[a.order_id] || 0;
-            const priorityB = orderPriorities[b.order_id] || 0;
+            const itemsA = allOrderItems[a.order_id] || [];
+            const itemsB = allOrderItems[b.order_id] || [];
+            const priorityA = itemsA.length > 0 ? Math.max(...itemsA.map((item) => item.priority || 0)) : 0;
+            const priorityB = itemsB.length > 0 ? Math.max(...itemsB.map((item) => item.priority || 0)) : 0;
             if (priorityA !== priorityB) {
                 return priorityA - priorityB;
             }
@@ -312,7 +302,7 @@ export default function Packing() {
         });
 
         setFilteredOrders(result);
-    }, [allOrders, searchTerm, sortConfig, orderPriorities, orderMetrics]);
+    }, [allOrders, searchTerm, sortConfig, allOrderItems]);
 
     // Calculate pagination for sorted orders
     const startIndex = (currentPage - 1) * ordersPerPage;
@@ -371,7 +361,7 @@ export default function Packing() {
             ordersSubscription.unsubscribe();
             itemsSubscription.unsubscribe();
         }
-    }, [dispatch, currentPage]);
+    }, [currentPage]);
 
     useEffect(() => {
         const initialize = async () => {
@@ -652,15 +642,21 @@ export default function Packing() {
                         
                         // Sort orders by priority using the orderPriorities from Redux state
                         const sortedOrders = [...typedOrders].sort((a, b) => {
-                            const priorityA = orderPriorities[a.order_id] || 0;
-                            const priorityB = orderPriorities[b.order_id] || 0;
+                            const itemsA = allOrderItems[a.order_id] || [];
+                            const itemsB = allOrderItems[b.order_id] || [];
+                            const priorityA = itemsA.length > 0 ? Math.max(...itemsA.map((item) => item.priority || 0)) : 0;
+                            const priorityB = itemsB.length > 0 ? Math.max(...itemsB.map((item) => item.priority || 0)) : 0;
                             return priorityA - priorityB;
                         });
                         
-                        console.log('Sorted orders by priority:', sortedOrders.map(order => ({
-                            orderId: order.order_id,
-                            priority: orderPriorities[order.order_id]
-                        })));
+                        console.log('Sorted orders by priority:', sortedOrders.map(order => {
+                            const items = allOrderItems[order.order_id] || [];
+                            const priority = items.length > 0 ? Math.max(...items.map((item) => item.priority || 0)) : 0;
+                            return {
+                                orderId: order.order_id,
+                                priority: priority
+                            };
+                        }));
                         
                         setOrdersWithRetailPacks(prev => ({
                             ...prev,
@@ -853,12 +849,20 @@ export default function Packing() {
                                                         >
                                                             <td className="px-4 py-2 text-black">{order.order_id}</td>
                                                             <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                                                            <td className="px-4 py-2 text-black">{orderPriorities[order.order_id]}</td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                {(() => {
+                                                                    const items = allOrderItems[order.order_id] || [];
+                                                                    return items.length > 0 ? Math.max(...items.map((item) => item.priority || 0)) : 0;
+                                                                })()}
+                                                            </td>
                                                             <td className="px-4 py-2 text-black">
                                                                 {new Date(order.order_date).toLocaleDateString("en-GB")}
                                                             </td>
                                                             <td className="px-4 py-2 text-black">
-                                                                {orderProgress[order.order_id]}
+                                                                {(() => {
+                                                                    const state = store.getState() as RootState;
+                                                                    return selectOrderProgress(order.order_id)(state);
+                                                                })()}
                                                             </td>
                                                         </tr>
                                                     ))

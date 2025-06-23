@@ -33,9 +33,11 @@ const Navbar = () => {
 
   const isPackerRole = userProfile?.role === 'Packer';
 
+
   // Redirect if a Packer tries to access unauthorized routes directly
   useEffect(() => {
-    if (isPackerRole && pathname && 
+    // Only redirect if we have a user profile and the user is actually a Packer
+    if (userProfile && isPackerRole && pathname && 
         pathname !== '/packing' && 
         pathname !== '/profile' && 
         pathname !== '/' && 
@@ -45,7 +47,7 @@ const Navbar = () => {
       console.log('NavBar - Redirecting Packer from unauthorized path:', pathname);
       router.push('/packing');
     }
-  }, [isPackerRole, pathname, router]);
+  }, [userProfile, isPackerRole, pathname, router]);
 
   return (
     <nav className="shadow-md fixed w-full p-5 z-50 bg-black">
