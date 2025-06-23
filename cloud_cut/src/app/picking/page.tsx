@@ -29,6 +29,8 @@ export default function Picking () {
     const [checkedRetailPacks, setCheckedRetailPacks] = useState<Record<string, boolean>>({});
 
     type RetailPackOrders = { retailPackName: string; orderIds: string[] }[];
+
+    const nonPickingRetailPacks = ['SFP30E', 'SFP50E', 'SFP30P', 'SFP50P', 'SFP30T', 'SFP50T']
     
     
     const orderPriorities = useSelector((state: RootState) =>
@@ -48,7 +50,11 @@ export default function Picking () {
         });
 
         const retailPackItems = allOrderItems.reduce((acc: Record<string, number>, item: OrderItem) => {
-            if (item.item_name.includes('Retail Pack') && !item.picked) {
+            if (
+                item.item_name.includes('Retail Pack') &&
+                !item.picked &&
+                !nonPickingRetailPacks.some(sku => item.sku_id === sku || item.sku_id.includes(sku))
+            ) {
                 acc[item.item_name] = (acc[item.item_name] || 0) + item.quantity;
             }
             return acc;

@@ -145,10 +145,15 @@ export default function Manufacturing() {
       const validMediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
       const isMediumSheet = validMediumSheetPatterns.some(pattern => sku.includes(pattern));
 
+      // Check for specific retail pack SKUs (exact matches only)
+      const validRetailPackSkus = ['SFP30E', 'SFP50E', 'SFP30P', 'SFP50P', 'SFP30T', 'SFP50T'];
+      const isRetailPack = validRetailPackSkus.includes(sku);
+
       // Include items that are either:
       // 1. SFI or SFC items (manufacturing items)
       // 2. Medium sheets with our specific patterns
-      return sku.startsWith('SFI') || sku.startsWith('SFC') || isMediumSheet;
+      // 3. Specific retail pack SKUs
+      return sku.startsWith('SFI') || sku.startsWith('SFC') || isMediumSheet || isRetailPack;
     });
   };
 
@@ -1300,10 +1305,8 @@ export default function Manufacturing() {
               {calculateTotalItems(data.items)}
             </span>
           </td>
-          {/* <td className="px-6 py-4 text-center">
-            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-              {lowestPriority}
-            </span>
+          {/* <td className="px-6 py-4 text-center text-lg font-semibold text-black">
+            {lowestPriority}
           </td> */}
           <td className="px-6 py-4 text-center">0%</td>
           <td className="px-6 py-4 text-center">0 mins</td>

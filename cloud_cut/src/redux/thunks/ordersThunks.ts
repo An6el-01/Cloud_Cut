@@ -508,7 +508,7 @@ export const syncOrders = createAsyncThunk(
                 .from('order_items')
                 .select('*')
                 .in('order_id', orderIds)
-                .or('sku_id.ilike.SFI%,sku_id.ilike.SFC%,sku_id.ilike.SFS%');
+                .or('sku_id.ilike.SFI%,sku_id.ilike.SFC%,sku_id.ilike.SFS%,sku_id.eq.SFP30E,sku_id.eq.SFP50E,sku_id.eq.SFP30P,sku_id.eq.SFP50P,sku_id.eq.SFP30T,sku_id.eq.SFP50T');
 
               if (itemsError) {
                 console.error('Error fetching items for manufacturing check:', itemsError);
@@ -526,11 +526,32 @@ export const syncOrders = createAsyncThunk(
               // Check each order's items and update if all are completed
               const ordersToUpdate = Object.entries(itemsByOrder)
                 .filter(([orderId, items]) => {
-                  // Only include orders that have manufacturing items
-                  const hasManufacturingItems = items.length > 0;
-                  // Check if all items are completed
-                  const allCompleted = items.every(item => item.completed);
-                  return hasManufacturingItems && allCompleted;
+                  // Only include orders that have at least one true manufacturing item (SFI, SFC, SFS)
+                  const hasManufacturingItems = items.some(item => {
+                    const sku = item.sku_id.toUpperCase();
+                    return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFS');
+                  });
+                  
+                  // Check if all manufacturing items are completed
+                  const allManufacturingCompleted = items
+                    .filter(item => {
+                      const sku = item.sku_id.toUpperCase();
+                      return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFS');
+                    })
+                    .every(item => item.completed);
+                  
+                  // Check if order has any retail pack items that should prevent manufacturing
+                  const hasRetailPackItems = items.some(item => {
+                    const sku = item.sku_id.toUpperCase();
+                    const validRetailPackSkus = ['SFP30E', 'SFP50E', 'SFP30P', 'SFP50P', 'SFP30T', 'SFP50T'];
+                    return validRetailPackSkus.includes(sku);
+                  });
+                  
+                  // Only mark as manufactured if:
+                  // 1. Has at least one manufacturing item
+                  // 2. All manufacturing items are completed
+                  // 3. Does NOT have any retail pack items (which should prevent manufacturing)
+                  return hasManufacturingItems && allManufacturingCompleted && !hasRetailPackItems;
                 })
                 .map(([orderId]) => ({
                   order_id: orderId,
@@ -777,14 +798,17 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
       console.log('Filtering orders for manufacturing view. Total orders before filtering:', allOrders.length);
       filteredOrders = allOrders.filter(order => {
         const items = allOrderItemsMap[order.order_id as string] || [];
-        // Check for any manufacturing items (SFI, SFC) or uncompleted medium sheets
+        // Check for any manufacturing items (SFI, SFC) or uncompleted medium sheets or retail pack items
         const hasManufacturingItems = items.some((item: OrderItem) => {
           const isManufacturingItem = item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC');
           const isMediumSheet = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'].some(pattern => 
             item.sku_id.includes(pattern)
           );
-          // Include the item if it's a manufacturing item or an uncompleted medium sheet
-          return isManufacturingItem || (isMediumSheet && !item.completed);
+          // Check for specific retail pack SKUs
+          const validRetailPackSkus = ['SFP30E', 'SFP50E', 'SFP30P', 'SFP50P', 'SFP30T', 'SFP50T'];
+          const isRetailPack = validRetailPackSkus.includes(item.sku_id.toUpperCase());
+          // Include the item if it's a manufacturing item, an uncompleted medium sheet, or a retail pack item
+          return isManufacturingItem || (isMediumSheet && !item.completed) || isRetailPack;
         });
 
         if (!hasManufacturingItems) {
