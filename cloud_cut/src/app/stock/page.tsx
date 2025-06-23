@@ -55,7 +55,9 @@ export default function Stock() {
     const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes'>('2 X 1 Sheets');
     const [showSheetBookingOut, setShowSheetBookingOut] = useState(false);
     const [damageTrackingTab, setDamageTrackingTab] = useState<'Aesthetic' | 'Dimensional'>('Aesthetic');
-    const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets' | 'Packing Boxes'>('2 X 1 Sheets');
+    const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets' | 'Accessories' | 'Inserts'>('2 X 1 Sheets');
+    const [selectedDepth, setSelectedDepth] = useState<'30mm' | '50mm' | '70mm'>('30mm');
+    const [selectedTimeRange, setSelectedTimeRange] = useState<'1 Month' | '6 Months' | '1 Year'>('1 Month');
 
 
     // Check if user has restricted role
@@ -318,6 +320,21 @@ export default function Stock() {
         );
     };
 
+    // Mock data for the bar graph - replace with real data from your backend
+    const getBarGraphData = () => {
+        const colors = ['Blue', 'Green', 'Black', 'Orange', 'Red', 'Teal', 'Yellow', 'Pink', 'Purple', 'Grey'];
+        const mockData = {
+            '30mm': [4, 3, 2, 1, 5, 3, 2, 1, 4, 2],
+            '50mm': [3, 4, 1, 2, 4, 2, 3, 2, 3, 1],
+            '70mm': [2, 2, 3, 4, 3, 1, 1, 3, 2, 2]
+        };
+        
+        return colors.map((color, index) => ({
+            color,
+            value: mockData[selectedDepth][index] || 0
+        }));
+    };
+
     return (
         <div className="min-h-screen">
             {/**NavBar */}
@@ -378,7 +395,7 @@ export default function Stock() {
             {/**Stock Management Tab */}
             {activeTab === 'StockManagement' && (
                 <div className="container mx-auto pt-10 mb-8 p-6 flex justify-center gap-8">
-                {/**Medium Sheet Stock Table */}
+                {/**Stock Table */}
                 <div className="flex-1 max-w-8xl">
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -979,46 +996,68 @@ export default function Stock() {
                                         <option value="Dimensional">Dimensional Damage</option>
                                         <option value="Other">Other</option>
                                     </select>
-                                    <label className="font-semibold text-black mt-2" htmlFor="description">Description:</label>
+                                    <label className="font-semibold text-black mt-2" htmlFor="description">How/What/Why?:</label>
                                     <textarea
                                         id="description"
                                         name="description"
-                                        placeholder="Description..."
+                                        placeholder="Briefly describe the damage and the reason for it..."
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400 h-40 resize-none align-top"
                                         required
-                                        rows={6}
-                                        style={{ verticalAlign: 'top' }}
+                                        rows={12}
+                                        style={{ verticalAlign: 'top', minHeight: '250px' }}
                                     />
                                 </div>
                                 <div className="flex flex-col gap-4">
-                                    <label className="font-semibold text-black" htmlFor="depth">Depth:</label>
-                                    <input
-                                        id="depth"
-                                        name="depth"
-                                        type="text"
-                                        placeholder="Depth..."
+                                    <label className="font-semibold text-black mt-2" htmlFor="damage-date">Date of Damage:</label>
+                                        <input
+                                        id="damage-date"
+                                        name="damage-date"
+                                        type="date"
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
                                         required
-                                    />
+                                        />
+                                    <label className="font-semibold text-black" htmlFor="depth">Depth:</label>
+                                    <select
+                                        id="depth"
+                                        name="depth"
+                                        className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        required
+                                        defaultValue="30mm"
+                                    >
+                                        <option value="30mm">30mm</option>
+                                        <option value="50mm">50mm</option>
+                                        <option value="70mm">70mm</option>
+                                    </select>
                                     <label className="font-semibold text-black mt-2" htmlFor="quantity">Quantity:</label>
                                     <input
                                         id="quantity"
                                         name="quantity"
                                         type="number"
+                                        defaultValue="1"
                                         min="1"
                                         placeholder="Quantity..."
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
                                         required
                                     />
                                     <label className="font-semibold text-black mt-2" htmlFor="colour">Colour:</label>
-                                    <input
+                                    <select
                                         id="colour"
                                         name="colour"
-                                        type="text"
-                                        placeholder="Description..."
                                         className="border border-gray-400 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
                                         required
-                                    />
+                                        defaultValue="Red"
+                                    >
+                                        <option value="Blue">Blue</option>
+                                        <option value="Green">Green</option>
+                                        <option value="Black">Black</option>
+                                        <option value="Orange">Orange</option>
+                                        <option value="Red">Red</option>
+                                        <option value="Teal">Teal</option>
+                                        <option value="Yellow">Yellow</option>
+                                        <option value="Purple">Purple</option>
+                                        <option value="Grey">Grey</option>
+                                    </select>
+                                    
                                 </div>
                             </div>
                             <button
@@ -1035,33 +1074,23 @@ export default function Stock() {
                         <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                             <div className="flex flex-row items-center justify-between w-full">
                                 <h1 className="text-white text-3xl font-semibold flex items-center gap-2">
-                                    {damageTitleTab === '2 X 1 Sheets' ? '2 X 1 Sheets' : 'Medium Sheets'}
+                                    {damageTitleTab}
                                     <button
                                         className="ml-2 p-1 rounded-full hover:bg-gray-700 transition-colors"
-                                        onClick={() => setDamageTitleTab(damageTitleTab === '2 X 1 Sheets' ? 'Medium Sheets' : '2 X 1 Sheets')}
+                                        onClick={() => {
+                                            const tabs = ['2 X 1 Sheets', 'Medium Sheets', 'Accessories', 'Inserts'];
+                                            const currentIdx = tabs.indexOf(damageTitleTab);
+                                            setDamageTitleTab(tabs[(currentIdx + 1) % tabs.length] as typeof damageTitleTab);
+                                        }}
                                         aria-label="Next Title"
                                     >
                                         <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                                     </button>
                                 </h1>
-                                {/* GitHub-style Color Legend to the right of the title */}
-                                <span className="flex flex-row items-center gap-1 bg-transparent">
-                                    <span className="text-xs text-gray-300 select-none">Less</span>
-                                    {[
-                                        'bg-red-100',
-                                        'bg-red-300',
-                                        'bg-red-400',
-                                        'bg-red-500',
-                                        'bg-red-600',
-                                    ].map((color, i) => (
-                                        <div key={i} className={`w-4 h-4 rounded border border-gray-400 ${color}`}></div>
-                                    ))}
-                                    <span className="text-xs text-gray-300 select-none">More</span>
-                                </span>
                             </div>
-                            {/**Navigation Tools */}
-                            <div className="mt-4 mb-2">
-                                <div>
+                            {/**Navigation Tools and Dropdowns */}
+                            <div className="mt-4 mb-2 w-full flex flex-row items-center justify-between gap-4">
+                                <div className="flex flex-row items-center gap-2">
                                     <button
                                         className={`px-4 py-2 text-md font-medium ${damageTrackingTab === 'Aesthetic' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
                                         style={{ marginBottom: '-1px' }}
@@ -1077,56 +1106,72 @@ export default function Stock() {
                                         Dimensional Damage
                                     </button>
                                 </div>
+                                <div className="flex flex-row items-center gap-6">
+                                    {/* Depth Dropdown */}
+                                    <label className="font-semibold text-white whitespace-nowrap" htmlFor="depth-select">Depth:</label>
+                                    <select
+                                        id="depth-select"
+                                        name="depth"
+                                        className="border border-gray-400 rounded-lg px-w px-1 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400 mr-6"
+                                        value={selectedDepth}
+                                        onChange={e => setSelectedDepth(e.target.value as '30mm' | '50mm' | '70mm')}
+                                    >
+                                        <option value="30mm">30mm</option>
+                                        <option value="50mm">50mm</option>
+                                        <option value="70mm">70mm</option>
+                                    </select>
+                                    {/* Time Range Dropdown */}
+                                    <label className="font-semibold text-white whitespace-nowrap" htmlFor="timeRange-select">Time Range:</label>
+                                    <select
+                                        id="timeRange-select"
+                                        name="timeRange"
+                                        className="border border-gray-400 rounded-lg px-3 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        value={selectedTimeRange}
+                                        onChange={e => setSelectedTimeRange(e.target.value as '1 Month' | '6 Months' | '1 Year')}
+                                    >
+                                        <option value="1 Month">1 Month</option>
+                                        <option value="6 Months">6 Months</option>
+                                        <option value="1 Year">1 Year</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
-                        {/**Heat Map Section */}
-                        <div className="rounded-b-xl p-6 flex flex-col md:flex-row items-center gap-8 w-full justify-center flex-1 bg-white">
-                            {/* Heatmap Section: legend, grid, and column labels all aligned */}
-                            <div className="flex flex-col items-center w-fit justify-center flex-1">
-                                {/* Heatmap grid with row labels */}
-                                <div className="grid grid-cols-11 gap-x-2 gap-y-4 w-fit">
-                                    {['30mm','50mm','70mm'].map((size, rowIdx) => {
-                                        const dummy = [
-                                            [4,4,3,2,1,2,4,4,4,3],
-                                            [3,3,2,1,1,2,3,4,4,2],
-                                            [2,2,1,1,0,1,2,3,1,1],
-                                        ];
-                                        const colorMap = [
-                                            'bg-red-100',
-                                            'bg-red-300',
-                                            'bg-red-400',
-                                            'bg-red-500',
-                                            'bg-red-600',
-                                        ];
-                                        const valueMap = ['Very Low', 'Low', 'Medium', 'High', 'Very High'];
-                                        return [
-                                            // Row label
-                                            <span key={size} className="w-12 text-sm font-semibold text-[#2b3544] text-right mr-2 select-none flex items-center justify-end pr-2">{size}</span>,
-                                            // Heatmap squares
-                                            ...dummy[rowIdx].map((intensity, colIdx) => (
-                                                <div
-                                                    key={colIdx}
-                                                    className={`w-10 h-10 ml-1 rounded-lg border border-gray-300 shadow-sm transition-transform duration-150 cursor-pointer ${colorMap[intensity]} hover:scale-110 hover:shadow-lg`}
-                                                    title={`Damage: ${valueMap[intensity]}`}
-                                                    aria-label={`Damage: ${valueMap[intensity]}`}
+                        {/**Bar Graph Section */}
+                        <div className="rounded-b-xl p-6 flex flex-col items-center gap-6 w-full justify-center flex-1 bg-white">
+                            {/* Bar Graph */}
+                            <div className="w-full h-full flex flex-col justify-center items-center">
+                                <div className="w-full flex justify-center mb-6">
+                                    <h3 className="text-2xl font-bold text-gray-800 text-center w-full">
+                                        Damage Frequency by Color: ({selectedDepth} / {selectedTimeRange})
+                                    </h3>
+                                </div>
+                                <div className="flex items-end justify-center gap-6 w-[90%] h-[400px] min-h-[350px] max-w-7xl mx-auto border-b-2 border-gray-300 border-l-2 border-gray-300 relative bg-white">
+                                    {/* Y-axis labels */}
+                                    <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-sm text-gray-500 pr-3 h-full">
+                                        <span>25</span>
+                                        <span>20</span>
+                                        <span>15</span>
+                                        <span>10</span>
+                                        <span>5</span>
+                                        <span>0</span>
+                                    </div>
+                                    <div className="flex flex-1 items-end justify-between w-full h-full pl-10">
+                                        {getBarGraphData().map((item, index) => (
+                                            <div key={item.color} className="flex flex-col items-center gap-2 flex-1">
+                                                {/* Bar */}
+                                                <div 
+                                                    className="w-12 bg-gradient-to-t from-red-400 to-red-600 rounded-t-md transition-all duration-300 hover:from-red-500 hover:to-red-700 cursor-pointer"
+                                                    style={{ height: `${(item.value / 5) * 100}%`, minHeight: '8px' }}
+                                                    title={`${item.color}: ${item.value} damages`}
                                                 ></div>
-                                            ))
-                                        ];
-                                    })}
+                                                {/* X-axis label */}
+                                                <span className="text-sm font-medium text-gray-700 text-center w-full">
+                                                    {item.color}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                                {/* Column Identifiers (Color Names) on Bottom, aligned with grid */}
-                                <div className="grid grid-cols-11 gap-x-[19px] mt-3 w-fit">
-                                    <span></span>
-                                    {['Blue','Green','Black','Orange','Red','Teal','Yellow','Pink','Purple','Grey'].map((color) => (
-                                        <span key={color} className="text-xs font-semibold text-[#2b3544] text-center select-none w-10" style={{minWidth: '2.5rem'}}>{color}</span>
-                                    ))}
-                                </div>
-                            </div>
-                            {/* Time Range Buttons */}
-                            <div className="flex flex-col gap-3 ml-0 md:ml-8 mt-8 md:mt-0 items-center w-full max-w-[120px]">
-                                <button className="px-4 py-2 rounded-full border border-gray-300 bg-red-200 text-[#2b3544] text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-red-300 transition-all duration-150 hover:bg-red-300 w-full">Month</button>
-                                <button className="px-4 py-2 rounded-full border border-gray-300 bg-white text-[#2b3544] text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 transition-all duration-150 hover:bg-gray-100 w-full">6 Months</button>
-                                <button className="px-4 py-2 rounded-full border border-gray-300 bg-white text-[#2b3544] text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 transition-all duration-150 hover:bg-gray-100 w-full">Year</button>
                             </div>
                         </div>
                     </div>

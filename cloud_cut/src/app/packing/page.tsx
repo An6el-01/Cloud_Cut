@@ -361,7 +361,7 @@ export default function Packing() {
             ordersSubscription.unsubscribe();
             itemsSubscription.unsubscribe();
         }
-    }, [currentPage]);
+    }, [dispatch, currentPage, ordersPerPage]);
 
     useEffect(() => {
         const initialize = async () => {

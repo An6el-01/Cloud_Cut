@@ -2077,14 +2077,6 @@ export default function Manufacturing() {
                                         >
                                           {orderIndex + 1}
                                         </text>
-                                        {/* Debug marker at placement point */}
-                                        <circle
-                                          cx={part.x}
-                                          cy={part.y}
-                                          r={20}
-                                          fill="red"
-                                          opacity={0.5}
-                                        />
                                       </>
                                     );
                                   })}
