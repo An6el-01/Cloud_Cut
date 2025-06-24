@@ -339,7 +339,6 @@ export async function fetchInventory(
   }
 }
 
-
 export async function bookOutStock(
   inventoryId: number,
   quantity: number,
@@ -366,7 +365,7 @@ export async function bookOutStock(
         },
         body: JSON.stringify({
           operator: 'decrease',
-          locationId: 0,
+          location_id: 1,
           quantity: quantity,
           note: 'API TEST',
           auto_allocate: 1
@@ -445,58 +444,25 @@ export async function updateStockItem(
     }
 
     console.log('request url:', url);
+    console.log('newStockLevel:', payload.stock_level);
 
     const response = await fetchWithAuth<any>(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`,
+        'Accept': 'application/json',
       },
       body: JSON.stringify({
-        operator,
-        locationId,
-        quantity,
+        operator: 'set',
+        location_id: locationId,
+        quantity: payload.stock_level,
         note: 'API TEST',
-        auto_allocate: 1
+        auto_allocate: 0
       }),
     });
 
     console.log('Stock update response:', response);
-
-    // // Optionally, fetch the updated item to verify the change
-    // const verifyUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}`;
-    // const verifyResponse = await fetchWithAuth<any>(verifyUrl);
-    // console.log('Verification response:', verifyResponse);
-
-    // // Compare stock levels as numbers
-    // const expectedStockLevel = Object.values(payload)[0];
-    // let actualStockLevel;
-    // if (payload.stock_level_global_available !== undefined) {
-    //   actualStockLevel = typeof verifyResponse.stock_level_global_available === 'string'
-    //     ? parseInt(verifyResponse.stock_level_global_available)
-    //     : verifyResponse.stock_level_global_available;
-    // } else if (payload.stock_level_available !== undefined) {
-    //   actualStockLevel = typeof verifyResponse.stock_level_available === 'string'
-    //     ? parseInt(verifyResponse.stock_level_available)
-    //     : verifyResponse.stock_level_available;
-    // } else if (payload.stock_level !== undefined) {
-    //   actualStockLevel = typeof verifyResponse.stock_level === 'string'
-    //     ? parseInt(verifyResponse.stock_level)
-    //     : verifyResponse.stock_level;
-    // }
-
-    // console.log('Stock level comparison:', {
-    //   expected: expectedStockLevel,
-    //   actual: actualStockLevel,
-    //   types: {
-    //     expected: typeof expectedStockLevel,
-    //     actual: typeof actualStockLevel
-    //   }
-    // });
-
-    // if (expectedStockLevel !== undefined && actualStockLevel !== expectedStockLevel) {
-    //   throw new Error(`Stock level update verification failed. Expected: ${expectedStockLevel}, Got: ${actualStockLevel}`);
-    // }
 
     return itemUrlResponse;
   } catch (error) {

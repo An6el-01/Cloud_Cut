@@ -1424,7 +1424,6 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
     this.nfpCache = nfpCache;
     this.polygonOffset = polygonOffset;
 
-
     // Ensure polygonOffset is a function
     if (typeof this.polygonOffset !== 'function') {
         console.warn('polygonOffset is not a function, creating default implementation');
@@ -1438,17 +1437,49 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
 
     // Deep clone the initial parts for each individual
     const initialPlacement = adam.map(deepClonePart);
-    var angles = [];
-    for (var i = 0; i < adam.length; i++) {
-        var angle = 
-            Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
-        angles.push(angle);
+    
+    // Group parts by order_id to ensure consistent rotation within orders
+    const orderGroups = new Map();
+    for (let i = 0; i < initialPlacement.length; i++) {
+        const part = initialPlacement[i];
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        
+        if (!orderGroups.has(orderId)) {
+            orderGroups.set(orderId, []);
+        }
+        orderGroups.get(orderId).push(i);
     }
+    
+    // Assign rotations at the order level (all parts in same order get same rotation)
+    var angles = [];
+    for (var i = 0; i < initialPlacement.length; i++) {
+        angles.push(0); // Initialize all to 0
+    }
+    
+    // Assign random rotation to each order group
+    for (const [orderId, partIndices] of orderGroups) {
+        let orderRotation;
+        if (Array.isArray(this.config.rotations)) {
+            // Pick a random value from the array
+            orderRotation = this.config.rotations[Math.floor(Math.random() * this.config.rotations.length)];
+        } else {
+            // Assume it's a number
+            orderRotation = Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
+        }
+        for (const partIndex of partIndices) {
+            angles[partIndex] = orderRotation;
+        }
+        console.log(`[GA DEBUG] Order ${orderId} assigned rotation ${orderRotation}° for ${partIndices.length} parts`);
+    }
+    
     this.population = [{ placement: initialPlacement, rotation: angles }];
     while (this.population.length < this.config.populationSize) {
         var mutant = this.mutate(this.population[0]);
         this.population.push(mutant);
     }
+    
+    // Test rotation consistency functionality
+    this.testRotationConsistency();
 }
 
 //returns a mutated individual with the given mutation rate
@@ -1458,6 +1489,19 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
         placement: individual.placement.map(deepClonePart),
         rotation: individual.rotation.slice(0), 
     };
+    
+    // Group parts by order_id for rotation consistency
+    const orderGroups = new Map();
+    for (let i = 0; i < clone.placement.length; i++) {
+        const part = clone.placement[i];
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        
+        if (!orderGroups.has(orderId)) {
+            orderGroups.set(orderId, []);
+        }
+        orderGroups.get(orderId).push(i);
+    }
+    
     for (var i = 0; i < clone.placement.length; i++) {
         var rand = Math.random();
         if (rand < 0.01 * this.config.mutationRate) {
@@ -1469,12 +1513,38 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
                 clone.placement[j] = temp;
             }
         }
+        
+        // Check if this part should have its rotation mutated
         rand = Math.random();
         if (rand < 0.01 * this.config.mutationRate) {
-            clone.rotation[i] = 
-                Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
+            // Find the order_id for this part
+            const part = clone.placement[i];
+            const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+            
+            // Get all parts in the same order
+            const orderPartIndices = orderGroups.get(orderId) || [];
+            
+            // Generate new rotation for the entire order
+            let newOrderRotation;
+            if (Array.isArray(this.config.rotations)) {
+                newOrderRotation = this.config.rotations[Math.floor(Math.random() * this.config.rotations.length)];
+            } else {
+                newOrderRotation = Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
+            }
+            
+            // Apply the same rotation to all parts in this order
+            for (const partIndex of orderPartIndices) {
+                clone.rotation[partIndex] = newOrderRotation;
+            }
+            
+            console.log(`[GA MUTATE] Order ${orderId} rotation mutated to ${newOrderRotation}° for ${orderPartIndices.length} parts`);
         }
     }
+    
+    // Validate and enforce rotation consistency
+    this.enforceRotationConsistency(clone);
+    this.validateRotationConsistency(clone);
+    
     return clone;
 };
 
@@ -1492,6 +1562,33 @@ GeneticAlgorithm.prototype.mate = function (male, female) {
 
     var i;
 
+    // Helper function to get order_id from a part
+    const getOrderId = (part) => part.source?.orderId || part.source?.order_id || 'unknown';
+    
+    // Helper function to normalize rotations for an order group
+    const normalizeOrderRotations = (parts, rotations) => {
+        const orderGroups = new Map();
+        
+        // Group parts by order_id
+        for (let i = 0; i < parts.length; i++) {
+            const orderId = getOrderId(parts[i]);
+            if (!orderGroups.has(orderId)) {
+                orderGroups.set(orderId, []);
+            }
+            orderGroups.get(orderId).push(i);
+        }
+        
+        // Ensure all parts in the same order have the same rotation
+        for (const [orderId, partIndices] of orderGroups) {
+            if (partIndices.length > 0) {
+                const firstRotation = rotations[partIndices[0]];
+                for (const partIndex of partIndices) {
+                    rotations[partIndex] = firstRotation;
+                }
+            }
+        }
+    };
+
     for (i = 0; i < female.placement.length; i++) {
         if (!contains(gene1, female.placement[i].id)) {
             gene1.push(female.placement[i]);
@@ -1506,6 +1603,19 @@ GeneticAlgorithm.prototype.mate = function (male, female) {
         }
     }
 
+    // Normalize rotations to ensure consistency within orders
+    normalizeOrderRotations(gene1, rot1);
+    normalizeOrderRotations(gene2, rot2);
+
+    // Validate rotation consistency
+    const child1 = { placement: gene1, rotation: rot1 };
+    const child2 = { placement: gene2, rotation: rot2 };
+    
+    this.enforceRotationConsistency(child1);
+    this.enforceRotationConsistency(child2);
+    this.validateRotationConsistency(child1);
+    this.validateRotationConsistency(child2);
+
     function contains(gene, id) {
         for (var i = 0; i < gene.length; i++) {
             if (gene[i].id == id) {
@@ -1515,10 +1625,7 @@ GeneticAlgorithm.prototype.mate = function (male, female) {
         return false;
     }
 
-    return [
-        { placement: gene1, rotation: rot1 },
-        { placement: gene2, rotation: rot2 },
-    ];
+    return [child1, child2];
 };
 
 GeneticAlgorithm.prototype.generation = function () {
@@ -1544,6 +1651,13 @@ GeneticAlgorithm.prototype.generation = function () {
             newpopulation.push(this.mutate(children[1]));
         }
     }
+    
+    // Validate rotation consistency for the entire new population
+    for (let individual of newpopulation) {
+        this.enforceRotationConsistency(individual);
+        this.validateRotationConsistency(individual);
+    }
+    
     this.population = newpopulation;
 };
 
@@ -1573,6 +1687,14 @@ GeneticAlgorithm.prototype.randomWeightedIndividual = function (exclude) {
 };
 
 GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
+    // --- SYNC ROTATION ARRAY TO PART OBJECTS ---
+    for (let i = 0; i < individual.placement.length; i++) {
+        individual.placement[i].rotation = individual.rotation[i];
+    }
+
+    // Validate rotation consistency before evaluation
+    this.enforceRotationConsistency(individual);
+    this.validateRotationConsistency(individual);
 
     // Filter out invalid parts
     const validPlacement = individual.placement.filter(p => {
@@ -1620,6 +1742,52 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
                 part.y = placed.y;
                 part.rotation = placed.rotation;
             }
+        }
+    }
+
+    // --- POST-PLACEMENT VALIDATION: Ensure all parts are within binPolygon ---
+    function rotatePolygon(polygon, degrees) {
+        var rotated = [];
+        var angle = (degrees * Math.PI) / 180;
+        for (var i = 0; i < polygon.length; i++) {
+            var x = polygon[i].x;
+            var y = polygon[i].y;
+            var x1 = x * Math.cos(angle) - y * Math.sin(angle);
+            var y1 = x * Math.sin(angle) + y * Math.cos(angle);
+            rotated.push({ x: x1, y: y1 });
+        }
+        return rotated;
+    }
+    function pointInPolygon(point, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            if (((polygon[i].y > point.y) !== (polygon[j].y > point.y)) &&
+                (point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+    function isPartWithinBin(part, binPolygon) {
+        const rotated = rotatePolygon(part.polygons[0], part.rotation || 0);
+        const translated = rotated.map(pt => ({
+            x: pt.x + (part.x || 0),
+            y: pt.y + (part.y || 0)
+        }));
+        return translated.every(pt => pointInPolygon(pt, binPolygon));
+    }
+    if (result && result.success && result.placements) {
+        const binPoly = Array.isArray(this.config.binPolygon) ? this.config.binPolygon : (this.config.binPolygon?.polygons?.[0] || []);
+        let outOfBounds = false;
+        for (const placed of result.placements) {
+            if (!isPartWithinBin(placed, binPoly)) {
+                outOfBounds = true;
+                console.warn(`[GA VALIDATION] Part ${placed.id} is out of bin bounds!`);
+                break;
+            }
+        }
+        if (outOfBounds) {
+            return Number.MAX_VALUE; // Reject this solution
         }
     }
 
@@ -1756,8 +1924,129 @@ GeneticAlgorithm.prototype.run = async function() {
         }
     }
     
-    // Return the best result found
-    return this.population.reduce((best, current) => {
+    // Get the best result found
+    const bestResult = this.population.reduce((best, current) => {
         return (!best || current.fitness < best.fitness) ? current : best;
     }, null);
+    
+    // Debug the rotation assignments for the best result
+    if (bestResult) {
+        console.log('[GA FINAL] Best individual rotation assignments:');
+        this.debugRotationAssignments(bestResult);
+    }
+    
+    return bestResult;
+};
+
+// Helper function to validate rotation consistency within orders
+GeneticAlgorithm.prototype.validateRotationConsistency = function(individual) {
+    const orderRotations = new Map();
+    let isValid = true;
+    
+    for (let i = 0; i < individual.placement.length; i++) {
+        const part = individual.placement[i];
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        const rotation = individual.rotation[i];
+        
+        if (!orderRotations.has(orderId)) {
+            orderRotations.set(orderId, rotation);
+        } else if (orderRotations.get(orderId) !== rotation) {
+            console.warn(`[GA VALIDATION] Inconsistent rotation for order ${orderId}: expected ${orderRotations.get(orderId)}, got ${rotation}`);
+            isValid = false;
+        }
+    }
+    
+    if (!isValid) {
+        console.error('[GA VALIDATION] Rotation consistency validation failed!');
+    }
+    
+    return isValid;
+};
+
+// Helper function to enforce rotation consistency within orders
+GeneticAlgorithm.prototype.enforceRotationConsistency = function(individual) {
+    const orderGroups = new Map();
+    
+    // Group parts by order_id
+    for (let i = 0; i < individual.placement.length; i++) {
+        const part = individual.placement[i];
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        
+        if (!orderGroups.has(orderId)) {
+            orderGroups.set(orderId, []);
+        }
+        orderGroups.get(orderId).push(i);
+    }
+    
+    // Ensure all parts in the same order have the same rotation
+    for (const [orderId, partIndices] of orderGroups) {
+        if (partIndices.length > 0) {
+            const firstRotation = individual.rotation[partIndices[0]];
+            for (const partIndex of partIndices) {
+                individual.rotation[partIndex] = firstRotation;
+            }
+        }
+    }
+    
+    return individual;
+};
+
+// Helper function to debug rotation assignments
+GeneticAlgorithm.prototype.debugRotationAssignments = function(individual) {
+    const orderRotations = new Map();
+    
+    for (let i = 0; i < individual.placement.length; i++) {
+        const part = individual.placement[i];
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        const rotation = individual.rotation[i];
+        
+        if (!orderRotations.has(orderId)) {
+            orderRotations.set(orderId, { rotation, parts: [] });
+        }
+        orderRotations.get(orderId).parts.push({
+            id: part.id,
+            sku: part.source?.sku || 'unknown',
+            rotation
+        });
+    }
+    
+    console.log('[GA DEBUG] Rotation assignments by order:');
+    for (const [orderId, data] of orderRotations) {
+        console.log(`  Order ${orderId}: ${data.rotation}° (${data.parts.length} parts)`);
+        data.parts.forEach(part => {
+            console.log(`    - ${part.sku} (${part.id}): ${part.rotation}°`);
+        });
+    }
+};
+
+// Test function to verify rotation consistency
+GeneticAlgorithm.prototype.testRotationConsistency = function() {
+    console.log('[GA TEST] Testing rotation consistency...');
+    
+    // Create a test individual with multiple orders
+    const testIndividual = {
+        placement: [
+            { id: 'part1', source: { orderId: 'order1', sku: 'SKU1' } },
+            { id: 'part2', source: { orderId: 'order1', sku: 'SKU2' } },
+            { id: 'part3', source: { orderId: 'order2', sku: 'SKU3' } },
+            { id: 'part4', source: { orderId: 'order2', sku: 'SKU4' } },
+            { id: 'part5', source: { orderId: 'order1', sku: 'SKU5' } }
+        ],
+        rotation: [0, 90, 180, 270, 45] // Inconsistent rotations
+    };
+    
+    console.log('[GA TEST] Before enforcement:');
+    this.debugRotationAssignments(testIndividual);
+    
+    // Test enforcement
+    this.enforceRotationConsistency(testIndividual);
+    
+    console.log('[GA TEST] After enforcement:');
+    this.debugRotationAssignments(testIndividual);
+    
+    // Test validation
+    const isValid = this.validateRotationConsistency(testIndividual);
+    console.log(`[GA TEST] Validation result: ${isValid ? 'PASS' : 'FAIL'}`);
+    
+    return isValid;
 };

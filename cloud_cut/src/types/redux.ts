@@ -113,6 +113,7 @@ export interface NestingPlacement {
     sheet: number;
     sheetid: string;
     parts: NestingPart[];
+    binPolygon?: { x: number, y: number }[];
 }
 
 export interface NestingResult {

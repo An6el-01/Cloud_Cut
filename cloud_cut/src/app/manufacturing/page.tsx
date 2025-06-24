@@ -68,6 +68,7 @@ export default function Manufacturing() {
     'Orders Queue'
   );
   const [nestingQueueData, setNestingQueueData] = useState<Record<string, ProcessedNestingData>>({});
+  const [nestingLoading, setNestingLoading] = useState(false);
 
   const [hoveredInsert, setHoveredInsert] = useState<{
     partKey: string;
@@ -1085,81 +1086,93 @@ export default function Manufacturing() {
   const handleTriggerNesting = async () => {
     console.log('handleTriggerNesting');
     
-    // Get all orders with manufacturing items
-    const manufacturingOrders = orders.filter((order: Order) => {
-      const items = orderItemsById[order.order_id] || [];
-      return items.some(item => item.sku_id.startsWith('SFI') && !item.completed);
-    });
+    // Set loading state
+    setIsNesting(true);
+    setNestingLoading(true);
+    
+    try {
+      // Get all orders with manufacturing items
+      const manufacturingOrders = orders.filter((order: Order) => {
+        const items = orderItemsById[order.order_id] || [];
+        return items.some(item => item.sku_id.startsWith('SFI') && !item.completed);
+      });
 
-    // Create a map to store items by foam sheet
-    const itemsByFoamSheet: Record<string, NestingItem[]> = {};
+      // Create a map to store items by foam sheet
+      const itemsByFoamSheet: Record<string, NestingItem[]> = {};
 
-    // Process each order
-    manufacturingOrders.forEach((order: Order) => {
-      const items = orderItemsById[order.order_id] || [];
-      
-      // Filter for SFI items that aren't completed
-      const manufacturingItems = items.filter(item => 
-        item.sku_id.startsWith('SFI') && !item.completed
-      );
+      // Process each order
+      manufacturingOrders.forEach((order: Order) => {
+        const items = orderItemsById[order.order_id] || [];
+        
+        // Filter for SFI items that aren't completed
+        const manufacturingItems = items.filter(item => 
+          item.sku_id.startsWith('SFI') && !item.completed
+        );
 
-      // Group items by foam sheet
-      manufacturingItems.forEach(item => {
-        if (!itemsByFoamSheet[item.foamsheet]) {
-          itemsByFoamSheet[item.foamsheet] = [];
-        }
+        // Group items by foam sheet
+        manufacturingItems.forEach(item => {
+          if (!itemsByFoamSheet[item.foamsheet]) {
+            itemsByFoamSheet[item.foamsheet] = [];
+          }
 
-        itemsByFoamSheet[item.foamsheet].push({
-          sku: item.sku_id,
-          itemName: item.item_name,
-          quantity: item.quantity,
-          orderId: order.order_id,
-          customerName: order.customer_name,
-          priority: item.priority,
-          svgUrl: ['noMatch']
+          itemsByFoamSheet[item.foamsheet].push({
+            sku: item.sku_id,
+            itemName: item.item_name,
+            quantity: item.quantity,
+            orderId: order.order_id,
+            customerName: order.customer_name,
+            priority: item.priority,
+            svgUrl: ['noMatch']
+          });
         });
       });
-    });
 
-    // Log the organized data
-    console.log('Items have been organized by foam sheet');
+      // Log the organized data
+      console.log('Items have been organized by foam sheet');
 
-    // Process each foam sheet's items to add SVG URLs and run nesting
-    const processedItemsByFoamSheet: Record<string, ProcessedNestingData> = {};
-    const nestingProcessor = new NestingProcessor();
-    
-    for (const [foamSheet, items] of Object.entries(itemsByFoamSheet)) {
-      try {
-        // First fetch SVGs
-        const itemsWithSvgs = await fetchSvgFiles(items);
-        
-        // Then run nesting
-        const nestingResult = await nestingProcessor.processNesting(itemsWithSvgs);
-        
-        // Store both items and nesting result
-        processedItemsByFoamSheet[foamSheet] = {
-          items: itemsWithSvgs,
-          nestingResult: nestingResult
-        };
-      } catch (error) {
-        console.error(`Error processing foam sheet ${foamSheet}:`, error);
-        // If there's an error, use the original items with no nesting result
-        processedItemsByFoamSheet[foamSheet] = {
-          items: items.map(item => ({
-          ...item,
-          svgUrl: ['noMatch']
-          })),
-          nestingResult: null
-        };
+      // Process each foam sheet's items to add SVG URLs and run nesting
+      const processedItemsByFoamSheet: Record<string, ProcessedNestingData> = {};
+      const nestingProcessor = new NestingProcessor();
+      
+      for (const [foamSheet, items] of Object.entries(itemsByFoamSheet)) {
+        try {
+          // First fetch SVGs
+          const itemsWithSvgs = await fetchSvgFiles(items);
+          
+          // Then run nesting
+          const nestingResult = await nestingProcessor.processNesting(itemsWithSvgs);
+          
+          // Store both items and nesting result
+          processedItemsByFoamSheet[foamSheet] = {
+            items: itemsWithSvgs,
+            nestingResult: nestingResult
+          };
+        } catch (error) {
+          console.error(`Error processing foam sheet ${foamSheet}:`, error);
+          // If there's an error, use the original items with no nesting result
+          processedItemsByFoamSheet[foamSheet] = {
+            items: items.map(item => ({
+            ...item,
+            svgUrl: ['noMatch']
+            })),
+            nestingResult: null
+          };
+        }
       }
+
+      // Set the state with the processed nesting queue data
+      setNestingQueueData(processedItemsByFoamSheet as Record<string, ProcessedNestingData>);
+      console.log('Processed nesting queue data with SVGs and nesting results:', processedItemsByFoamSheet);
+
+      // Return the processed data
+      return processedItemsByFoamSheet;
+    } catch (error) {
+      console.error('Error in handleTriggerNesting:', error);
+    } finally {
+      // Clear loading states
+      setIsNesting(false);
+      setNestingLoading(false);
     }
-
-    // Set the state with the processed nesting queue data
-    setNestingQueueData(processedItemsByFoamSheet as Record<string, ProcessedNestingData>);
-    console.log('Processed nesting queue data with SVGs and nesting results:', processedItemsByFoamSheet);
-
-    // Return the processed data
-    return processedItemsByFoamSheet;
   }
 
   // Function that fetches the svg files from the storage bucket depending on the sku
@@ -1669,13 +1682,13 @@ export default function Manufacturing() {
                       {/** Nesting Button */}
                       <button
                         onClick={async () => Sentry.startSpan({
-                          name: 'handleExportCSV-Orders',
+                          name: 'handleTriggerNesting-Orders',
                         }, async () => {
                           handleTriggerNesting();
                         })}
                         className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
                         disabled={isNesting || orders.length === 0}
-                        aria-label={isNesting ? "Nesting orders..." : "Start Nesting"}
+                        aria-label={isNesting ? "Processing nesting..." : "Start Nesting"}
                       >
                         <span className={`${isNesting ? "animate-spin" : ""} text-white`}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1690,7 +1703,7 @@ export default function Manufacturing() {
                             <path d="M16.95 7.05l2.12-2.12" />
                           </svg>
                         </span>
-                        <span>{isExporting ? "Nesting..." : "Start Nesting"}</span>
+                        <span>{isNesting ? "Processing..." : "Start Nesting"}</span>
                       </button>
                     </div>
                   </div>
@@ -1966,7 +1979,13 @@ export default function Manufacturing() {
                   </h1>
                 </div>
                 <div className="h-full overflow-y-auto">
-                  {selectedNestingRow ? (
+                  {nestingLoading ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                      <div className="w-12 h-12 rounded-full border-4 border-gray-600 border-t-purple-500 animate-spin mb-4"></div>
+                      <p className="text-lg font-medium">Processing Nesting...</p>
+                      <p className="text-sm mt-1">Calculating optimal cuts and generating visualization</p>
+                    </div>
+                  ) : selectedNestingRow ? (
                     (() => {
                       // Get all parts for the current placement
                       const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
@@ -1987,7 +2006,7 @@ export default function Manufacturing() {
                       const PADDING = 10; // 10mm padding
                       const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
                       const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
-                      const viewBox = `-${PADDING} -${PADDING} ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
+                      const viewBox = `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
                       // Compute bounding box of all points
                       let minX = Math.min(...allPoints.map(p => p.x));
                       let minY = Math.min(...allPoints.map(p => p.y));
@@ -2007,11 +2026,36 @@ export default function Manufacturing() {
                         <div ref={svgContainerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
                           <svg
                             ref={svgRef}
+                            width="100%"
+                            height="100%"
                             viewBox={viewBox}
-                            className="w-full h-full"
-                            style={{ backgroundColor: '#000000', border: '1px solid #ffffff', display: 'block' }}
+                            style={{ background: '#18181b', borderRadius: 12, width: '100%', height: '100%' }}
                           >
-                            {/* Flip y-axis so (0,0) is bottom-left */}
+                            {/* Render algorithm binPolygon as a green background if available */}
+                            {(() => {
+                              // Try to get the actual binPolygon from the nesting result
+                              const placements = nestingQueueData[selectedNestingRow as string]?.nestingResult?.placements;
+                              const binPoly = placements && placements.length > 0 && placements[0].binPolygon
+                                ? placements[0].binPolygon
+                                : null;
+                              // Fallback to config binPolygon
+                              const fallbackBin = [
+                                { x: PADDING, y: PADDING },
+                                { x: 1000 + PADDING, y: PADDING },
+                                { x: 1000 + PADDING, y: 2000 + PADDING },
+                                { x: PADDING, y: 2000 + PADDING },
+                                { x: PADDING, y: PADDING }
+                              ];
+                              const poly = binPoly && Array.isArray(binPoly) && binPoly.length >= 4 ? binPoly : fallbackBin;
+                              const pointsStr = poly.map(pt => `${pt.x},${pt.y}`).join(' ');
+                              return (
+                                <polygon
+                                  points={pointsStr}
+                                  fill="green"
+                                  opacity="0.2"
+                                />
+                              );
+                            })()}
                             <g transform={`scale(1,-1) translate(0, -${VIEWBOX_HEIGHT})`}>
                               {nestingQueueData[selectedNestingRow as string].nestingResult?.placements.map((placement: NestingPlacement, placementIndex: number) => (
                                 <g key={placementIndex}>
@@ -2037,9 +2081,9 @@ export default function Manufacturing() {
                                       const angle = (part.rotation || 0) * Math.PI / 180;
                                       const cos = Math.cos(angle);
                                       const sin = Math.sin(angle);
-                                      let x = pt.x * cos - pt.y * sin + (part.x || 0);
-                                      let y = pt.x * sin + pt.y * cos + (part.y || 0);
-                                      return { x, y: y };
+                                      let x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
+                                      let y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
+                                      return { x, y };
                                     });
                                     const points = pointsArr.map(pt => `${pt.x},${pt.y}`).join(' ');
                                     // Unique key for this part

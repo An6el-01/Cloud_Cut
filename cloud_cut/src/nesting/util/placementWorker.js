@@ -324,9 +324,15 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
     }
 
     // Convert pickBottomLeftPoint to a method of PlacementWorker
-    this.pickBottomLeftPoint = function(polygons) {
+    // Accepts: polygons (valid region polygons), partPolygon (the part's polygon, already rotated), returns a valid placement point
+    this.pickBottomLeftPoint = function(polygons, partPolygon) {
         if (!polygons || polygons.length === 0) {
             console.warn('[PLACE DEBUG] No polygons provided to pickBottomLeftPoint');
+            return null;
+        }
+
+        if (!partPolygon || partPolygon.length === 0) {
+            console.warn('[PLACE DEBUG] No part polygon provided to pickBottomLeftPoint');
             return null;
         }
 
@@ -345,77 +351,69 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             return null;
         }
 
-        // Find the bottom-left point
-        let best = allPoints[0];
-        let minX = best.x;
-        let minY = best.y;
-
-        allPoints.forEach(pt => {
-            if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
-                minX = pt.x;
-                minY = pt.y;
-                best = pt;
+        // Helper: Check if the translated partPolygon (placed with its bottom-left at pt) is fully inside the binPolygon
+        const isPartFullyInsideBin = (pt, binPolygon) => {
+            // Find the bottom-left of the partPolygon
+            let minX = Infinity, minY = Infinity;
+            for (const p of partPolygon) {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
             }
-        });
-        
-        // Validate that the picked point is within bin bounds
-        if (best && this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0]) {
-            const binPolygon = this.binPolygon.polygons[0];
-            if (pointInPolygon(best, binPolygon)) {
-                console.log(`[PLACE DEBUG] Picked valid point (${best.x}, ${best.y}) inside bin polygon`);
-                return best;
-            } else {
-                console.warn(`[PLACE DEBUG] Picked point (${best.x}, ${best.y}) is outside bin polygon, finding alternative`);
+            // Compute translation vector
+            const dx = pt.x - minX;
+            const dy = pt.y - minY;
+            // Check all translated points
+            for (const p of partPolygon) {
+                const tx = p.x + dx;
+                const ty = p.y + dy;
+                if (!pointInPolygon({ x: tx, y: ty }, binPolygon)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        // Find the bottom-left point that keeps the part fully inside the binPolygon
+        let best = null;
+        let minX = Infinity;
+        let minY = Infinity;
+        const binPolygon = this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0] ? this.binPolygon.polygons[0] : null;
+        for (const pt of allPoints) {
+            if (!binPolygon || isPartFullyInsideBin(pt, binPolygon)) {
+                if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
+                    minX = pt.x;
+                    minY = pt.y;
+                    best = pt;
+                }
             }
         }
-        
-        // If bottom-left point is outside bounds, find the best point within bounds
-        if (this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0]) {
-            const binPolygon = this.binPolygon.polygons[0];
-            let bestInBounds = null;
-            let bestDistance = Infinity;
-            
+        if (best) {
+            if (binPolygon && !isPartFullyInsideBin(best, binPolygon)) {
+                console.warn(`[PLACE DEBUG] Picked point (${best.x}, ${best.y}) is not fully inside bin polygon, skipping`);
+            } else {
+                console.log(`[PLACE DEBUG] Picked valid point (${best.x}, ${best.y}) with part fully inside bin polygon`);
+                return best;
+            }
+        }
+        // If no valid point found, fallback to previous logic (try to find any point in bin, or (0,0))
+        if (binPolygon) {
             for (const pt of allPoints) {
                 if (pointInPolygon(pt, binPolygon)) {
-                    // Calculate distance from origin (0,0) - prefer points closer to origin
-                    const distance = Math.sqrt(pt.x * pt.x + pt.y * pt.y);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        bestInBounds = pt;
+                    if (isPartFullyInsideBin(pt, binPolygon)) {
+                        console.log(`[PLACE DEBUG] Found alternative point (${pt.x}, ${pt.y}) with part fully inside bin polygon`);
+                        return pt;
                     }
                 }
             }
-            
-            if (bestInBounds) {
-                console.log(`[PLACE DEBUG] Found alternative point (${bestInBounds.x}, ${bestInBounds.y}) within bin bounds`);
-                return bestInBounds;
-            }
-        }
-        
-        // If no valid point found, forcibly use (0,0) if inside bin, else the lowest point in bin
-        if (this.binPolygon && this.binPolygon.polygons && this.binPolygon.polygons[0]) {
-            const binPolygon = this.binPolygon.polygons[0];
+            // Try (0,0)
             const origin = { x: 0, y: 0 };
-            if (pointInPolygon(origin, binPolygon)) {
-                console.warn(`[PLACE DEBUG] Forcibly using (0,0) as placement point`);
+            if (isPartFullyInsideBin(origin, binPolygon)) {
+                console.warn(`[PLACE DEBUG] Forcibly using (0,0) as placement point (part fully inside bin)`);
                 return origin;
             }
-            // Otherwise, pick the lowest y, then lowest x point in the bin
-            let minY = Infinity, minX = Infinity, lowest = null;
-            for (const pt of binPolygon) {
-                if (pt.y < minY || (pt.y === minY && pt.x < minX)) {
-                    minY = pt.y;
-                    minX = pt.x;
-                    lowest = pt;
-                }
-            }
-            if (lowest) {
-                console.warn(`[PLACE DEBUG] Forcibly using lowest point in bin (${lowest.x}, ${lowest.y})`);
-                return lowest;
-            }
         }
-        console.warn(`[PLACE DEBUG] No valid point found, using fallback (0,0)`);
-        return { x: 0, y: 0 };
+        console.warn(`[PLACE DEBUG] No valid placement point found that keeps part fully inside bin polygon, returning null`);
+        return null;
     };
 
     function precomputeBinNfps(parts, binPolygon, rotations, config, nfpCache) {
@@ -633,7 +631,7 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                     validRegion = [validRegion];
                 }
 
-                const placementPoint = this.pickBottomLeftPoint(validRegion);
+                const placementPoint = this.pickBottomLeftPoint(validRegion, part.polygons[0]);
                 if (placementPoint) {
                     console.log(`[PLACE DEBUG] Placed part ${part.id} at (${placementPoint.x}, ${placementPoint.y})`);
                     part.x = placementPoint.x;

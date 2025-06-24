@@ -197,7 +197,7 @@ export default function Stock() {
                 // Find the corresponding DespatchCloud inventory item (by id)
                 // We already have editingItem.id, which should match the inventoryId in DespatchCloud
                 if (typeof editingItem.id === 'number') {
-                    await updateStockItem(editingItem.id,{stock_level: editValue.toString()}, 0);
+                    await updateStockItem(editingItem.id,{stock_level: editValue.toString()}, 1);
                     console.log('Successfully updated DespatchCloud inventory');
                 } else {
                     // Fallback: fetch id from Supabase if not present
@@ -207,7 +207,7 @@ export default function Stock() {
                     .eq('sku', editingItem.sku)
                     .single();
                 if (inventoryItem && typeof inventoryItem.id === 'number') {
-                    await updateStockItem(inventoryItem.id, {                        stock_level: editValue.toString()
+                    await updateStockItem(inventoryItem.id, { stock_level: editValue.toString()
                     }, 0,
                     );
                         console.log('Successfully updated DespatchCloud inventory (fallback)');

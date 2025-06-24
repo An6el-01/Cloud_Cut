@@ -2078,7 +2078,7 @@ module.exports = {
         rotated.push({ x: x1, y: y1 });
       }
       // reset bounding box
-      var bounds = GeometryUtil.getPolygonBounds(rotated);
+      var bounds = this.getPolygonBounds(rotated);
       rotated.x = bounds.x;
       rotated.y = bounds.y;
       rotated.width = bounds.width;

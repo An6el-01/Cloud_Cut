@@ -7,6 +7,8 @@ import { SvgParser } from './svgparser';
 import { PlacementWorker } from './util/placementWorker';
 import { GeometryUtil } from './util/geometryutil';
 
+const PADDING = 10; // 10mm padding
+
 // Helper to convert all points in a polygon to {x, y} format
 function toXY(polygon) {
   if (!polygon || !Array.isArray(polygon)) return [];
@@ -71,15 +73,15 @@ export class NestingProcessor {
         crossoverRate: 0.9,
         tournamentSize: 3,
         generations: 50,
-        width: 1000,
-        height: 2000,
-        // Add bin polygon (sheet boundary) for nesting
+        width: 1000 + 2 * PADDING,
+        height: 2000 + 2 * PADDING,
+        // Add bin polygon (sheet boundary) for nesting, with padding
         binPolygon: [
-          {x: 0, y: 0},
-          {x: 1000, y: 0},
-          {x: 1000, y: 2000},
-          {x: 0, y: 2000},
-          {x: 0, y: 0}
+          {x: PADDING, y: PADDING},
+          {x: 1000 + PADDING, y: PADDING},
+          {x: 1000 + PADDING, y: 2000 + PADDING},
+          {x: PADDING, y: 2000 + PADDING},
+          {x: PADDING, y: PADDING}
         ]
       };
       console.log('Using nesting config:', config);
@@ -159,7 +161,6 @@ export class NestingProcessor {
             this.svgParser.svgRoot = svgDoc.documentElement;
             
             // Set the viewBox to match our target sheet dimensions (in mm)
-            const PADDING = 10; // 10mm padding
             const sheetWidth = 1000; // mm
             const sheetHeight = 2000; // mm
             this.svgParser.svgRoot.setAttribute('viewBox', `-${PADDING} -${PADDING} ${sheetWidth + 2 * PADDING} ${sheetHeight + 2 * PADDING}`);
@@ -224,176 +225,17 @@ export class NestingProcessor {
               
               // RAW COORDINATE TEST - Use raw SVG coordinates instead of scaled ones
               let scaledPolygon;
-              if (item.sku === 'SFI-MPCB250K') {
-                // Use raw coordinates from SFI-MPCB2.svg
-                scaledPolygon = [
-                  {x: 128.514112, y: 401.444522},
-                  {x: 124.137021, y: 402.328216},
-                  {x: 120.562642, y: 404.738129},
-                  {x: 118.15273, y: 408.312507},
-                  {x: 117.269036, y: 412.689598},
-                  {x: 117.269036, y: 418.095167},
-                  {x: 114.901173, y: 419.845903},
-                  {x: 113.067344, y: 422.14639},
-                  {x: 111.882643, y: 424.881996},
-                  {x: 111.462167, y: 427.93809},
-                  {x: 111.462167, y: 443.317862},
-                  {x: 96.809597, y: 457.97048},
-                  {x: 58.349416, y: 457.97048},
-                  {x: 58.349416, y: 439.013415},
-                  {x: 58.090003, y: 436.391477},
-                  {x: 57.331142, y: 433.894204},
-                  {x: 56.101899, y: 431.59177},
-                  {x: 54.431342, y: 429.554347},
-                  {x: 46.51436, y: 421.637365},
-                  {x: 44.476937, y: 419.966807},
-                  {x: 42.174502, y: 418.737565},
-                  {x: 39.677229, y: 417.978703},
-                  {x: 37.055291, y: 417.71929},
-                  {x: 24.336165, y: 417.71929},
-                  {x: 24.336165, y: 311.29389},
-                  {x: 31.389562, y: 311.29389},
-                  {x: 30.918239, y: 148.084522},
-                  {x: 24.336165, y: 148.084522},
-                  {x: 24.336165, y: 47.163042},
-                  {x: 43.455495, y: 47.163042},
-                  {x: 62.219807, y: 33.588855},
-                  {x: 135.078982, y: 33.588855},
-                  {x: 135.078982, y: 39.527538},
-                  {x: 152.921018, y: 39.527538},
-                  {x: 152.921018, y: 33.588855},
-                  {x: 225.780193, y: 33.588855},
-                  {x: 244.544505, y: 47.163042},
-                  {x: 263.663835, y: 47.163042},
-                  {x: 263.663835, y: 148.084522},
-                  {x: 257.081761, y: 148.084522},
-                  {x: 256.610438, y: 311.29389},
-                  {x: 263.663835, y: 311.29389},
-                  {x: 263.663835, y: 417.71929},
-                  {x: 250.944709, y: 417.71929},
-                  {x: 248.322771, y: 417.978703},
-                  {x: 245.825498, y: 418.737565},
-                  {x: 243.523063, y: 419.966807},
-                  {x: 241.48564, y: 421.637365},
-                  {x: 233.568658, y: 429.554347},
-                  {x: 231.898101, y: 431.59177},
-                  {x: 230.668858, y: 433.894204},
-                  {x: 229.909997, y: 436.391477},
-                  {x: 229.650584, y: 439.013415},
-                  {x: 229.650584, y: 457.97048},
-                  {x: 191.190403, y: 457.97048},
-                  {x: 176.537833, y: 443.317862},
-                  {x: 176.537833, y: 427.93809},
-                  {x: 176.117357, y: 424.881996},
-                  {x: 174.932656, y: 422.14639},
-                  {x: 173.098827, y: 419.845903},
-                  {x: 170.730964, y: 418.095167},
-                  {x: 170.730964, y: 412.689598},
-                  {x: 169.84727, y: 408.312507},
-                  {x: 167.437358, y: 404.738129},
-                  {x: 163.862979, y: 402.328216},
-                  {x: 159.485888, y: 401.444522},
-                  {x: 128.514112, y: 401.444522}
-                ];
-                console.log('Using RAW coordinates for SFI-MPCB250K');
-              } else if (item.sku === 'SFI-DTSB250K') {
-                // Use raw coordinates from SFI-DTSB2.svg
-                scaledPolygon = [
-                  {x: 144.57664, y: 298.30325},
-                  {x: 144.57664, y: 305.306592},
-                  {x: 67.7477, y: 305.306592},
-                  {x: 67.7477, y: 319.556193},
-                  {x: 48.792878, y: 319.556193},
-                  {x: 46.237101, y: 319.221673},
-                  {x: 43.889786, y: 318.260406},
-                  {x: 41.862579, y: 316.735833},
-                  {x: 38.148617, y: 312.131509},
-                  {x: 31.793088, y: 304.391857},
-                  {x: 31.793088, y: 268.705717},
-                  {x: 34.119244, y: 268.705717},
-                  {x: 34.119244, y: 259.774096},
-                  {x: 31.793088, y: 259.774096},
-                  {x: 31.793088, y: 222.58277},
-                  {x: 46.363128, y: 222.58277},
-                  {x: 50.226012, y: 221.802887},
-                  {x: 53.380488, y: 219.676079},
-                  {x: 55.507297, y: 216.521603},
-                  {x: 56.287179, y: 212.658718},
-                  {x: 56.287179, y: 135.19407},
-                  {x: 55.507297, y: 131.331186},
-                  {x: 53.380488, y: 128.17671},
-                  {x: 50.226012, y: 126.049901},
-                  {x: 46.363128, y: 125.270018},
-                  {x: 31.793088, y: 125.270018},
-                  {x: 31.793088, y: 86.563934},
-                  {x: 34.119244, y: 86.563934},
-                  {x: 34.119244, y: 77.632314},
-                  {x: 31.793088, y: 77.632314},
-                  {x: 31.882777, y: 48.77598},
-                  {x: 32.148668, y: 47.474492},
-                  {x: 32.58599, y: 46.22017},
-                  {x: 33.189978, y: 45.030393},
-                  {x: 41.853854, y: 30.477875},
-                  {x: 43.449306, y: 28.453435},
-                  {x: 45.476513, y: 26.928862},
-                  {x: 47.823828, y: 25.967596},
-                  {x: 50.379605, y: 25.633076},
-                  {x: 70.816021, y: 25.633076},
-                  {x: 71.886831, y: 33.785864},
-                  {x: 72.957556, y: 25.633076},
-                  {x: 238.84855, y: 25.633076},
-                  {x: 239.547295, y: 33.748597},
-                  {x: 240.246039, y: 25.633076},
-                  {x: 406.137034, y: 25.633076},
-                  {x: 407.207758, y: 33.785864},
-                  {x: 408.278568, y: 25.633076},
-                  {x: 428.714984, y: 25.633076},
-                  {x: 431.270761, y: 25.967596},
-                  {x: 433.618076, y: 26.928862},
-                  {x: 435.645283, y: 28.453435},
-                  {x: 437.240735, y: 30.477875},
-                  {x: 446.508599, y: 46.22017},
-                  {x: 446.945922, y: 47.474492},
-                  {x: 447.211812, y: 48.77598},
-                  {x: 447.301501, y: 50.107252},
-                  {x: 447.301501, y: 77.632314},
-                  {x: 444.975345, y: 77.632314},
-                  {x: 444.975345, y: 86.563934},
-                  {x: 447.301501, y: 86.563934},
-                  {x: 447.301501, y: 125.270018},
-                  {x: 432.731461, y: 125.270018},
-                  {x: 428.868577, y: 126.049901},
-                  {x: 425.714101, y: 128.17671},
-                  {x: 423.587292, y: 131.331186},
-                  {x: 422.80741, y: 135.19407},
-                  {x: 422.80741, y: 212.658718},
-                  {x: 423.587292, y: 216.521603},
-                  {x: 425.714101, y: 219.676079},
-                  {x: 428.868577, y: 221.802887},
-                  {x: 432.731461, y: 222.58277},
-                  {x: 447.301501, y: 222.58277},
-                  {x: 447.301501, y: 259.774096},
-                  {x: 444.975345, y: 259.774096},
-                  {x: 444.975345, y: 268.705717},
-                  {x: 447.301501, y: 268.705717},
-                  {x: 447.301501, y: 304.391857},
-                  {x: 437.23201, y: 316.735833},
-                  {x: 435.204803, y: 318.260406},
-                  {x: 432.857488, y: 319.221673},
-                  {x: 430.301711, y: 319.556193},
-                  {x: 411.346889, y: 319.556193},
-                  {x: 411.346889, y: 305.306592},
-                  {x: 334.517949, y: 305.306592},
-                  {x: 334.517949, y: 298.30325},
-                  {x: 144.57664, y: 298.30325}
-                ];
-                console.log('Using RAW coordinates for SFI-DTSB250K');
-              } else {
                 // Use the original scaling logic for other parts
                 scaledPolygon = bestPolygon.map(pt => ({
                 x: (pt.x - bounds.x) * scaleX, // shift to (0,0) then scale
                 y: (pt.y - bounds.y) * scaleY
               }));
+              // --- NORMALIZE ORIENTATION: Make all polygons 'horizontal' (width >= height) ---
+              const boundsNorm = this.geometryUtil.getPolygonBounds(scaledPolygon);
+              if (boundsNorm.height > boundsNorm.width) {
+                // Rotate by 90 degrees to make it horizontal
+                scaledPolygon = this.geometryUtil.rotatePolygon(scaledPolygon, 90);
+                console.log(`Normalized orientation for ${item.sku}: rotated by 90°`);
               }
               // --- VALIDATE THE POLYGON (only the longest path) ---
               function validatePolygon(polygon) {
@@ -490,7 +332,7 @@ export class NestingProcessor {
                 }
                 parts.push(part);
               }
-              console.log(`Successfully processed ${item.sku} with ${item.quantity} polygons`);
+              console.log(`Successfully processed ${item.sku} with ${item.quantity} polygons for order ${item.orderId || 'unknown'}`);
             } else {
               console.warn(`No polygons generated for ${item.sku}`);
             }
@@ -562,6 +404,24 @@ export class NestingProcessor {
     placements.forEach(part => {
       part.x = (part.x || 0) - minX;
       part.y = (part.y || 0) - minY;
+    });
+    // --- DEBUG LOG: Confirm placements are shifted correctly ---
+    let debugMinX = Infinity, debugMinY = Infinity, debugMaxX = -Infinity, debugMaxY = -Infinity;
+    placements.forEach(part => {
+      part.polygons[0].forEach(pt => {
+        const absX = pt.x + (part.x || 0);
+        const absY = pt.y + (part.y || 0);
+        debugMinX = Math.min(debugMinX, absX);
+        debugMinY = Math.min(debugMinY, absY);
+        debugMaxX = Math.max(debugMaxX, absX);
+        debugMaxY = Math.max(debugMaxY, absY);
+      });
+    });
+    console.log('[ALIGN DEBUG] Placements shifted to origin. Bounds after shift:', {
+      minX: debugMinX,
+      minY: debugMinY,
+      maxX: debugMaxX,
+      maxY: debugMaxY
     });
   }
 } 
