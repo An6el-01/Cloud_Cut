@@ -289,6 +289,18 @@ export default function StartPacking({
         };
     }, [pendingUpdates, processPendingUpdates]);
 
+    // Function to check if all validation conditions are met
+    const isConfirmButtonEnabled = () => {
+        // Check if all items are packed
+        const allItemsPacked = selectedOrderItems.length > 0 && 
+            selectedOrderItems.every(item => checkedItems.has(item.sku_id));
+        
+        // Check if at least one packing box is selected
+        const atLeastOneBoxSelected = packingBoxes.some(box => box.boxType && box.quantity > 0);
+        
+        return allItemsPacked && atLeastOneBoxSelected;
+    };
+
     // Function to reset picking status - single source of truth
     const resetPickingStatus = () => {
         if (selectedOrder && isOpen) {
@@ -845,7 +857,6 @@ export default function StartPacking({
                                                                                 Select Box
                                                                             </button>
                                                                     {packingBoxTypes.map((type) => {
-                                                                        const stock = getCurrentStock(type);
                                                                         return (
                                                                             <button
                                                                                 key={type}
@@ -854,7 +865,6 @@ export default function StartPacking({
                                                                                 className="w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex justify-between items-center"
                                                                             >
                                                                         <span>{type}</span>
-                                                                        <span className="text-xs text-gray-500">({stock} in stock)</span>
                                                                             </button>
                                                                         );
                                                                     })}
@@ -938,7 +948,12 @@ export default function StartPacking({
                             type="button"
                             ref={confirmButtonRef}
                             onClick={handleConfirmClick}
-                            className="px-6 py-2.5 bg-green-600 rounded-lg text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200 shadow-sm mt-10"
+                            disabled={!isConfirmButtonEnabled()}
+                            className={`px-6 py-2.5 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 shadow-sm mt-10 ${
+                                isConfirmButtonEnabled() 
+                                    ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500' 
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
                             aria-label="Confirm and proceed to despatch"
                         >
                             Confirm & Continue

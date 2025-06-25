@@ -631,16 +631,103 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                     validRegion = [validRegion];
                 }
 
-                const placementPoint = this.pickBottomLeftPoint(validRegion, part.polygons[0]);
-                if (placementPoint) {
-                    console.log(`[PLACE DEBUG] Placed part ${part.id} at (${placementPoint.x}, ${placementPoint.y})`);
-                    part.x = placementPoint.x;
-                    part.y = placementPoint.y;
-                    placed.push(part);
-                    placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
-                    unplaced.shift();
-                    continue;
-                } else {
+                // const placementPoint = this.pickBottomLeftPoint(validRegion, part.polygons[0]);
+                // if (placementPoint) {
+                //     //Transform the new part's polygon to its intended position
+                //     const angle = (part.rotation || 0) * Math.PI / 180;
+                //     const cos = Math.cos(angle);
+                //     const sin = Math.sin(angle);
+                //     const transformedNew = part.polygons[0].map(pt => ({
+                //         x: pt.x * cos - pt.y * sin + placementPoint.x,
+                //         y: pt.x * sin + pt.y * cos + placementPoint.y
+                //     }));
+
+                //     //Check for overlap with all already placed parts
+                //     let overlaps = false;
+                //     for (const placedPart of placed){
+                //         const placedAngle = (placedPart.rotation || 0) * Math.PI / 180;
+                //         const placedCos = Math.cos(placedAngle);
+                //         const placedSin = Math.sin(placedAngle);
+                //         const transformedPlaced = placedPart.polygons[0].map(pt => ({
+                //             x: pt.x * placedCos - pt.y * placedSin + placedPart.x,
+                //             y: pt.x * placedSin + pt.y * placedCos + placedPart.y
+                //         }));
+
+                //         // Use the existing intersectPolygons helper
+                //         const intersection = intersectPolygons([transformedNew], [transformedPlaced], scale);
+                //         if (intersection && intersection.length > 0 && intersection[0].length > 0) {
+                //             overlaps = true;
+                //             break;
+                //         }
+                //     }
+
+                //     if(!overlaps){
+                //         // No overlap, finalize placement
+                //         part.x = placementPoint.x;
+                //         part.y = placementPoint.y;
+                //         placed.push(part);
+                //         placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
+                //         unplaced.shift();
+                //         continue;
+                //     } else {
+                //         // Overlap detected, try next point (in this simple version, just skip this part for now)
+                //         console.warn(`[PLACE DEBUG] Overlap detected for part ${part.id} at (${placementPoint.x}, ${placementPoint.y}), skipping this placement.`);
+                //     }
+                // } else {
+                //     console.warn(`[PLACE DEBUG] No placement point found for part ${part.id}`);
+                // }
+
+                //Collect all candidate points from validRegion polygons
+                let candidatePoints = [];
+                validRegion.forEach(polygon => {
+                    if (polygon && Array.isArray(polygon)) {
+                        candidatePoints.push(...polygon);
+                    }
+                });
+
+                // Try each candidate point
+                let placedSuccessfully = false; 
+                for (const placementPoint of candidatePoints) {
+                    // Transform the new part's polygon to its intended position
+                    const angle = (part.rotation || 0) * Math.PI / 180;
+                    const cos = Math.cos(angle);
+                    const sin = Math.sin(angle);
+                    const transformedNew = part.polygons[0].map(pt => ({
+                        x: pt.x * cos - pt.y * sin + placementPoint.x,
+                        y: pt.x * sin + pt.y * cos + placementPoint.y
+                    }));
+
+                    //Check for overlap with all already placed parts
+                    let overlaps = false;
+                    for (const placedPart of placed) {
+                        const placedAngle = (placedPart.rotation || 0) * Math.PI / 180;
+                        const placedCos = Math.cos(placedAngle);
+                        const placedSin = Math.sin(placedAngle);
+                        const transformedPlaced = placedPart.polygons[0].map(pt => ({
+                            x: pt.x * placedCos - pt.y * placedSin + placedPart.x,
+                            y: pt.x * placedSin + pt.y * placedCos + placedPart.y
+                        }));
+
+                        const intersection = intersectPolygons([transformedNew], [transformedPlaced], scale);
+                        if (intersection && intersection.length > 0 && intersection[0].length > 0) {
+                            overlaps = true;
+                            break;
+                        }
+                    }
+
+                    if (!overlaps){
+                        //No overlap, finalize placement
+                        part.x = placementPoint.x;
+                        part.y = placementPoint.y;
+                        placed.push(part);
+                        placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
+                        unplaced.shift();
+                        placedSuccessfully = true;
+                        break;
+                    } 
+                }
+
+                if (!placedSuccessfully){
                     console.warn(`[PLACE DEBUG] No placement point found for part ${part.id}`);
                 }
             }

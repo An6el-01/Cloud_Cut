@@ -313,12 +313,6 @@ export default function Stock() {
         setDamageTrackingTab(tab);
     }
 
-    const handleDamageTitleTabChange = (direction: 'left' | 'right') => {
-        setDamageTitleTab((prev) =>
-            prev === '2 X 1 Sheets' && direction === 'right' ? 'Medium Sheets' :
-            prev === 'Medium Sheets' && direction === 'left' ? '2 X 1 Sheets' : prev
-        );
-    };
 
     // Mock data for the bar graph - replace with real data from your backend
     const getBarGraphData = () => {

@@ -20,6 +20,7 @@ import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
 import { getSupabaseClient } from "@/utils/supabase";
 import { NestingProcessor } from '@/nesting/nestingProcessor';
+import { fetchInventory, bookOutStock } from '@/utils/despatchCloud';
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -1546,6 +1547,121 @@ export default function Manufacturing() {
       });
     }
 
+    // Update the stock in DespatchCloud for 2X1 Sheets if needed
+    if (selectedFoamSheet) {
+      try {
+        // Calculate the number of sheets to cut (this is the same logic as in line 2765)
+        const currentStock = finishedStockBySku[selectedFoamSheet] ?? 0;
+        const qty = selectedMediumSheetQuantity || 0;
+        const totalToCut = (() => {
+          const needed = Math.max(0, qty - currentStock);
+          let adjusted = needed;
+          if (needed > 0 && needed % 4 !== 0) {
+            adjusted = Math.ceil(needed / 4) * 4;
+          }
+          return adjusted;
+        })();
+        const numSheets = totalToCut > 0 ? totalToCut / 4 : 0;
+
+        if (numSheets > 0) {
+          console.log(`[DEBUG] Need to cut ${numSheets} sheets for medium sheet '${selectedFoamSheet}'`);
+
+          // Get the last three digits of the medium sheet SKU
+          const mediumSheetLastThree = selectedFoamSheet.slice(-3);
+          console.log(`[DEBUG] Last three digits of medium sheet SKU: ${mediumSheetLastThree}`);
+
+          // Find matching 2X1 sheets in Supabase finished_stock table
+          try {
+            const { data: matching2X1Sheets, error: fetchError } = await supabase
+              .from('finished_stock')
+              .select('sku, stock')
+              .ilike('sku', `SFS${mediumSheetLastThree}`);
+
+            if (fetchError) {
+              console.error(`[ERROR] Failed to fetch 2X1 sheets from Supabase:`, fetchError);
+            } else {
+              console.log(`[DEBUG] Found ${matching2X1Sheets?.length || 0} matching 2X1 sheets in Supabase:`, matching2X1Sheets);
+
+              if (matching2X1Sheets && matching2X1Sheets.length > 0) {
+                // Use the first matching 2X1 sheet
+                const matching2X1Sheet = matching2X1Sheets[0] as { sku: string; stock: number };
+                console.log(`[DEBUG] Using 2X1 sheet: ${matching2X1Sheet.sku} (Stock: ${matching2X1Sheet.stock})`);
+
+                // Check if we have enough stock
+                if (matching2X1Sheet.stock >= numSheets) {
+                  // Book out the stock from DespatchCloud
+                  try {
+                    // First, we need to get the DespatchCloud inventory ID for this SKU
+                    // We'll need to make a targeted search for this specific SKU
+                    const inventoryResponse = await fetchInventory(1, 100, { sku: matching2X1Sheet.sku }, 'name_az', false);
+                    
+                    const matchingInventoryItem = inventoryResponse.data.find(item => 
+                      item.sku === matching2X1Sheet.sku
+                    );
+
+                    if (matchingInventoryItem) {
+                      console.log(`[DEBUG] Found matching inventory item in DespatchCloud: ${matchingInventoryItem.sku} (ID: ${matchingInventoryItem.id})`);
+                      
+                      const bookOutResult = await bookOutStock(matchingInventoryItem.id, numSheets);
+                      console.log(`[DEBUG] Successfully booked out ${numSheets} sheets from 2X1 sheet '${matching2X1Sheet.sku}'`, bookOutResult);
+
+                      // Update the stock in Supabase for the 2X1 sheet
+                      try {
+                        const currentStock = Number(matching2X1Sheet.stock) || 0;
+                        const newStock = Math.max(0, currentStock - numSheets);
+                        
+                        console.log(`[DEBUG] Updating 2X1 sheet stock in Supabase: ${matching2X1Sheet.sku} from ${currentStock} to ${newStock}`);
+
+                        // Update the stock in Supabase
+                        const { error: updateError } = await supabase
+                          .from('finished_stock')
+                          .update({ 
+                            stock: newStock,
+                            updated_at: new Date().toISOString()
+                          })
+                          .eq('sku', matching2X1Sheet.sku);
+
+                        if (updateError) {
+                          console.error(`[ERROR] Failed to update stock in Supabase for 2X1 sheet '${matching2X1Sheet.sku}':`, updateError);
+                        } else {
+                          console.log(`[DEBUG] Successfully updated stock in Supabase for 2X1 sheet '${matching2X1Sheet.sku}' to ${newStock}`);
+
+                          // Update local state if the 2X1 sheet is in our finishedStockBySku
+                          if (finishedStockBySku[matching2X1Sheet.sku] !== undefined) {
+                            setFinishedStockBySku((prev: Record<string, number>) => ({
+                              ...prev,
+                              [matching2X1Sheet.sku]: newStock
+                            }));
+                            console.log(`[DEBUG] Updated local finishedStockBySku for 2X1 sheet '${matching2X1Sheet.sku}' to ${newStock}`);
+                          }
+                        }
+                      } catch (supabaseError) {
+                        console.error(`[ERROR] Error updating 2X1 sheet stock in Supabase:`, supabaseError);
+                      }
+                    } else {
+                      console.warn(`[WARNING] Could not find matching inventory item in DespatchCloud for SKU '${matching2X1Sheet.sku}'`);
+                    }
+                  } catch (bookOutError) {
+                    console.error(`[ERROR] Failed to book out stock for 2X1 sheet '${matching2X1Sheet.sku}':`, bookOutError);
+                  }
+                } else {
+                  console.warn(`[WARNING] Insufficient stock for 2X1 sheet '${matching2X1Sheet.sku}'. Required: ${numSheets}, Available: ${matching2X1Sheet.stock}`);
+                }
+              } else {
+                console.warn(`[WARNING] No matching 2X1 sheet found for medium sheet '${selectedFoamSheet}' (last three digits: ${mediumSheetLastThree})`);
+              }
+            }
+          } catch (supabaseError) {
+            console.error(`[ERROR] Error fetching 2X1 sheets from Supabase:`, supabaseError);
+          }
+        } else {
+          console.log(`[DEBUG] No sheets need to be cut for medium sheet '${selectedFoamSheet}'`);
+        }
+      } catch (error) {
+        console.error(`[ERROR] Error processing 2X1 sheet booking for medium sheet '${selectedFoamSheet}':`, error);
+      }
+    }
+
     // After all processing and debug logs, reset the state for Medium Sheet Order Details section
     setCurrentMediumStock(0);
     setSelectedMediumSheetQuantity(0);
@@ -2759,21 +2875,8 @@ export default function Manufacturing() {
                                     if (needed > 0 && needed % 4 !== 0) {
                                       adjusted = Math.ceil(needed / 4) * 4;
                                     }
-                                    return adjusted;
-                                  })()
-                                : '-'}
-                            </span>
-                            <span className="text-lg font-semibold text-red-700">
-                              {selectedFoamSheet
-                                ? (() => {
-                                    const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
-                                    const needed = Math.max(0, selectedMediumSheetQuantity - stock);
-                                    let adjusted = needed;
-                                    if (needed > 0 && needed % 4 !== 0) {
-                                      adjusted = Math.ceil(needed / 4) * 4;
-                                    }
                                     const numSheets = adjusted > 0 ? adjusted / 4 : 0;
-                                    return `2X1: ${numSheets}`;
+                                    return `${numSheets}`;
                                   })()
                                 : ''}
                             </span>
