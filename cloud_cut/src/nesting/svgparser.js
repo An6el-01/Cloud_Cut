@@ -119,7 +119,6 @@ SvgParser.prototype.load = function(dirpath, svgString, scale, scalingFactor) {
 
     var failed = svg.documentElement.nodeName.indexOf('parsererror') > -1;
     if (failed) {
-        console.log('svg DOM parsing error: ' + svg.documentElement.nodeName);
     }
     if (svg) {
         // scale the svg so that our scale parameter is preserved
@@ -217,8 +216,6 @@ SvgParser.prototype.cleanInput = function(dxfFlag){
     // merge open paths into closed paths
     // for numerically accurate exports
     this.mergeLines(this.svgRoot, this.conf.toleranceSvg);
-
-    console.log('this is scale', this.conf.scale*(0.02),  this.conf.endpointTolerance);
 
     // for exports with wide gaps, roughly 0.005 inch
     this.mergeLines(this.svgRoot, this.conf.endpointTolerance);

@@ -1359,13 +1359,19 @@ export class DeepNest {
     async nest(parts, config) {
         try {
             
-            // Create a bin polygon based on the config
-            const binPolygon = [
-                { x: 0, y: 0 },
-                { x: config.width || 1000, y: 0 },
-                { x: config.width || 1000, y: config.height || 2000 },
-                { x: 0, y: config.height || 2000 }
-            ];
+            // Use the bin polygon from config if it exists, otherwise create a default one
+            let binPolygon = config.binPolygon;
+            if (!binPolygon) {
+                console.warn('No binPolygon in config, creating default one');
+                binPolygon = [
+                    { x: 0, y: 0 },
+                    { x: config.width || 1000, y: 0 },
+                    { x: config.width || 1000, y: config.height || 2000 },
+                    { x: 0, y: config.height || 2000 }
+                ];
+            } else {
+                console.log('Using binPolygon from config:', binPolygon);
+            }
 
             // Create a function to offset polygons
             const polygonOffset = (polygon, offset) => {
@@ -1409,7 +1415,7 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
     this.config = {
         populationSize: 10,
         mutationRate: 10,
-        rotations: 4,
+        rotations: 2, // Only allow 2 rotations: 0 and 90 degrees
         generations: 3,
         fitnessThreshold: 0.1,
         ...config
@@ -1469,7 +1475,6 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
         for (const partIndex of partIndices) {
             angles[partIndex] = orderRotation;
         }
-        console.log(`[GA DEBUG] Order ${orderId} assigned rotation ${orderRotation}° for ${partIndices.length} parts`);
     }
     
     this.population = [{ placement: initialPlacement, rotation: angles }];
@@ -1536,8 +1541,6 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
             for (const partIndex of orderPartIndices) {
                 clone.rotation[partIndex] = newOrderRotation;
             }
-            
-            console.log(`[GA MUTATE] Order ${orderId} rotation mutated to ${newOrderRotation}° for ${orderPartIndices.length} parts`);
         }
     }
     
@@ -1713,13 +1716,7 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
         return Number.MAX_VALUE;
     }
 
-    // Create a new worker for this evaluation
-    console.log('[GA DEBUG] Creating PlacementWorker with config:', {
-        binPolygon: this.config.binPolygon,
-        config_keys: Object.keys(this.config),
-        nfpCache: this.nfpCache ? 'present' : 'missing'
-    });
-    
+    // Create a new worker for this evaluation    
     const worker = new PlacementWorker(
         this.config.binPolygon,
         validPlacement,
@@ -1732,6 +1729,18 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
 
     // Place the parts and get the result
     const result = worker.place();
+
+    // --- DEBUG: Log the raw result from placement worker ---
+    console.log(`[PLACEMENT RESULT DEBUG] Worker returned:`, {
+        success: result?.success,
+        placementsCount: result?.placements?.length || 0,
+        placements: result?.placements?.map(p => ({
+            id: p.id,
+            x: p.x,
+            y: p.y,
+            rotation: p.rotation
+        })) || []
+    });
 
     // --- FIX: Propagate placement coordinates back to individual's placement array ---
     if (result && result.success && result.placements) {
@@ -1769,6 +1778,12 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
         return inside;
     }
     function isPartWithinBin(part, binPolygon) {
+        // Add null checks to prevent errors
+        if (!part || !part.polygons || !part.polygons[0]) {
+            console.warn(`[GA VALIDATION] Part ${part?.id || 'unknown'} has no valid polygons`);
+            return false;
+        }
+        
         const rotated = rotatePolygon(part.polygons[0], part.rotation || 0);
         const translated = rotated.map(pt => ({
             x: pt.x + (part.x || 0),
@@ -1792,8 +1807,54 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
     }
 
     if (!result || !result.success) {
-        console.log('Placement failed, returning high fitness value');
         return Number.MAX_VALUE;
+    }
+
+    // --- DEBUG: Log coordinate information for rotated parts ---
+    console.log(`[COORDINATE DEBUG] Processing ${result.placements.length} placed parts:`);
+    for (const placement of result.placements) {
+        const part = individual.placement.find(p => p.id === placement.id);
+        if (part && part.polygons && part.polygons[0]) {
+            const originalPolygon = part.polygons[0];
+            const rotation = placement.rotation || 0;
+            
+            // Calculate bounds of original polygon
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const pt of originalPolygon) {
+                minX = Math.min(minX, pt.x);
+                minY = Math.min(minY, pt.y);
+                maxX = Math.max(maxX, pt.x);
+                maxY = Math.max(maxY, pt.y);
+            }
+            
+            // Rotate the polygon
+            const rotatedPolygon = rotatePolygon(originalPolygon, rotation);
+            
+            // Calculate bounds of rotated polygon
+            let rotMinX = Infinity, rotMinY = Infinity, rotMaxX = -Infinity, rotMaxY = -Infinity;
+            for (const pt of rotatedPolygon) {
+                rotMinX = Math.min(rotMinX, pt.x);
+                rotMinY = Math.min(rotMinY, pt.y);
+                rotMaxX = Math.max(rotMaxX, pt.x);
+                rotMaxY = Math.max(rotMaxY, pt.y);
+            }
+            
+            // Calculate what the bottom-left should be after translation
+            const expectedBottomLeftX = placement.x - rotMinX;
+            const expectedBottomLeftY = placement.y - rotMinY;
+            
+            console.log(`[COORDINATE DEBUG] Part ${placement.id} (rotation: ${rotation}°):`);
+            console.log(`  Original bounds: (${minX.toFixed(2)}, ${minY.toFixed(2)}) to (${maxX.toFixed(2)}, ${maxY.toFixed(2)})`);
+            console.log(`  Rotated bounds: (${rotMinX.toFixed(2)}, ${rotMinY.toFixed(2)}) to (${rotMaxX.toFixed(2)}, ${rotMaxY.toFixed(2)})`);
+            console.log(`  Placement coordinates: (${placement.x.toFixed(2)}, ${placement.y.toFixed(2)})`);
+            console.log(`  Expected bottom-left: (${expectedBottomLeftX.toFixed(2)}, ${expectedBottomLeftY.toFixed(2)})`);
+            
+            // Check if placement coordinates represent bottom-left of rotated part
+            const tolerance = 0.1;
+            const isBottomLeft = Math.abs(placement.x - (expectedBottomLeftX + rotMinX)) < tolerance && 
+                                Math.abs(placement.y - (expectedBottomLeftY + rotMinY)) < tolerance;
+            console.log(`  Is bottom-left placement: ${isBottomLeft ? 'YES' : 'NO'}`);
+        }
     }
 
     // Calculate total area of all parts
@@ -1931,7 +1992,6 @@ GeneticAlgorithm.prototype.run = async function() {
     
     // Debug the rotation assignments for the best result
     if (bestResult) {
-        console.log('[GA FINAL] Best individual rotation assignments:');
         this.debugRotationAssignments(bestResult);
     }
     
@@ -1962,7 +2022,6 @@ GeneticAlgorithm.prototype.validateRotationConsistency = function(individual) {
     
     return isValid;
 };
-
 // Helper function to enforce rotation consistency within orders
 GeneticAlgorithm.prototype.enforceRotationConsistency = function(individual) {
     const orderGroups = new Map();
@@ -2010,9 +2069,7 @@ GeneticAlgorithm.prototype.debugRotationAssignments = function(individual) {
         });
     }
     
-    console.log('[GA DEBUG] Rotation assignments by order:');
     for (const [orderId, data] of orderRotations) {
-        console.log(`  Order ${orderId}: ${data.rotation}° (${data.parts.length} parts)`);
         data.parts.forEach(part => {
             console.log(`    - ${part.sku} (${part.id}): ${part.rotation}°`);
         });
@@ -2020,9 +2077,7 @@ GeneticAlgorithm.prototype.debugRotationAssignments = function(individual) {
 };
 
 // Test function to verify rotation consistency
-GeneticAlgorithm.prototype.testRotationConsistency = function() {
-    console.log('[GA TEST] Testing rotation consistency...');
-    
+GeneticAlgorithm.prototype.testRotationConsistency = function() {    
     // Create a test individual with multiple orders
     const testIndividual = {
         placement: [
@@ -2032,7 +2087,7 @@ GeneticAlgorithm.prototype.testRotationConsistency = function() {
             { id: 'part4', source: { orderId: 'order2', sku: 'SKU4' } },
             { id: 'part5', source: { orderId: 'order1', sku: 'SKU5' } }
         ],
-        rotation: [0, 90, 180, 270, 45] // Inconsistent rotations
+        rotation: [0, 0, 0, 0, 0] // Only 0 and 90 degree rotations
     };
     
     console.log('[GA TEST] Before enforcement:');
@@ -2050,3 +2105,4 @@ GeneticAlgorithm.prototype.testRotationConsistency = function() {
     
     return isValid;
 };
+

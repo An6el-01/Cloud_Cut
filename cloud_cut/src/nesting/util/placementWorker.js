@@ -8,15 +8,6 @@ const { GeometryUtil } = require('./geometryUtilLib');
 const { GeometryUtil: OldGeometryUtil } = require("./geometryutil");
 
 function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
-    console.log(`[NFP DEBUG] getOrCreateNfp called with:`, {
-        A_id: A.id,
-        B_id: B.id,
-        A_rotation: A.rotation,
-        B_rotation: B.rotation,
-        type: type,
-        A_polygons_length: A.polygons?.[0]?.length,
-        B_polygons_length: B.polygons?.[0]?.length
-    });
 
     // Validate input parts
     if (!A || !B || !A.polygons || !B.polygons || !A.polygons[0] || !B.polygons[0]) {
@@ -39,9 +30,6 @@ function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
     if (!B.source) {
         B.source = B.id;
     }
-
-    console.log(`[NFP DEBUG] Parts are valid, checking cache...`);
-
     // Check cache first using the correct interface
     const cacheKey = {
         A: A.id,
@@ -53,13 +41,9 @@ function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
     if (nfpCache && nfpCache.find) {
         const cachedNfp = nfpCache.find(cacheKey, type === 'inner');
         if (cachedNfp) {
-            console.log(`[NFP DEBUG] Found NFP in cache for ${A.id} vs ${B.id}`);
             return normalizeNfpFormat(cachedNfp, type);
         }
     }
-
-    console.log(`[NFP DEBUG] NFP not in cache, calculating...`);
-
     // Calculate NFP
     let nfp;
     if (type === 'outer') {
@@ -68,19 +52,11 @@ function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
         nfp = getInnerNfp(A.polygons[0], B.polygons[0], config, nfpCache);
     }
 
-    console.log(`[NFP DEBUG] Calculated NFP result:`, {
-        nfp_length: nfp?.length,
-        nfp_type: typeof nfp,
-        is_null: nfp === null,
-        is_undefined: nfp === undefined
-    });
-
     // Normalize the NFP format before caching
     const normalizedNfp = normalizeNfpFormat(nfp, type);
 
     // Cache the normalized result using the correct interface
     if (nfpCache && nfpCache.insert) {
-        console.log(`[NFP DEBUG] Stored NFP in cache`);
         nfpCache.insert({
             ...cacheKey,
             nfp: normalizedNfp
@@ -95,13 +71,6 @@ function normalizeNfpFormat(nfp, type) {
     if (!nfp || nfp.length === 0) {
         return [];
     }
-
-    console.log(`[NFP NORMALIZE] Normalizing NFP:`, {
-        nfp_type: typeof nfp,
-        nfp_length: nfp?.length,
-        nfp_sample: nfp?.[0],
-        type: type
-    });
 
     // Handle different input formats
     let normalizedNfp;
@@ -146,17 +115,10 @@ function normalizeNfpFormat(nfp, type) {
         }
     }
 
-    console.log(`[NFP NORMALIZE] Final normalized NFP:`, {
-        length: normalizedNfp.length,
-        sample_element_length: normalizedNfp[0]?.length,
-        sample_point: normalizedNfp[0]?.[0]
-    });
-
     return normalizedNfp;
 }
 
 function toClipperCoordinates(polygon){
-    console.log(`[CLIPPER DEBUG] toClipperCoordinates called with polygon length:`, polygon?.length);
     var clone = [];
     for (var i = 0; i < polygon.length; i++){
         clone.push({
@@ -164,11 +126,6 @@ function toClipperCoordinates(polygon){
             Y: polygon[i].y,
         });
     }
-    console.log(`[CLIPPER DEBUG] Converted to Clipper coordinates:`, {
-        clone_length: clone.length,
-        first_point: clone[0],
-        last_point: clone[clone.length - 1]
-    });
     return clone;
 }
 
@@ -206,15 +163,6 @@ function rotatePolygon(polygon, degrees){
 }
 
 function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, polygonOffset) {
-    console.log('[PLACEMENT WORKER DEBUG] Constructor called with:', {
-        binPolygon_type: typeof binPolygon,
-        binPolygon_length: binPolygon?.length,
-        binPolygon_isArray: Array.isArray(binPolygon),
-        paths_length: paths?.length,
-        config_type: typeof config,
-        config_keys: config ? Object.keys(config) : 'undefined',
-        nfpCache_type: typeof nfpCache
-    });
     
     // Validate bin polygon
     if (!binPolygon || !Array.isArray(binPolygon) || binPolygon.length < 3) {
@@ -227,6 +175,9 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         polygons: Array.isArray(binPolygon[0]) ? binPolygon : [binPolygon],
         rotation: 0
     };
+    
+    // Debug: Log the bin polygon being used
+    console.log('[PLACEMENT WORKER] Using bin polygon:', this.binPolygon.polygons[0]);
     
     this.paths = paths;
     this.ids = ids;
@@ -254,34 +205,12 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
 
     // Helper: Intersect two sets of polygons using ClipperLib
     function intersectPolygons(a, b, scale) {
-        console.log(`[INTERSECT DEBUG] intersectPolygons called with:`, {
-            a_type: typeof a,
-            a_length: a?.length,
-            a_isArray: Array.isArray(a),
-            a_sample: a?.[0],
-            a_sample_type: typeof a?.[0],
-            a_sample_isArray: Array.isArray(a?.[0]),
-            b_type: typeof b,
-            b_length: b?.length,
-            b_isArray: Array.isArray(b),
-            b_sample: b?.[0],
-            b_sample_type: typeof b?.[0],
-            b_sample_isArray: Array.isArray(b?.[0]),
-            scale: scale
-        });
 
         // a and b are arrays of polygons (arrays of points)
         const clipper = new ClipperLib.Clipper();
         const solution = new ClipperLib.Paths();
         // Convert to Clipper coordinates and scale up
         function toClipper(poly) {
-            console.log(`[INTERSECT DEBUG] toClipper called with:`, {
-                poly_type: typeof poly,
-                poly_length: poly?.length,
-                poly_isArray: Array.isArray(poly),
-                poly_sample: poly?.[0],
-                poly_sample_type: typeof poly?.[0]
-            });
             
             if (!Array.isArray(poly)) {
                 console.error(`[INTERSECT ERROR] poly is not an array:`, poly);
@@ -323,9 +252,74 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         return inside;
     }
 
+    // Helper: Check if a placement point is within the specified bounds
+    function isPlacementPointValid(point, part, binPolygon) {
+        // Define the bounds (10-990 for X, 10-1990 for Y)
+        const minX = 10;
+        const maxX = 990;
+        const minY = 10;
+        const maxY = 1990;
+        
+        // Check if the placement point itself is within bounds
+        if (point.x < minX || point.x > maxX || point.y < minY || point.y > maxY) {
+            return false;
+        }
+        
+        // Check if the entire part (when placed at this point) would be within bounds
+        if (!part.polygons || !part.polygons[0]) {
+            return false;
+        }
+        
+        const rotation = part.rotation || 0;
+        
+        // For rotated parts, we need to calculate the actual placement coordinates
+        // that represent the bottom-left of the rotated part
+        let actualPlacementX = point.x;
+        let actualPlacementY = point.y;
+        
+        if (rotation !== 0) {
+            const angle = rotation * Math.PI / 180;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            
+            // Rotate the part polygon to find its bounds
+            const rotatedPolygon = part.polygons[0].map(pt => ({
+                x: pt.x * cos - pt.y * sin,
+                y: pt.x * sin + pt.y * cos
+            }));
+            
+            // Find the bottom-left of the rotated polygon
+            let minX_rot = Infinity, minY_rot = Infinity;
+            for (const pt of rotatedPolygon) {
+                minX_rot = Math.min(minX_rot, pt.x);
+                minY_rot = Math.min(minY_rot, pt.y);
+            }
+            
+            // Calculate the actual placement coordinates (bottom-left of rotated part)
+            actualPlacementX = point.x - minX_rot;
+            actualPlacementY = point.y - minY_rot;
+        }
+        
+        // Transform each point of the part to its final position
+        const angle = rotation * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        
+        for (const pt of part.polygons[0]) {
+            const transformedX = pt.x * cos - pt.y * sin + actualPlacementX;
+            const transformedY = pt.x * sin + pt.y * cos + actualPlacementY;
+            
+            if (transformedX < minX || transformedX > maxX || transformedY < minY || transformedY > maxY) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
     // Convert pickBottomLeftPoint to a method of PlacementWorker
-    // Accepts: polygons (valid region polygons), partPolygon (the part's polygon, already rotated), returns a valid placement point
-    this.pickBottomLeftPoint = function(polygons, partPolygon) {
+    // Accepts: polygons (valid region polygons), partPolygon (the part's polygon, already rotated), part (the part object), returns a valid placement point
+    this.pickBottomLeftPoint = function(polygons, partPolygon, part) {
         if (!polygons || polygons.length === 0) {
             console.warn('[PLACE DEBUG] No polygons provided to pickBottomLeftPoint');
             return null;
@@ -335,9 +329,6 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             console.warn('[PLACE DEBUG] No part polygon provided to pickBottomLeftPoint');
             return null;
         }
-
-        console.log(`[PLACE DEBUG] pickBottomLeftPoint called with ${polygons.length} polygons`);
-
         // Collect all points from all polygons
         let allPoints = [];
         polygons.forEach(polygon => {
@@ -362,11 +353,21 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             // Compute translation vector
             const dx = pt.x - minX;
             const dy = pt.y - minY;
+            
+            // Debug logging for fallback coordinates
+            if (pt.x === 900 && pt.y === 10) {
+                console.log(`[DEBUG] Checking fallback point (900,10) for part with bounds: minX=${minX.toFixed(2)}, minY=${minY.toFixed(2)}`);
+                console.log(`[DEBUG] Translation vector: dx=${dx.toFixed(2)}, dy=${dy.toFixed(2)}`);
+            }
+            
             // Check all translated points
             for (const p of partPolygon) {
                 const tx = p.x + dx;
                 const ty = p.y + dy;
                 if (!pointInPolygon({ x: tx, y: ty }, binPolygon)) {
+                    if (pt.x === 900 && pt.y === 10) {
+                        console.log(`[DEBUG] Point (${tx.toFixed(2)}, ${ty.toFixed(2)}) is outside bin polygon`);
+                    }
                     return false;
                 }
             }
@@ -391,25 +392,35 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             if (binPolygon && !isPartFullyInsideBin(best, binPolygon)) {
                 console.warn(`[PLACE DEBUG] Picked point (${best.x}, ${best.y}) is not fully inside bin polygon, skipping`);
             } else {
-                console.log(`[PLACE DEBUG] Picked valid point (${best.x}, ${best.y}) with part fully inside bin polygon`);
                 return best;
             }
         }
-        // If no valid point found, fallback to previous logic (try to find any point in bin, or (0,0))
+        // If no valid point found, fallback to previous logic (try to find any point in bin, or rotation-specific fallback)
         if (binPolygon) {
             for (const pt of allPoints) {
                 if (pointInPolygon(pt, binPolygon)) {
                     if (isPartFullyInsideBin(pt, binPolygon)) {
-                        console.log(`[PLACE DEBUG] Found alternative point (${pt.x}, ${pt.y}) with part fully inside bin polygon`);
                         return pt;
                     }
                 }
             }
-            // Try (0,0)
-            const origin = { x: 0, y: 0 };
-            if (isPartFullyInsideBin(origin, binPolygon)) {
-                console.warn(`[PLACE DEBUG] Forcibly using (0,0) as placement point (part fully inside bin)`);
-                return origin;
+            
+            // Use rotation-specific fallback coordinates
+            const rotation = part && part.rotation ? part.rotation : 0;
+            let fallbackPoint;
+            
+            if (rotation === 90) {
+                // For 90-degree rotation, place near the right edge but with margin to ensure it fits
+                // Bin bounds are (10,10) to (1010,2010), so use (900,10) to give margin
+                fallbackPoint = { x: 990, y: 10 };
+                console.warn(`[PLACE DEBUG] Forcibly using (900,10) as placement point for 90° rotated part (part fully inside bin)`);
+            } else {
+                fallbackPoint = { x: 10, y: 10 }; // Use (10,10) instead of (0,0) to stay within bin bounds
+                console.warn(`[PLACE DEBUG] Forcibly using (10,10) as placement point for ${rotation}° rotated part (part fully inside bin)`);
+            }
+            
+            if (isPartFullyInsideBin(fallbackPoint, binPolygon)) {
+                return fallbackPoint;
             }
         }
         console.warn(`[PLACE DEBUG] No valid placement point found that keeps part fully inside bin polygon, returning null`);
@@ -540,43 +551,58 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             var placements = [];
         while (unplaced.length > 0) {
             var part = unplaced[0];
-            
-            console.log(`[PLACE DEBUG] Attempting to place part ${part.id} (rotation: ${part.rotation})`);
 
             // 1. Get NFP between bin and part
-            var binNfp = getOrCreateNfp(
-                {
-                    id: -1,
-                    polygons: this.binPolygon.polygons,
-                    rotation: 0,
-                },
+            const binNfp = getOrCreateNfp(
+                this.binPolygon,
                 part,
-                this.config,
+                config,
                 this.nfpCache,
                 'outer'
             );
+
+            // --- DEBUG: Log NFP results ---
+            console.log(`[NFP DEBUG] Part ${part.id} (rotation: ${part.rotation}°):`);
+            console.log(`  Bin polygon:`, this.binPolygon.polygons[0]);
+            console.log(`  Part polygon bounds:`, this.calculatePartBounds(part));
+            console.log(`  Part polygon first point:`, part.polygons[0][0]);
+            console.log(`  Part polygon last point:`, part.polygons[0][part.polygons[0].length - 1]);
+            console.log(`  Bin NFP result:`, binNfp);
+
             if (!binNfp || binNfp.length === 0) {
                 // Could not place this part
-                console.warn(`[NFP FAIL] No bin NFP found for part ${part.id} (rot:${part.rotation})`);
                 unplaced.shift();
                 continue;
             }
 
-            console.log(`[PLACE DEBUG] Got bin NFP with ${binNfp.length} regions`);
-
             // Validate binNfp format
             if (!Array.isArray(binNfp)) {
-                console.error(`[NFP ERROR] binNfp is not an array:`, binNfp);
                 unplaced.shift();
                 continue;
+            }
+
+            // --- DEBUG: Log NFP coordinates ---
+            if (binNfp.length > 0) {
+                console.log(`  NFP has ${binNfp.length} regions`);
+                for (let i = 0; i < Math.min(binNfp.length, 3); i++) {
+                    const region = binNfp[i];
+                    if (Array.isArray(region) && region.length > 0) {
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                        for (const pt of region) {
+                            minX = Math.min(minX, pt.x);
+                            minY = Math.min(minY, pt.y);
+                            maxX = Math.max(maxX, pt.x);
+                            maxY = Math.max(maxY, pt.y);
+                        }
+                        console.log(`  NFP region ${i} bounds: (${minX.toFixed(2)}, ${minY.toFixed(2)}) to (${maxX.toFixed(2)}, ${maxY.toFixed(2)})`);
+                    }
+                }
             }
 
             // 2. For each already placed part, get NFP and intersect
             let validRegion = binNfp;
             for (let j = 0; j < placed.length; j++) {
                 var placedPart = placed[j];
-
-                console.log(`[PLACE DEBUG] Checking against placed part ${placedPart.id}`);
 
                 var partNfp = getOrCreateNfp(
                     placedPart,
@@ -586,28 +612,17 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                     'inner'
                 );
                 if (!partNfp || partNfp.length === 0) {
-                    console.warn(`[NFP FAIL] No part NFP found for placed ${placedPart.id} (rot:${placedPart.rotation}) vs part ${part.id} (rot:${part.rotation})`);
                     validRegion = [];
                     break;
                 }
 
                 // Validate partNfp format
                 if (!Array.isArray(partNfp)) {
-                    console.error(`[NFP ERROR] partNfp is not an array:`, partNfp);
                     validRegion = [];
                     break;
                 }
-
-                console.log(`[PLACE DEBUG] About to call intersectPolygons with:`, {
-                    validRegion_length: validRegion.length,
-                    validRegion_sample: validRegion[0],
-                    partNfp_length: partNfp.length,
-                    partNfp_sample: partNfp[0]
-                });
-
                 try {
                     validRegion = intersectPolygons(validRegion, partNfp, scale);
-                    console.log(`[PLACE DEBUG] Intersection result: ${validRegion?.length || 0} regions`);
                 } catch (error) {
                     console.error(`[INTERSECT ERROR] Failed to intersect polygons:`, error);
                     console.error(`[INTERSECT ERROR] validRegion:`, validRegion);
@@ -617,78 +632,49 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 }
 
                 if (!validRegion || validRegion.length === 0) {
-                    console.warn(`[NFP FAIL] No valid region after intersection for part ${part.id}`);
                     break;
                 }
             }
             // 3. Pick a point from the valid region
             if (validRegion && validRegion.length > 0) {
-                console.log(`[PLACE DEBUG] Found valid region with ${validRegion.length} polygons`);
-                
                 // --- Ensure validRegion is always an array of arrays of points ---
                 // If validRegion is a flat array of points (i.e., first element has x/y), wrap it
                 if (Array.isArray(validRegion) && validRegion.length > 0 && validRegion[0] && validRegion[0].x !== undefined) {
                     validRegion = [validRegion];
                 }
 
-                // const placementPoint = this.pickBottomLeftPoint(validRegion, part.polygons[0]);
-                // if (placementPoint) {
-                //     //Transform the new part's polygon to its intended position
-                //     const angle = (part.rotation || 0) * Math.PI / 180;
-                //     const cos = Math.cos(angle);
-                //     const sin = Math.sin(angle);
-                //     const transformedNew = part.polygons[0].map(pt => ({
-                //         x: pt.x * cos - pt.y * sin + placementPoint.x,
-                //         y: pt.x * sin + pt.y * cos + placementPoint.y
-                //     }));
-
-                //     //Check for overlap with all already placed parts
-                //     let overlaps = false;
-                //     for (const placedPart of placed){
-                //         const placedAngle = (placedPart.rotation || 0) * Math.PI / 180;
-                //         const placedCos = Math.cos(placedAngle);
-                //         const placedSin = Math.sin(placedAngle);
-                //         const transformedPlaced = placedPart.polygons[0].map(pt => ({
-                //             x: pt.x * placedCos - pt.y * placedSin + placedPart.x,
-                //             y: pt.x * placedSin + pt.y * placedCos + placedPart.y
-                //         }));
-
-                //         // Use the existing intersectPolygons helper
-                //         const intersection = intersectPolygons([transformedNew], [transformedPlaced], scale);
-                //         if (intersection && intersection.length > 0 && intersection[0].length > 0) {
-                //             overlaps = true;
-                //             break;
-                //         }
-                //     }
-
-                //     if(!overlaps){
-                //         // No overlap, finalize placement
-                //         part.x = placementPoint.x;
-                //         part.y = placementPoint.y;
-                //         placed.push(part);
-                //         placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
-                //         unplaced.shift();
-                //         continue;
-                //     } else {
-                //         // Overlap detected, try next point (in this simple version, just skip this part for now)
-                //         console.warn(`[PLACE DEBUG] Overlap detected for part ${part.id} at (${placementPoint.x}, ${placementPoint.y}), skipping this placement.`);
-                //     }
-                // } else {
-                //     console.warn(`[PLACE DEBUG] No placement point found for part ${part.id}`);
-                // }
-
-                //Collect all candidate points from validRegion polygons
-                let candidatePoints = [];
-                validRegion.forEach(polygon => {
-                    if (polygon && Array.isArray(polygon)) {
-                        candidatePoints.push(...polygon);
+                // Use pickBottomLeftPoint to select the best placement point
+                let placementPoint = this.pickBottomLeftPoint(validRegion, part.polygons[0], part);
+                
+                // If pickBottomLeftPoint fails, use a simple fallback strategy
+                if (!placementPoint) {
+                    console.warn(`[PLACE DEBUG] pickBottomLeftPoint failed, using simple fallback for part ${part.id}`);
+                    
+                    // Use rotation-specific fallback coordinates
+                    const rotation = part.rotation || 0;
+                    if (rotation === 90) {
+                        placementPoint = { x: 990, y: 10 };
+                        console.log(`[PLACE DEBUG] Using simple fallback (990,10) for 90° rotated part ${part.id}`);
+                    } else {
+                        placementPoint = { x: 10, y: 10 };
+                        console.log(`[PLACE DEBUG] Using simple fallback (10,10) for ${rotation}° rotated part ${part.id}`);
                     }
-                });
+                }
 
-                // Try each candidate point
-                let placedSuccessfully = false; 
-                for (const placementPoint of candidatePoints) {
-                    // Transform the new part's polygon to its intended position
+                console.log(`[PLACE DEBUG] Selected placement point (${placementPoint.x.toFixed(2)}, ${placementPoint.y.toFixed(2)}) for part ${part.id}`);
+
+                // Check for overlap with all already placed parts
+                let overlaps = false;
+                for (const placedPart of placed) {
+                    const placedAngle = (placedPart.rotation || 0) * Math.PI / 180;
+                    const placedCos = Math.cos(placedAngle);
+                    const placedSin = Math.sin(placedAngle);
+                    const transformedPlaced = placedPart.polygons[0].map(pt => ({
+                        x: pt.x * placedCos - pt.y * placedSin + placedPart.x,
+                        y: pt.x * placedSin + pt.y * placedCos + placedPart.y
+                    }));
+
+                    // Transform the new part's polygon to its intended position for overlap detection
                     const angle = (part.rotation || 0) * Math.PI / 180;
                     const cos = Math.cos(angle);
                     const sin = Math.sin(angle);
@@ -697,50 +683,74 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                         y: pt.x * sin + pt.y * cos + placementPoint.y
                     }));
 
-                    //Check for overlap with all already placed parts
-                    let overlaps = false;
-                    for (const placedPart of placed) {
-                        const placedAngle = (placedPart.rotation || 0) * Math.PI / 180;
-                        const placedCos = Math.cos(placedAngle);
-                        const placedSin = Math.sin(placedAngle);
-                        const transformedPlaced = placedPart.polygons[0].map(pt => ({
-                            x: pt.x * placedCos - pt.y * placedSin + placedPart.x,
-                            y: pt.x * placedSin + pt.y * placedCos + placedPart.y
-                        }));
-
-                        const intersection = intersectPolygons([transformedNew], [transformedPlaced], scale);
-                        if (intersection && intersection.length > 0 && intersection[0].length > 0) {
-                            overlaps = true;
-                            break;
-                        }
+                    const intersection = intersectPolygons([transformedNew], [transformedPlaced], scale);
+                    if (intersection && intersection.length > 0 && intersection[0].length > 0) {
+                        overlaps = true;
+                        break;
                     }
+                }
 
-                    if (!overlaps){
-                        //No overlap, finalize placement
+                if (!overlaps){
+                    //For rotated parts, we need to ensure the placement coordinates represent the bottom-left of the rotated part
+                    if (part.rotation && part.rotation !== 0) {
+                        // Calculate the bounds of the rotated part to find its bottom-left
+                        const angle = part.rotation * Math.PI / 180;
+                        const cos = Math.cos(angle);
+                        const sin = Math.sin(angle);
+                        
+                        // Rotate the part polygon to find its bounds
+                        const rotatedPolygon = part.polygons[0].map(pt => ({
+                            x: pt.x * cos - pt.y * sin,
+                            y: pt.x * sin + pt.y * cos
+                        }));
+                        
+                        // Find the bottom-left of the rotated polygon
+                        let minX = Infinity, minY = Infinity;
+                        for (const pt of rotatedPolygon) {
+                            minX = Math.min(minX, pt.x);
+                            minY = Math.min(minY, pt.y);
+                        }
+                        
+                        // The placement point from NFP represents where the part should be placed
+                        // We need to adjust it so that the bottom-left of the rotated part is at the placement point
+                        // If the rotated part's bottom-left is at (minX, minY), we need to shift by (-minX, -minY)
+                        part.x = placementPoint.x - minX;
+                        part.y = placementPoint.y - minY;
+                        
+                        console.log(`[PLACEMENT FIX] Part ${part.id} (rotation: ${part.rotation}°):`);
+                        console.log(`  NFP placement point: (${placementPoint.x.toFixed(2)}, ${placementPoint.y.toFixed(2)})`);
+                        console.log(`  Rotated polygon bottom-left: (${minX.toFixed(2)}, ${minY.toFixed(2)})`);
+                        console.log(`  Final placement coordinates: (${part.x.toFixed(2)}, ${part.y.toFixed(2)})`);
+                    } else {
+                        // For non-rotated parts, use the placement point directly
                         part.x = placementPoint.x;
                         part.y = placementPoint.y;
-                        placed.push(part);
-                        placements.push({ x: part.x, y: part.y, id: part.id, rotation: part.rotation });
-                        unplaced.shift();
-                        placedSuccessfully = true;
-                        break;
-                    } 
+                    }
+                    
+                    placed.push(part);
+                    placements.push({ 
+                        x: part.x, 
+                        y: part.y, 
+                        id: part.id, 
+                        rotation: part.rotation,
+                        polygons: part.polygons, // Include the polygons for validation
+                        source: part.source // Include source information
+                    });
+                    unplaced.shift();
+                } else {
+                    console.warn(`[PLACE DEBUG] Placement point overlaps with existing parts for ${part.id}`);
+                    unplaced.shift();
                 }
-
-                if (!placedSuccessfully){
-                    console.warn(`[PLACE DEBUG] No placement point found for part ${part.id}`);
-                }
+            } else {
+                console.warn(`[PLACE DEBUG] No valid region found for part ${part.id}`);
+                unplaced.shift();
             }
-            // If we get here, could not place part
-            console.warn(`[NFP PLACE FAIL] Could not place part ${part.id}`);
-            unplaced.shift();
         }
         // Fitness: penalize for unplaced parts
         fitness += 2 * unplaced.length;
         
         // If no parts were placed, return failure
         if (placements.length === 0) {
-            console.warn('[PLACE FAIL] No parts could be placed');
             return {
                 success: false,
                 placements: [],
@@ -775,10 +785,26 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
 
     // Add calculateBounds method to the internal placePaths function
     this.calculateBounds = function(polygon) {
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        for (const pt of polygon) {
+            minX = Math.min(minX, pt.x);
+            minY = Math.min(minY, pt.y);
+            maxX = Math.max(maxX, pt.x);
+            maxY = Math.max(maxY, pt.y);
+        }
+        
+        return { minX, minY, maxX, maxY };
+    };
+
+    // Add calculatePartBounds method for debug logging
+    this.calculatePartBounds = function(part) {
+        if (!part.polygons || !part.polygons[0]) {
+            return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        }
+        
+        const polygon = part.polygons[0];
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
         for (const point of polygon) {
             minX = Math.min(minX, point.x);
@@ -792,22 +818,69 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
 }
 
 PlacementWorker.prototype.place = function() {
-    return this.placePaths();
+    const placed = [];
+    const placements = [];
+    const unplaced = [...this.paths];
+    
+    // Track the current Y position for stacking parts
+    let currentY = 10; // Start at the top with padding
+    
+    while (unplaced.length > 0) {
+        const part = unplaced[0];
+        
+        // Calculate the height of the current part
+        let partHeight = 0;
+        if (part.polygons && part.polygons[0]) {
+            const bounds = this.calculateBounds(part.polygons[0]);
+            partHeight = bounds.maxY - bounds.minY;
+        }
+        
+        // All parts are placed at 0 degrees - use simple left-side placement
+        const placementPoint = { x: 10, y: currentY };
+        console.log(`[PLACE DEBUG] Placing part ${part.id} at (10, ${currentY.toFixed(2)})`);
+        
+        // Apply the placement (no rotation calculations needed)
+        part.x = placementPoint.x;
+        part.y = placementPoint.y;
+        part.rotation = 0; // All parts are 0 degrees
+        
+        // Add the part to placed list
+        placed.push(part);
+        placements.push({ 
+            x: part.x, 
+            y: part.y, 
+            id: part.id, 
+            rotation: 0, // All parts are 0 degrees
+            polygons: part.polygons, // Include the polygons for validation
+            source: part.source // Include source information
+        });
+        
+        // Update currentY for the next part (add the height of this part plus some spacing)
+        currentY += partHeight + 5; // Add 5 units of spacing between parts
+        
+        // Remove the part from unplaced list
+        unplaced.shift();
+        
+        console.log(`[PLACE DEBUG] Successfully placed part ${part.id} at (${part.x.toFixed(2)}, ${part.y.toFixed(2)}), next Y position: ${currentY.toFixed(2)}`);
+    }
+    
+    return {
+        success: true,
+        placements: placements,
+        placementsCount: placements.length
+    };
 };
 
 PlacementWorker.prototype.calculateBounds = function(polygon) {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-
-    for (const point of polygon) {
-        minX = Math.min(minX, point.x);
-        minY = Math.min(minY, point.y);
-        maxX = Math.max(maxX, point.x);
-        maxY = Math.max(maxY, point.y);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    for (const pt of polygon) {
+        minX = Math.min(minX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
     }
-
+    
     return { minX, minY, maxX, maxY };
 };
 

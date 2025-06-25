@@ -83,27 +83,18 @@ function getFrame(polygon) {
 }
 
 function getOuterNfp(A, B, inside, nfpCache) {
-    console.log(`[OUTER NFP DEBUG] getOuterNfp called with:`, {
-        A_length: A?.length,
-        B_length: B?.length,
-        inside: inside,
-        A_has_children: !!(A?.children && A.children.length > 0),
-        B_has_children: !!(B?.children && B.children.length > 0)
-    });
 
     // try the file cache if the calculation will take a long time
     if (nfpCache) {
         var doc = nfpCache.find({ A: A.source, B: B.source, Arotation: A.rotation, Brotation: B.rotation });
 
         if(doc){
-            console.log(`[OUTER NFP DEBUG] Found NFP in file cache`);
             return doc;
         }
     }
 
     // not found in cache
     if(inside || (A.children && A.children.length > 0)){
-        console.log(`[OUTER NFP DEBUG] Using ClipperLib for inside/complex polygons`);
         if(!A.children){
             A.children = [];
         }
@@ -113,19 +104,9 @@ function getOuterNfp(A, B, inside, nfpCache) {
 
         // For inside or complex polygons, use ClipperLib directly
         var Ac = toClipperCoordinates(A);
-        console.log(`[OUTER NFP DEBUG] A converted to Clipper coordinates:`, {
-            Ac_length: Ac?.length,
-            Ac_first_point: Ac?.[0],
-            Ac_last_point: Ac?.[Ac?.length - 1]
-        });
-        
+ 
         ClipperLib.JS.ScaleUpPath(Ac, 10000000);
         var Bc = toClipperCoordinates(B);
-        console.log(`[OUTER NFP DEBUG] B converted to Clipper coordinates:`, {
-            Bc_length: Bc?.length,
-            Bc_first_point: Bc?.[0],
-            Bc_last_point: Bc?.[Bc?.length - 1]
-        });
         
         ClipperLib.JS.ScaleUpPath(Bc, 10000000);
         for(let i = 0; i < Bc.length; i++){
@@ -133,12 +114,7 @@ function getOuterNfp(A, B, inside, nfpCache) {
             Bc[i].Y *= -1;
         }
         
-        console.log(`[OUTER NFP DEBUG] Calling ClipperLib.Clipper.MinkowskiSum...`);
         var solution = ClipperLib.Clipper.MinkowskiSum(Ac, Bc, true);
-        console.log(`[OUTER NFP DEBUG] MinkowskiSum result:`, {
-            solution_length: solution?.length,
-            solution_type: typeof solution
-        });
 
         var clipperNfp;
         var largestArea = null;
@@ -151,37 +127,32 @@ function getOuterNfp(A, B, inside, nfpCache) {
             }
         }
 
-        console.log(`[OUTER NFP DEBUG] Selected NFP from solution:`, {
-            clipperNfp_length: clipperNfp?.length,
-            largestArea: largestArea
-        });
-
         if (!clipperNfp) {
             console.error(`[OUTER NFP DEBUG] No valid NFP found in solution`);
             return null;
         }
 
+        // --- FIX: Use bottom-left of part B instead of first point ---
+        let minX = Infinity, minY = Infinity;
+        for (let i = 0; i < B.length; i++) {
+            minX = Math.min(minX, B[i].x);
+            minY = Math.min(minY, B[i].y);
+        }
+        
+        console.log(`[NFP FIX] Part B bottom-left: (${minX}, ${minY}), first point: (${B[0].x}, ${B[0].y})`);
+
         for(let i = 0; i < clipperNfp.length; i++){
-            clipperNfp[i].x += B[0].x;
-            clipperNfp[i].y += B[0].y;
+            clipperNfp[i].x += minX;  // Use bottom-left instead of first point
+            clipperNfp[i].y += minY;  // Use bottom-left instead of first point
         }
 
         var nfp = [clipperNfp];
     }
     else{
-        console.log(`[OUTER NFP DEBUG] Using ClipperLib for simple polygons`);
         var Ac = toClipperCoordinates(A);
-        console.log(`[OUTER NFP DEBUG] A converted to Clipper coordinates:`, {
-            Ac_length: Ac?.length,
-            Ac_first_point: Ac?.[0]
-        });
         
         ClipperLib.JS.ScaleUpPath(Ac, 10000000);
         var Bc = toClipperCoordinates(B);
-        console.log(`[OUTER NFP DEBUG] B converted to Clipper coordinates:`, {
-            Bc_length: Bc?.length,
-            Bc_first_point: Bc?.[0]
-        });
         
         ClipperLib.JS.ScaleUpPath(Bc, 10000000);
         for(let i = 0; i < Bc.length; i++){
@@ -189,12 +160,7 @@ function getOuterNfp(A, B, inside, nfpCache) {
             Bc[i].Y *= -1;
         }
         
-        console.log(`[OUTER NFP DEBUG] Calling ClipperLib.Clipper.MinkowskiSum...`);
         var solution = ClipperLib.Clipper.MinkowskiSum(Ac, Bc, true);
-        console.log(`[OUTER NFP DEBUG] MinkowskiSum result:`, {
-            solution_length: solution?.length,
-            solution_type: typeof solution
-        });
 
         var clipperNfp;
         var largestArea = null;
@@ -207,28 +173,27 @@ function getOuterNfp(A, B, inside, nfpCache) {
             }
         }
 
-        console.log(`[OUTER NFP DEBUG] Selected NFP from solution:`, {
-            clipperNfp_length: clipperNfp?.length,
-            largestArea: largestArea
-        });
-
         if (!clipperNfp) {
             console.error(`[OUTER NFP DEBUG] No valid NFP found in solution`);
             return null;
         }
 
+        // --- FIX: Use bottom-left of part B instead of first point ---
+        let minX = Infinity, minY = Infinity;
+        for (let i = 0; i < B.length; i++) {
+            minX = Math.min(minX, B[i].x);
+            minY = Math.min(minY, B[i].y);
+        }
+        
+        console.log(`[NFP FIX] Part B bottom-left: (${minX}, ${minY}), first point: (${B[0].x}, ${B[0].y})`);
+
         for(let i = 0; i < clipperNfp.length; i++){
-            clipperNfp[i].x += B[0].x;
-            clipperNfp[i].y += B[0].y;
+            clipperNfp[i].x += minX;  // Use bottom-left instead of first point
+            clipperNfp[i].y += minY;  // Use bottom-left instead of first point
         }
 
         var nfp = [clipperNfp];
     }
-
-    console.log(`[OUTER NFP DEBUG] Final NFP before processing:`, {
-        nfp_length: nfp?.length,
-        nfp_type: typeof nfp
-    });
 
     if(!nfp || nfp.length == 0){
         console.error(`[OUTER NFP DEBUG] NFP is empty or null`);
@@ -236,11 +201,6 @@ function getOuterNfp(A, B, inside, nfpCache) {
     }
 
     nfp = nfp.pop();
-
-    console.log(`[OUTER NFP DEBUG] Final NFP after pop:`, {
-        nfp_length: nfp?.length,
-        nfp_type: typeof nfp
-    });
 
     if (!nfp || nfp.length == 0){
         console.error(`[OUTER NFP DEBUG] Final NFP is empty or null`);
@@ -256,10 +216,8 @@ function getOuterNfp(A, B, inside, nfpCache) {
             nfp: nfp
         };
         nfpCache.insert(doc);
-        console.log(`[OUTER NFP DEBUG] Stored NFP in file cache`);
     }
     
-    console.log(`[OUTER NFP DEBUG] Returning NFP with ${nfp.length} points`);
     return nfp;
 }
 
@@ -348,25 +306,13 @@ function getInnerNfp(A, B, config, nfpCache){
 
     var nfp = getOuterNfp(frame, B, true, nfpCache);
 
-    console.log(`[INNER NFP DEBUG] getOuterNfp returned:`, {
-        nfp_type: typeof nfp,
-        nfp_length: nfp?.length,
-        has_children: !!(nfp?.children),
-        children_length: nfp?.children?.length
-    });
 
     if(!nfp || nfp.length == 0){
-        console.log(`[INNER NFP DEBUG] NFP is null or empty, returning null`);
         return null;
     }
 
     // Handle both flat array and object with children
     var nfpArray = Array.isArray(nfp) ? nfp : (nfp.children || [nfp]);
-
-    console.log(`[INNER NFP DEBUG] Processed NFP array:`, {
-        nfpArray_length: nfpArray.length,
-        nfpArray_type: typeof nfpArray
-    });
 
     var holes = [];
     if (A.children && A.children.length > 0){
@@ -379,7 +325,6 @@ function getInnerNfp(A, B, config, nfpCache){
     }
 
     if(holes.length == 0){
-        console.log(`[INNER NFP DEBUG] No holes, returning NFP array wrapped in array`);
         // Return as array of arrays (polygons) as expected by intersectPolygons
         // Ensure nfpArray is properly formatted as an array of arrays
         if (Array.isArray(nfpArray) && nfpArray.length > 0) {
@@ -403,12 +348,10 @@ function getInnerNfp(A, B, config, nfpCache){
     clipper.AddPaths(clipperNfp, ClipperLib.PolyType.ptSubject, true);
 
     if (!clipper.Execute(ClipperLib.ClipType.ctDifference, finalNfp, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero)){
-        console.log(`[INNER NFP DEBUG] Clipper operation failed, returning original NFP array`);
         return nfpArray;
     }
 
     if (finalNfp.length == 0){
-        console.log(`[INNER NFP DEBUG] Final NFP is empty, returning null`);
         return null;
     }
 
@@ -429,7 +372,6 @@ function getInnerNfp(A, B, config, nfpCache){
         nfpCache.insert(doc, true);
     }
     
-    console.log(`[INNER NFP DEBUG] Returning final NFP with ${f.length} polygons`);
     return f;
 }
 
@@ -567,8 +509,9 @@ function placeParts(sheets, parts, config, nestindex) {
     // rotate paths by given rotation
     var rotated = [];
     for (let i = 0; i < parts.length; i++) {
-      var r = rotatePolygon(parts[i], parts[i].rotation);
-      r.rotation = parts[i].rotation;
+      // No rotation needed - all parts are 0 degrees
+      var r = parts[i];
+      r.rotation = 0; // All parts are 0 degrees
       r.source = parts[i].source;
       r.id = parts[i].id;
       r.filename = parts[i].filename;
@@ -627,27 +570,9 @@ function placeParts(sheets, parts, config, nestindex) {
         var sheetNfp = null;
         // try all possible rotations until it fits
         // (only do this for the first part of each sheet, to ensure that all parts that can be placed are, even if we have to to open a lot of sheets)
-        for (let j = 0; j < config.rotations; j++) {
-          sheetNfp = getInnerNfp(sheet, part, config, NfpCache);
+        // No rotation needed - all parts are 0 degrees
+        sheetNfp = getInnerNfp(sheet, part, config, NfpCache);
   
-          if (sheetNfp) {
-            break;
-          }
-  
-          var r = rotatePolygon(part, 360 / config.rotations);
-          r.rotation = part.rotation + (360 / config.rotations);
-          r.source = part.source;
-          r.id = part.id;
-          r.filename = part.filename
-  
-          // rotation is not in-place
-          part = r;
-          parts[i] = r;
-  
-          if (part.rotation > 360) {
-            part.rotation = part.rotation % 360;
-          }
-        }
         // part unplaceable, skip
         if (!sheetNfp || sheetNfp.length == 0) {
           continue;
@@ -722,13 +647,13 @@ function placeParts(sheets, parts, config, nestindex) {
                     const partIsWide = partBounds.width > partBounds.height;
   
   
-                    // Try part with current rotation
+                    // Try part with current rotation (0 degrees only)
                     let bestRotationNfp = null;
-                    let bestRotation = part.rotation;
+                    let bestRotation = 0; // All parts are 0 degrees
                     let bestFitFill = 0;
                     let rotationPlacements = [];
   
-                    // Try original rotation
+                    // Try original rotation (0 degrees)
                     var holeNfp = getInnerNfp(holePoly, part, config, NfpCache);
                     if (holeNfp && holeNfp.length > 0) {
                       bestRotationNfp = holeNfp;
@@ -739,7 +664,7 @@ function placeParts(sheets, parts, config, nestindex) {
                           rotationPlacements.push({
                             x: holeNfp[m][n].x - part[0].x + placements[j].x,
                             y: holeNfp[m][n].y - part[0].y + placements[j].y,
-                            rotation: part.rotation,
+                            rotation: 0, // All parts are 0 degrees
                             orientationMatched: (holeIsWide === partIsWide),
                             fillRatio: bestFitFill
                           });
@@ -747,48 +672,7 @@ function placeParts(sheets, parts, config, nestindex) {
                       }
                     }
   
-                    // Try up to 4 different rotations to find the best fit for this hole
-                    const rotationsToTry = [90, 180, 270];
-                    for (let rot of rotationsToTry) {
-                      let newRotation = (part.rotation + rot) % 360;
-                      const rotatedPart = rotatePolygon(part, newRotation);
-                      rotatedPart.rotation = newRotation;
-                      rotatedPart.source = part.source;
-                      rotatedPart.id = part.id;
-                      rotatedPart.filename = part.filename;
-  
-                      const rotatedBounds = GeometryUtil.getPolygonBounds(rotatedPart);
-                      const rotatedIsWide = rotatedBounds.width > rotatedBounds.height;
-                      const rotatedNfp = getInnerNfp(holePoly, rotatedPart, config, NfpCache);
-  
-                      if (rotatedNfp && rotatedNfp.length > 0) {
-                        // Calculate fill ratio for this rotation
-                        const rotatedFill = partArea / childArea;
-  
-                        // If this rotation has better orientation match or is the first valid one
-                        if ((holeIsWide === rotatedIsWide && (bestRotationNfp === null || !(holeIsWide === partIsWide))) ||
-                          (bestRotationNfp === null)) {
-                          bestRotationNfp = rotatedNfp;
-                          bestRotation = newRotation;
-                          bestFitFill = rotatedFill;
-  
-                          // Clear previous placements for worse rotations
-                          rotationPlacements = [];
-  
-                          for (let m = 0; m < rotatedNfp.length; m++) {
-                            for (let n = 0; n < rotatedNfp[m].length; n++) {
-                              rotationPlacements.push({
-                                x: rotatedNfp[m][n].x - rotatedPart[0].x + placements[j].x,
-                                y: rotatedNfp[m][n].y - rotatedPart[0].y + placements[j].y,
-                                rotation: newRotation,
-                                orientationMatched: (holeIsWide === rotatedIsWide),
-                                fillRatio: bestFitFill
-                              });
-                            }
-                          }
-                        }
-                      }
-                    }
+                    // No additional rotations to try - all parts are 0 degrees
   
                     // If we found valid placements, add them to the hole positions
                     if (rotationPlacements.length > 0) {
@@ -1565,6 +1449,6 @@ function placeParts(sheets, parts, config, nestindex) {
     console.log(`Utilisation of the sheet(s): ${utilisation.toFixed(2)}%`);
   
     return { placements: allplacements, fitness: fitness, area: sheetarea, totalarea: totalsheetarea, mergedLength: totalMerged, utilisation: utilisation };
-  }
+}
 
 export { getOuterNfp, getInnerNfp };

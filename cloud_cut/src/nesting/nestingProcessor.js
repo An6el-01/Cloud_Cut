@@ -8,6 +8,8 @@ import { PlacementWorker } from './util/placementWorker';
 import { GeometryUtil } from './util/geometryutil';
 
 const PADDING = 10; // 10mm padding
+const SHEET_WIDTH = 980; // 1000 - 2*PADDING to ensure 10-990 range
+const SHEET_HEIGHT = 1980; // 2000 - 2*PADDING to ensure 10-1990 range
 
 // Helper to convert all points in a polygon to {x, y} format
 function toXY(polygon) {
@@ -66,7 +68,7 @@ export class NestingProcessor {
       const config = {
         spacing: 0, // Ensure no extra space between parts for tight packing
         tolerance: 0.1,
-        rotations: [0, 90, 180, 270], // Rotations remain as is
+        rotations: [0], // Only allow 0 degree rotations
         useHoles: true,
         populationSize: 10,
         mutationRate: 0.1,
@@ -179,7 +181,6 @@ export class NestingProcessor {
                 this.svgParser.pathToAbsolute(path);
               } catch (error) {
                 console.error(`Error converting path ${i + 1} to absolute:`, error);
-                console.log('Path element:', path);
                 continue;
               }
             }
@@ -235,7 +236,6 @@ export class NestingProcessor {
               if (boundsNorm.height > boundsNorm.width) {
                 // Rotate by 90 degrees to make it horizontal
                 scaledPolygon = this.geometryUtil.rotatePolygon(scaledPolygon, 90);
-                console.log(`Normalized orientation for ${item.sku}: rotated by 90°`);
               }
               // --- VALIDATE THE POLYGON (only the longest path) ---
               function validatePolygon(polygon) {
@@ -299,7 +299,6 @@ export class NestingProcessor {
                 }
                 return false;
               }
-              console.log(`Polygon for SKU ${item.sku}:`, scaledPolygon);
               // DISABLED: Self-intersection check is giving false positives
               // if (hasSelfIntersection(scaledPolygon)) {
               //   console.warn(`Polygon for SKU ${item.sku} is self-intersecting. Please fix the SVG. Skipping this part.`);
@@ -332,7 +331,6 @@ export class NestingProcessor {
                 }
                 parts.push(part);
               }
-              console.log(`Successfully processed ${item.sku} with ${item.quantity} polygons for order ${item.orderId || 'unknown'}`);
             } else {
               console.warn(`No polygons generated for ${item.sku}`);
             }
@@ -385,6 +383,9 @@ export class NestingProcessor {
 
     // Align placements to origin (0,0) for tightest fit in the viewBox
     this.alignPlacementsToOrigin(sheet.parts);
+    
+    // Validate that all placements are within the specified bounds
+    this.validatePlacementBounds(sheet.parts);
 
     return {
       fitness: nestingResult.fitness,
@@ -392,8 +393,45 @@ export class NestingProcessor {
     };
   }
 
+  validatePlacementBounds(placements) {
+    const minX = PADDING; // 10
+    const maxX = PADDING + SHEET_WIDTH; // 990
+    const minY = PADDING; // 10
+    const maxY = PADDING + SHEET_HEIGHT; // 1990
+    
+    let allValid = true;
+    
+    placements.forEach(part => {
+      if (!part.polygons || !part.polygons[0]) {
+        console.warn(`[BOUNDS VALIDATION] Part ${part.id} has no polygons`);
+        allValid = false;
+        return;
+      }
+      
+      // Check each point of the part's polygon
+      part.polygons[0].forEach((pt, index) => {
+        const absX = pt.x + (part.x || 0);
+        const absY = pt.y + (part.y || 0);
+        
+        if (absX < minX || absX > maxX || absY < minY || absY > maxY) {
+          console.warn(`[BOUNDS VALIDATION] Part ${part.id} point ${index} at (${absX.toFixed(2)}, ${absY.toFixed(2)}) is outside bounds X(${minX}-${maxX}), Y(${minY}-${maxY})`);
+          allValid = false;
+        }
+      });
+    });
+    
+    if (allValid) {
+      console.log(`[BOUNDS VALIDATION] All ${placements.length} parts are within placement bounds`);
+    } else {
+      console.error(`[BOUNDS VALIDATION] Some parts are outside placement bounds!`);
+    }
+    
+    return allValid;
+  }
+
   alignPlacementsToOrigin(placements) {
-    // Shift all placements so the minimum x/y is at (0,0) for optimal packing
+    // Check if placements need to be shifted to fit within bounds
+    // Only shift if the minimum placement is outside the bounds (10-990 for X, 10-1990 for Y)
     let minX = Infinity, minY = Infinity;
     placements.forEach(part => {
       part.polygons[0].forEach(pt => {
@@ -401,11 +439,33 @@ export class NestingProcessor {
         minY = Math.min(minY, pt.y + (part.y || 0));
       });
     });
-    placements.forEach(part => {
-      part.x = (part.x || 0) - minX;
-      part.y = (part.y || 0) - minY;
-    });
-    // --- DEBUG LOG: Confirm placements are shifted correctly ---
+    
+    // Only shift if the minimum point is outside the bounds
+    const minBoundX = PADDING; // 10
+    const minBoundY = PADDING; // 10
+    
+    let shiftX = 0;
+    let shiftY = 0;
+    
+    if (minX < minBoundX) {
+      shiftX = minBoundX - minX;
+    }
+    if (minY < minBoundY) {
+      shiftY = minBoundY - minY;
+    }
+    
+    // Only apply shifts if needed
+    if (shiftX !== 0 || shiftY !== 0) {
+      console.log(`[ALIGN DEBUG] Shifting placements by (${shiftX.toFixed(2)}, ${shiftY.toFixed(2)}) to fit within bounds`);
+      placements.forEach(part => {
+        part.x = (part.x || 0) + shiftX;
+        part.y = (part.y || 0) + shiftY;
+      });
+    } else {
+      console.log(`[ALIGN DEBUG] Placements already within bounds, no shift needed`);
+    }
+    
+    // --- DEBUG LOG: Confirm placements are within bounds ---
     let debugMinX = Infinity, debugMinY = Infinity, debugMaxX = -Infinity, debugMaxY = -Infinity;
     placements.forEach(part => {
       part.polygons[0].forEach(pt => {
@@ -417,11 +477,7 @@ export class NestingProcessor {
         debugMaxY = Math.max(debugMaxY, absY);
       });
     });
-    console.log('[ALIGN DEBUG] Placements shifted to origin. Bounds after shift:', {
-      minX: debugMinX,
-      minY: debugMinY,
-      maxX: debugMaxX,
-      maxY: debugMaxY
-    });
+    
+    console.log(`[ALIGN DEBUG] Final placement bounds: X(${debugMinX.toFixed(2)}-${debugMaxX.toFixed(2)}), Y(${debugMinY.toFixed(2)}-${debugMaxY.toFixed(2)})`);
   }
 } 
