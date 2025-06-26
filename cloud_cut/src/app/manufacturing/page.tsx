@@ -323,12 +323,12 @@ export default function Manufacturing() {
   };
 
   // Function to get quantity of a specific medium sheet in an order
-  const getMediumSheetQuantityInOrder = (orderId: string, sku: string) => {
-    const items = allOrderItems[orderId] || [];
-    return items
-      .filter(item => item.sku_id === sku && !item.completed)
-      .reduce((sum, item) => sum + item.quantity, 0);
-  };
+  // const getMediumSheetQuantityInOrder = (orderId: string, sku: string) => {
+  //   const items = allOrderItems[orderId] || [];
+  //   return items
+  //     .filter(item => item.sku_id === sku && !item.completed)
+  //     .reduce((sum, item) => sum + item.quantity, 0);
+  // };
 
   // Function to handle clicking on a medium sheet row
   const handleMediumSheetClick = (sku: string) => {
@@ -779,98 +779,98 @@ export default function Manufacturing() {
     });
   };
 
-  const handleMarkManufactured = (packingOrderIds: string[], markCompletedOrderIds: string[]) => {
-    return Sentry.startSpan({
-      name: 'handleMarkManufactured',
-      op: 'business.function'
-    }, async () => {
-      console.log("Manufacturing: handleMarkManufactured called with:", {
-        packingOrderIds,
-        markCompletedOrderIds,
-        orderIdsToPacking,
-        orderIdsToMarkCompleted
-      });
+  // const handleMarkManufactured = (packingOrderIds: string[], markCompletedOrderIds: string[]) => {
+  //   return Sentry.startSpan({
+  //     name: 'handleMarkManufactured',
+  //     op: 'business.function'
+  //   }, async () => {
+  //     console.log("Manufacturing: handleMarkManufactured called with:", {
+  //       packingOrderIds,
+  //       markCompletedOrderIds,
+  //       orderIdsToPacking,
+  //       orderIdsToMarkCompleted
+  //     });
 
-      // Close the confirmation dialog
-      setShowManuConfirmDialog(false);
+  //     // Close the confirmation dialog
+  //     setShowManuConfirmDialog(false);
 
-      // Reset the orderIds arrays immediately
-      setOrderIdsToPacking([]);
-      setOrderIdsToMarkCompleted([]);
+  //     // Reset the orderIds arrays immediately
+  //     setOrderIdsToPacking([]);
+  //     setOrderIdsToMarkCompleted([]);
 
-      console.log("Manufacturing: Dialog closed, beginning order processing");
+  //     console.log("Manufacturing: Dialog closed, beginning order processing");
 
-      // Process orders that should be marked as manufactured (ready for packing)
-      for (const orderId of packingOrderIds) {
-        // Add this order to pending manufactured orders for UI feedback
-        setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
+  //     // Process orders that should be marked as manufactured (ready for packing)
+  //     for (const orderId of packingOrderIds) {
+  //       // Add this order to pending manufactured orders for UI feedback
+  //       setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
 
-        console.log(`Manufacturing: Marking order ${orderId} as manufactured`);
-        // Show loading state
-        setIsRefreshing(true);
+  //       console.log(`Manufacturing: Marking order ${orderId} as manufactured`);
+  //       // Show loading state
+  //       setIsRefreshing(true);
 
-        try {
-          // Update the manufactured status in Redux and Supabase
-          dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
-        } catch (error) {
-          console.error("Error marking order as manufactured (handleMarkManufactured):", error);
-        }
-      }
+  //       try {
+  //         // Update the manufactured status in Redux and Supabase
+  //         dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
+  //       } catch (error) {
+  //         console.error("Error marking order as manufactured (handleMarkManufactured):", error);
+  //       }
+  //     }
 
-      // Process orders where only specific items should be marked as completed
-      for (const orderId of markCompletedOrderIds) {
-        // Find the items with the current medium sheet SKU
-        const orderItems = allOrderItems[orderId] || [];
-        const mediumSheetItems = orderItems.filter(item =>
-          item.sku_id === selectedFoamSheet && !item.completed
-        );
+  //     // Process orders where only specific items should be marked as completed
+  //     for (const orderId of markCompletedOrderIds) {
+  //       // Find the items with the current medium sheet SKU
+  //       const orderItems = allOrderItems[orderId] || [];
+  //       const mediumSheetItems = orderItems.filter(item =>
+  //         item.sku_id === selectedFoamSheet && !item.completed
+  //       );
 
-        // Mark each medium sheet item as completed
-        for (const item of mediumSheetItems) {
-          try {
-            dispatch(updateItemCompleted({
-              orderId,
-              itemId: item.id,
-              completed: true
-            }));
-          } catch (error) {
-            console.error(`Error marking item ${item.id} as completed:`, error);
-          }
-        }
-      }
+  //       // Mark each medium sheet item as completed
+  //       for (const item of mediumSheetItems) {
+  //         try {
+  //           dispatch(updateItemCompleted({
+  //             orderId,
+  //             itemId: item.id,
+  //             completed: true
+  //           }));
+  //         } catch (error) {
+  //           console.error(`Error marking item ${item.id} as completed:`, error);
+  //         }
+  //       }
+  //     }
 
-      // Refresh the orders list after a delay to ensure updates complete
-      setTimeout(() => {
-        console.log(`Refreshing orders after processing`);
+  //     // Refresh the orders list after a delay to ensure updates complete
+  //     setTimeout(() => {
+  //       console.log(`Refreshing orders after processing`);
 
-        // Refresh orders data
-        dispatch(fetchOrdersFromSupabase({
-          page: currentPage,
-          perPage: ordersPerPage,
-          manufactured: false,
-          packed: false,
-          status: "Pending",
-          view: 'manufacturing'
-        }))
-          .finally(() => {
-            setIsRefreshing(false);
-            // Clear pending states
-            setPendingItemToComplete(null);
-            setPendingManufacturedOrders(new Set());
-            setCheckedOrders(new Set());
-            setAllMediumSheetOrdersChecked(false);
+  //       // Refresh orders data
+  //       dispatch(fetchOrdersFromSupabase({
+  //         page: currentPage,
+  //         perPage: ordersPerPage,
+  //         manufactured: false,
+  //         packed: false,
+  //         status: "Pending",
+  //         view: 'manufacturing'
+  //       }))
+  //         .finally(() => {
+  //           setIsRefreshing(false);
+  //           // Clear pending states
+  //           setPendingItemToComplete(null);
+  //           setPendingManufacturedOrders(new Set());
+  //           setCheckedOrders(new Set());
+  //           setAllMediumSheetOrdersChecked(false);
 
-            // Refresh medium sheets view if active
-            if (activeTab === 'medium' && selectedFoamSheet) {
-              // Force refresh by temporarily clearing and resetting the selected foam sheet
-              const currentSheet = selectedFoamSheet;
-              setSelectedFoamSheet(null);
-              setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
-            }
-          });
-      }, 2000);
-    });
-  };
+  //           // Refresh medium sheets view if active
+  //           if (activeTab === 'medium' && selectedFoamSheet) {
+  //             // Force refresh by temporarily clearing and resetting the selected foam sheet
+  //             const currentSheet = selectedFoamSheet;
+  //             setSelectedFoamSheet(null);
+  //             setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
+  //           }
+  //         });
+  //     }, 2000);
+  //   });
+  // };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -912,112 +912,112 @@ export default function Manufacturing() {
   };
 
   // Function to mark all orders with the selected medium sheet as manufactured
-  const markAllMediumSheetOrdersAsManufactured = () => {
-    Sentry.startSpan({
-      name: 'markAllMediumSheetOrdersAsManufactured',
-    }, async () => {
-      console.log('markAllMediumSheetOrdersAsManufactured');
-      if (selectedFoamSheet) {
-        // Toggle the main checkbox state
-        const newCheckedState = !allMediumSheetOrdersChecked;
-        setAllMediumSheetOrdersChecked(newCheckedState);
+  // const markAllMediumSheetOrdersAsManufactured = () => {
+  //   Sentry.startSpan({
+  //     name: 'markAllMediumSheetOrdersAsManufactured',
+  //   }, async () => {
+  //     console.log('markAllMediumSheetOrdersAsManufactured');
+  //     if (selectedFoamSheet) {
+  //       // Toggle the main checkbox state
+  //       const newCheckedState = !allMediumSheetOrdersChecked;
+  //       setAllMediumSheetOrdersChecked(newCheckedState);
 
-        // Get all orders with the selected medium sheet
-        const ordersWithSheet = findOrdersWithMediumSheet(selectedFoamSheet);
+  //       // Get all orders with the selected medium sheet
+  //       const ordersWithSheet = findOrdersWithMediumSheet(selectedFoamSheet);
 
-        // Create a new Set for checked orders
-        const newCheckedOrders = new Set(checkedOrders);
+  //       // Create a new Set for checked orders
+  //       const newCheckedOrders = new Set(checkedOrders);
 
-        // If toggling to checked state, add all orders to the checked set
-        // If toggling to unchecked state, remove all orders from the checked set
-        ordersWithSheet.forEach(order => {
-          if (newCheckedState) {
-            newCheckedOrders.add(order.order_id);
-          } else {
-            newCheckedOrders.delete(order.order_id);
-          }
-        });
+  //       // If toggling to checked state, add all orders to the checked set
+  //       // If toggling to unchecked state, remove all orders from the checked set
+  //       ordersWithSheet.forEach(order => {
+  //         if (newCheckedState) {
+  //           newCheckedOrders.add(order.order_id);
+  //         } else {
+  //           newCheckedOrders.delete(order.order_id);
+  //         }
+  //       });
 
-        // Update the checked orders state
-        setCheckedOrders(newCheckedOrders);
+  //       // Update the checked orders state
+  //       setCheckedOrders(newCheckedOrders);
 
-        // If we're checking the main checkbox, process all orders for manufacturing actions
-        if (newCheckedState) {
-          // Arrays to store order IDs based on their status
-          const orderIdsForPacking: string[] = [];
-          const orderIdsForMarkCompleted: string[] = [];
+  //       // If we're checking the main checkbox, process all orders for manufacturing actions
+  //       if (newCheckedState) {
+  //         // Arrays to store order IDs based on their status
+  //         const orderIdsForPacking: string[] = [];
+  //         const orderIdsForMarkCompleted: string[] = [];
 
-          // Process each order with this medium sheet
-          for (const order of ordersWithSheet) {
-            // Get all items for this order
-            const orderItems = allOrderItems[order.order_id] || [];
+  //         // Process each order with this medium sheet
+  //         for (const order of ordersWithSheet) {
+  //           // Get all items for this order
+  //           const orderItems = allOrderItems[order.order_id] || [];
 
-            // Get all manufacturing items (items with SKU starting with SFI, SFC, or SFS)
-            const manufacturingItems = orderItems.filter(item =>
-              (item.sku_id.startsWith('SFI') ||
-                item.sku_id.startsWith('SFC') ||
-                item.sku_id.startsWith('SFS')) &&
-              !item.completed
-            );
+  //           // Get all manufacturing items (items with SKU starting with SFI, SFC, or SFS)
+  //           const manufacturingItems = orderItems.filter(item =>
+  //             (item.sku_id.startsWith('SFI') ||
+  //               item.sku_id.startsWith('SFC') ||
+  //               item.sku_id.startsWith('SFS')) &&
+  //             !item.completed
+  //           );
 
-            // Get items with the current medium sheet SKU
-            const mediumSheetItems = orderItems.filter(item =>
-              item.sku_id === selectedFoamSheet && !item.completed
-            );
+  //           // Get items with the current medium sheet SKU
+  //           const mediumSheetItems = orderItems.filter(item =>
+  //             item.sku_id === selectedFoamSheet && !item.completed
+  //           );
 
-            // Case A: The medium sheet is the ONLY item in the order that needs manufacturing
-            const isOnlyManufacturingItem = manufacturingItems.length === mediumSheetItems.length;
+  //           // Case A: The medium sheet is the ONLY item in the order that needs manufacturing
+  //           const isOnlyManufacturingItem = manufacturingItems.length === mediumSheetItems.length;
 
-            // Case B: The medium sheet is the LAST item left to be manufactured
-            const isLastManufacturingItem =
-              manufacturingItems.every(item =>
-                mediumSheetItems.some(mediumItem => mediumItem.id === item.id)
-              );
+  //           // Case B: The medium sheet is the LAST item left to be manufactured
+  //           const isLastManufacturingItem =
+  //             manufacturingItems.every(item =>
+  //               mediumSheetItems.some(mediumItem => mediumItem.id === item.id)
+  //             );
 
-            // If either case is true, add to packing array, otherwise add to mark completed
-            if (isOnlyManufacturingItem || isLastManufacturingItem) {
-              orderIdsForPacking.push(order.order_id);
-            } else {
-              orderIdsForMarkCompleted.push(order.order_id);
-            }
-          }
+  //           // If either case is true, add to packing array, otherwise add to mark completed
+  //           if (isOnlyManufacturingItem || isLastManufacturingItem) {
+  //             orderIdsForPacking.push(order.order_id);
+  //           } else {
+  //             orderIdsForMarkCompleted.push(order.order_id);
+  //           }
+  //         }
 
-          // Store the arrays in state and show the confirmation dialog
-          setOrderIdsToPacking(orderIdsForPacking);
-          setOrderIdsToMarkCompleted(orderIdsForMarkCompleted);
+  //         // Store the arrays in state and show the confirmation dialog
+  //         setOrderIdsToPacking(orderIdsForPacking);
+  //         setOrderIdsToMarkCompleted(orderIdsForMarkCompleted);
 
-          // Log the results
-          console.log('Manufacturing: Batch Order Processing:', {
-            orderIdsForPacking,
-            orderIdsForMarkCompleted,
-            totalOrders: orderIdsForPacking.length + orderIdsForMarkCompleted.length
-          });
+  //         // Log the results
+  //         console.log('Manufacturing: Batch Order Processing:', {
+  //           orderIdsForPacking,
+  //           orderIdsForMarkCompleted,
+  //           totalOrders: orderIdsForPacking.length + orderIdsForMarkCompleted.length
+  //         });
 
-          // Show the confirmation dialog if we have any orders to process
-          if (orderIdsForPacking.length > 0 || orderIdsForMarkCompleted.length > 0) {
-            // For batch processing, we don't need a specific progress value
-            console.log("Manufacturing: Setting up batch processing confirmation dialog");
-            setCurrentOrderProgress('0');
+  //         // Show the confirmation dialog if we have any orders to process
+  //         if (orderIdsForPacking.length > 0 || orderIdsForMarkCompleted.length > 0) {
+  //           // For batch processing, we don't need a specific progress value
+  //           console.log("Manufacturing: Setting up batch processing confirmation dialog");
+  //           setCurrentOrderProgress('0');
 
-            // Log the state just before showing the dialog
-            setTimeout(() => {
-              console.log("Manufacturing: State just before showing batch dialog:", {
-                orderIdsToPacking,
-                orderIdsToMarkCompleted,
-                currentOrderProgress: '0',
-                showConfirmDialog: false // Will be set to true next
-              });
-            }, 0);
+  //           // Log the state just before showing the dialog
+  //           setTimeout(() => {
+  //             console.log("Manufacturing: State just before showing batch dialog:", {
+  //               orderIdsToPacking,
+  //               orderIdsToMarkCompleted,
+  //               currentOrderProgress: '0',
+  //               showConfirmDialog: false // Will be set to true next
+  //             });
+  //           }, 0);
 
-            setShowMediumSheetConfirmDialog(true);
+  //           setShowMediumSheetConfirmDialog(true);
 
-            // Log that we've triggered the dialog
-            console.log("Manufacturing: Batch confirmation dialog triggered");
-          }
-        }
-      }
-    });
-  }
+  //           // Log that we've triggered the dialog
+  //           console.log("Manufacturing: Batch confirmation dialog triggered");
+  //         }
+  //       }
+  //     }
+  //   });
+  // }
 
   // Add a useEffect to refresh orders data when selectedFoamSheet changes
   useEffect(() => {
@@ -1257,9 +1257,9 @@ export default function Manufacturing() {
   }
 
   // Add this function to calculate total items for a foam sheet
-  const calculateTotalItems = (items: NestingItem[]): number => {
-    return items.reduce((total, item) => total + item.quantity, 0);
-  };
+  // const calculateTotalItems = (items: NestingItem[]): number => {
+  //   return items.reduce((total, item) => total + item.quantity, 0);
+  // };
 
   // Helper to calculate the area of a polygon
   function polygonArea(points: { x: number, y: number }[]): number {
@@ -1411,17 +1411,17 @@ export default function Manufacturing() {
   };
 
   // Function to calculate bounding box for the polygon
-  function getBoundingBox(points: { x: number, y: number}[]) {
-    const xs = points.map(p => p.x);
-    const ys = points.map(p => p.y);
+  // function getBoundingBox(points: { x: number, y: number}[]) {
+  //   const xs = points.map(p => p.x);
+  //   const ys = points.map(p => p.y);
 
-    return{
-      minX: Math.min(...xs),
-      maxX: Math.max(...xs),
-      minY: Math.min(...ys),
-      maxY: Math.max(...ys),
-    };
-  }
+  //   return{
+  //     minX: Math.min(...xs),
+  //     maxX: Math.max(...xs),
+  //     minY: Math.min(...ys),
+  //     maxY: Math.max(...ys),
+  //   };
+  // }
 
   const handleConfirmMediumSheet = async () => {
     if (!selectedFoamSheet) return;
@@ -1669,6 +1669,237 @@ export default function Manufacturing() {
     setCurrentMediumStock(0);
     setSelectedMediumSheetQuantity(0);
     setSelectedFoamSheet(null);
+  }
+
+  const handleExportNestingVisualization = () => {
+    // Export the nesting visualization as a DXF file
+    if (!selectedNestingRow || !nestingQueueData[selectedNestingRow]) {
+      console.warn('No nesting row selected for export');
+      return;
+    }
+
+    try {
+      // Get the nesting data for the selected row
+      const nestingData = nestingQueueData[selectedNestingRow];
+      const placements = nestingData.nestingResult?.placements || [];
+      
+      if (placements.length === 0) {
+        console.warn('No placement data available for export');
+        return;
+      }
+
+      // Generate DXF content
+      const dxfContent = generateDXF(placements, selectedNestingRow);
+      
+      // Create and download the file
+      const blob = new Blob([dxfContent], { type: 'application/dxf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `nesting_${selectedNestingRow}_${new Date().toISOString().split('T')[0]}.dxf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log('DXF file exported successfully');
+    } catch (error) {
+      console.error('Error exporting DXF file:', error);
+    }
+  }
+
+  // Helper function to generate DXF content
+  const generateDXF = (placements: NestingPlacement[], foamSheetName: string): string => {
+    const PADDING = 10; // 10mm padding
+    const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
+    const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
+    
+    let dxfLines: string[] = [];
+    
+    // DXF Header
+    dxfLines.push('0');
+    dxfLines.push('SECTION');
+    dxfLines.push('2');
+    dxfLines.push('HEADER');
+    dxfLines.push('9');
+    dxfLines.push('$ACADVER');
+    dxfLines.push('1');
+    dxfLines.push('AC1014');
+    dxfLines.push('9');
+    dxfLines.push('$DWGCODEPAGE');
+    dxfLines.push('3');
+    dxfLines.push('ANSI_1252');
+    dxfLines.push('9');
+    dxfLines.push('$INSBASE');
+    dxfLines.push('10');
+    dxfLines.push('0.0');
+    dxfLines.push('20');
+    dxfLines.push('0.0');
+    dxfLines.push('30');
+    dxfLines.push('0.0');
+    dxfLines.push('9');
+    dxfLines.push('$EXTMIN');
+    dxfLines.push('10');
+    dxfLines.push('0.0');
+    dxfLines.push('20');
+    dxfLines.push('0.0');
+    dxfLines.push('30');
+    dxfLines.push('0.0');
+    dxfLines.push('9');
+    dxfLines.push('$EXTMAX');
+    dxfLines.push('10');
+    dxfLines.push(VIEWBOX_WIDTH.toString());
+    dxfLines.push('20');
+    dxfLines.push(VIEWBOX_HEIGHT.toString());
+    dxfLines.push('30');
+    dxfLines.push('0.0');
+    dxfLines.push('0');
+    dxfLines.push('ENDSEC');
+    
+    // DXF Tables
+    dxfLines.push('0');
+    dxfLines.push('SECTION');
+    dxfLines.push('2');
+    dxfLines.push('TABLES');
+    dxfLines.push('0');
+    dxfLines.push('TABLE');
+    dxfLines.push('2');
+    dxfLines.push('LAYER');
+    dxfLines.push('70');
+    dxfLines.push('1');
+    dxfLines.push('0');
+    dxfLines.push('LAYER');
+    dxfLines.push('2');
+    dxfLines.push('0');
+    dxfLines.push('70');
+    dxfLines.push('0');
+    dxfLines.push('62');
+    dxfLines.push('7');
+    dxfLines.push('6');
+    dxfLines.push('CONTINUOUS');
+    dxfLines.push('0');
+    dxfLines.push('LAYER');
+    dxfLines.push('2');
+    dxfLines.push('PARTS');
+    dxfLines.push('70');
+    dxfLines.push('0');
+    dxfLines.push('62');
+    dxfLines.push('1');
+    dxfLines.push('6');
+    dxfLines.push('CONTINUOUS');
+    dxfLines.push('0');
+    dxfLines.push('LAYER');
+    dxfLines.push('2');
+    dxfLines.push('BIN');
+    dxfLines.push('70');
+    dxfLines.push('0');
+    dxfLines.push('62');
+    dxfLines.push('2');
+    dxfLines.push('6');
+    dxfLines.push('CONTINUOUS');
+    dxfLines.push('0');
+    dxfLines.push('ENDTAB');
+    dxfLines.push('0');
+    dxfLines.push('ENDSEC');
+    
+    // DXF Entities
+    dxfLines.push('0');
+    dxfLines.push('SECTION');
+    dxfLines.push('2');
+    dxfLines.push('ENTITIES');
+    
+    // Add bin boundary (green background from visualization)
+    const binPolygon = [
+      { x: PADDING, y: PADDING },
+      { x: 1000 + PADDING, y: PADDING },
+      { x: 1000 + PADDING, y: 2000 + PADDING },
+      { x: PADDING, y: 2000 + PADDING },
+      { x: PADDING, y: PADDING }
+    ];
+    
+    // Add bin boundary as POLYLINE
+    dxfLines.push('0');
+    dxfLines.push('POLYLINE');
+    dxfLines.push('8');
+    dxfLines.push('BIN');
+    dxfLines.push('66');
+    dxfLines.push('1');
+    dxfLines.push('70');
+    dxfLines.push('1');
+    
+    binPolygon.forEach(point => {
+      dxfLines.push('0');
+      dxfLines.push('VERTEX');
+      dxfLines.push('8');
+      dxfLines.push('BIN');
+      dxfLines.push('10');
+      dxfLines.push(point.x.toString());
+      dxfLines.push('20');
+      dxfLines.push(point.y.toString());
+      dxfLines.push('30');
+      dxfLines.push('0.0');
+    });
+    
+    dxfLines.push('0');
+    dxfLines.push('SEQEND');
+    
+    // Add all parts from placements
+    placements.forEach((placement: NestingPlacement, placementIndex: number) => {
+      placement.parts.forEach((part: NestingPart, partIndex: number) => {
+        if (!part.polygons || !part.polygons[0]) return;
+        
+        // Transform polygon points (apply rotation and translation)
+        const transformedPoints = part.polygons[0].map(pt => {
+          const angle = (part.rotation || 0) * Math.PI / 180;
+          const cos = Math.cos(angle);
+          const sin = Math.sin(angle);
+          const x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
+          const y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
+          return { x, y };
+        });
+        
+        // Close the polygon if not already closed
+        if (transformedPoints.length > 0 && 
+            (transformedPoints[0].x !== transformedPoints[transformedPoints.length - 1].x || 
+             transformedPoints[0].y !== transformedPoints[transformedPoints.length - 1].y)) {
+          transformedPoints.push(transformedPoints[0]);
+        }
+        
+        // Add part as POLYLINE
+        dxfLines.push('0');
+        dxfLines.push('POLYLINE');
+        dxfLines.push('8');
+        dxfLines.push('PARTS');
+        dxfLines.push('66');
+        dxfLines.push('1');
+        dxfLines.push('70');
+        dxfLines.push('1');
+        
+        transformedPoints.forEach(point => {
+          dxfLines.push('0');
+          dxfLines.push('VERTEX');
+          dxfLines.push('8');
+          dxfLines.push('PARTS');
+          dxfLines.push('10');
+          dxfLines.push(point.x.toString());
+          dxfLines.push('20');
+          dxfLines.push(point.y.toString());
+          dxfLines.push('30');
+          dxfLines.push('0.0');
+        });
+        
+        dxfLines.push('0');
+        dxfLines.push('SEQEND');
+      });
+    });
+    
+    // DXF Footer
+    dxfLines.push('0');
+    dxfLines.push('ENDSEC');
+    dxfLines.push('0');
+    dxfLines.push('EOF');
+    
+    return dxfLines.join('\n');
   }
 
   // Update the table in the first section to show nesting queue data
@@ -2093,9 +2324,22 @@ export default function Manufacturing() {
               <div className="flex-1 min-w-0 max-w-96 flex flex-col bg-black/70 rounded-xl shadow-xl p-3">
                 {/** Nesting Visualization Title */}
                 <div className="rounded-t-lg">
-                  <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
-                    Nesting Visualization
-                  </h1>
+                  <div className="flex justify-between items-center p-4">
+                    <h1 className="text-xl font-bold text-white">
+                      Nesting Visualization
+                    </h1>
+                    <button 
+                      className={`px-4 py-2 rounded-md ${
+                        selectedNestingRow 
+                          ? 'text-white bg-blue-500 hover:bg-blue-600' 
+                          : 'text-gray-400 bg-gray-500 cursor-not-allowed'
+                      }`}
+                      onClick={handleExportNestingVisualization}
+                      disabled={!selectedNestingRow}
+                    >
+                      Export
+                    </button>
+                  </div>
                 </div>
                 <div className="h-full overflow-y-auto">
                   {nestingLoading ? (
