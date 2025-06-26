@@ -655,7 +655,7 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                     if (rotation === 90) {
                         placementPoint = { x: 990, y: 10 };
                         console.log(`[PLACE DEBUG] Using simple fallback (990,10) for 90° rotated part ${part.id}`);
-                    } else {
+                } else {
                         placementPoint = { x: 10, y: 10 };
                         console.log(`[PLACE DEBUG] Using simple fallback (10,10) for ${rotation}° rotated part ${part.id}`);
                     }
@@ -727,7 +727,7 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                         part.y = placementPoint.y;
                     }
                     
-                    placed.push(part);
+                placed.push(part);
                     placements.push({ 
                         x: part.x, 
                         y: part.y, 
@@ -736,14 +736,14 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                         polygons: part.polygons, // Include the polygons for validation
                         source: part.source // Include source information
                     });
-                    unplaced.shift();
+                unplaced.shift();
                 } else {
                     console.warn(`[PLACE DEBUG] Placement point overlaps with existing parts for ${part.id}`);
                     unplaced.shift();
-                }
+            }
             } else {
                 console.warn(`[PLACE DEBUG] No valid region found for part ${part.id}`);
-                unplaced.shift();
+            unplaced.shift();
             }
         }
         // Fitness: penalize for unplaced parts
@@ -793,7 +793,7 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
             maxX = Math.max(maxX, pt.x);
             maxY = Math.max(maxY, pt.y);
         }
-        
+
         return { minX, minY, maxX, maxY };
     };
 
@@ -847,8 +847,8 @@ PlacementWorker.prototype.place = function() {
         // Add the part to placed list
         placed.push(part);
         placements.push({ 
-            x: part.x, 
-            y: part.y, 
+                    x: part.x,
+                    y: part.y,
             id: part.id, 
             rotation: 0, // All parts are 0 degrees
             polygons: part.polygons, // Include the polygons for validation
@@ -862,9 +862,9 @@ PlacementWorker.prototype.place = function() {
         unplaced.shift();
         
         console.log(`[PLACE DEBUG] Successfully placed part ${part.id} at (${part.x.toFixed(2)}, ${part.y.toFixed(2)}), next Y position: ${currentY.toFixed(2)}`);
-    }
-    
-    return {
+        }
+        
+        return {
         success: true,
         placements: placements,
         placementsCount: placements.length
@@ -880,7 +880,7 @@ PlacementWorker.prototype.calculateBounds = function(polygon) {
         maxX = Math.max(maxX, pt.x);
         maxY = Math.max(maxY, pt.y);
     }
-    
+
     return { minX, minY, maxX, maxY };
 };
 

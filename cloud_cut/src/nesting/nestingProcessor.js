@@ -6,10 +6,17 @@ import { DeepNest } from './deepnest';
 import { SvgParser } from './svgparser';
 import { PlacementWorker } from './util/placementWorker';
 import { GeometryUtil } from './util/geometryutil';
+import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus } from './skuMapping';
+import { createClient } from '@supabase/supabase-js';
 
 const PADDING = 10; // 10mm padding
 const SHEET_WIDTH = 980; // 1000 - 2*PADDING to ensure 10-990 range
 const SHEET_HEIGHT = 1980; // 2000 - 2*PADDING to ensure 10-1990 range
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Helper to convert all points in a polygon to {x, y} format
 function toXY(polygon) {
@@ -49,6 +56,15 @@ export class NestingProcessor {
     });
     this.svgParser = new SvgParser();
     this.geometryUtil = GeometryUtil; // Use GeometryUtil directly as an object
+    
+    // Validate SKU mapping configuration on initialization
+    const validation = validateSkuMapping();
+    if (!validation.valid) {
+      console.error('SKU mapping validation failed:', validation.errors);
+    }
+    if (validation.warnings.length > 0) {
+      console.warn('SKU mapping warnings:', validation.warnings);
+    }
   }
 
   async processNesting(items) {
@@ -115,234 +131,442 @@ export class NestingProcessor {
   async convertSvgsToParts(items) {
     const parts = [];
     
+    console.log('=== Starting convertSvgsToParts ===');
+    console.log('Input items:', items);
+    
+    // Test SKU mapping functionality
+    console.log('\n=== Testing SKU Mapping ===');
+    console.log('Testing SFI-MTBS330K mapping:', getCompositeSkuMapping('SFI-MTBS330K'));
+    console.log('Testing case sensitivity - sfi-mtbs330k:', getCompositeSkuMapping('sfi-mtbs330k'));
+    console.log('Testing SFI-MTC2 mapping:', getCompositeSkuMapping('SFI-MTC2'));
+    console.log('All mapped SKUs:', getAllMappedSkus());
+    console.log('=== End SKU Mapping Test ===\n');
+    
     for (const item of items) {
-      if (item.svgUrl && item.svgUrl[0] !== 'noMatch') {
-        for (const svgUrl of item.svgUrl) {
-          try {            
-            // Fetch SVG content
-            const response = await fetch(svgUrl);
-            if (!response.ok) {
-              console.error(`Failed to fetch SVG for ${item.sku}: ${response.statusText}`);
+      console.log(`\n--- Processing item: ${item.sku} ---`);
+      console.log('Item details:', item);
+      
+      // Check for pack types in item name and adjust quantity
+      let adjustedQuantity = item.quantity;
+      let packType = null;
+      
+      if (item.itemName && typeof item.itemName === 'string') {
+        const itemNameLower = item.itemName.toLowerCase();
+        
+        if (itemNameLower.includes('twin pack')) {
+          adjustedQuantity = item.quantity * 2;
+          packType = 'Twin Pack';
+          console.log(`Detected Twin Pack in item name. Adjusting quantity from ${item.quantity} to ${adjustedQuantity}`);
+        } else if (itemNameLower.includes('triple pack')) {
+          adjustedQuantity = item.quantity * 3;
+          packType = 'Triple Pack';
+          console.log(`Detected Triple Pack in item name. Adjusting quantity from ${item.quantity} to ${adjustedQuantity}`);
+        }
+      }
+      
+      // Create a copy of the item with adjusted quantity
+      const adjustedItem = {
+        ...item,
+        quantity: adjustedQuantity,
+        packType: packType
+      };
+      
+      // Check if this is a composite SKU that maps to multiple sub-parts
+      const compositeMapping = getCompositeSkuMapping(adjustedItem.sku);
+      console.log('Composite mapping result:', compositeMapping);
+      
+      if (compositeMapping) {
+        console.log(`Processing composite SKU ${adjustedItem.sku} with sub-parts:`, compositeMapping);
+        
+        // Process each sub-part of the composite SKU
+        for (const subPart of compositeMapping) {
+          try {
+            const subPartSku = subPart.sku;
+            const subPartQuantity = subPart.quantity;
+            
+            console.log(`\n--- Processing sub-part: ${subPartSku} (quantity: ${subPartQuantity}) ---`);
+            
+            // Create a new item for each sub-part with the same properties as the original
+            const subPartItem = {
+              ...adjustedItem,
+              sku: subPartSku,
+              quantity: subPartQuantity, // Use the quantity from the mapping
+              originalSku: adjustedItem.sku, // Keep track of the original composite SKU
+              isSubPart: true,
+              subPartIndex: compositeMapping.indexOf(subPart)
+            };
+            
+            // Generate SVG URL for the sub-part
+            const subPartSvgUrl = await this.generateSvgUrl(subPartSku);
+            
+            if (!subPartSvgUrl) {
+              console.warn(`No SVG URL generated for sub-part ${subPartSku}, skipping`);
               continue;
             }
             
-            const svgContent = await response.text();
+            subPartItem.svgUrl = [subPartSvgUrl];
             
-            // Create a temporary SVG element to parse the content
-            const parser = new DOMParser();
-            const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+            console.log(`Generated SVG URL for sub-part ${subPartSku}: ${subPartSvgUrl}`);
+            console.log('Sub-part item:', subPartItem);
             
-            // Check for parsing errors
-            const parserError = svgDoc.querySelector('parsererror');
-            if (parserError) {
-              console.error(`SVG parsing error for ${item.sku}:`, parserError.textContent);
-              continue;
-            }
-
-            // Get dimensions from CSV for this SKU
-            const dimensionsResponse = await fetch('/data/dxf_dimensions.csv');
-            const dimensionsText = await dimensionsResponse.text();
-            const dimensions = dimensionsText.split('\n')
-              .slice(1) // Skip header
-              .filter(line => line.trim()) // Remove empty lines
-              .map(line => {
-                const [item_name, min_x, min_y, min_z, max_x, max_y, max_z, width, height, depth] = line.split(',');
-                return { item_name, width: parseFloat(width), height: parseFloat(height) };
-              })
-              .find(dim => item.sku.includes(dim.item_name));
-
-            if (!dimensions) {
-              console.warn(`No dimensions found for SKU ${item.sku}`);
-              continue;
-            }
-
-
-            // Initialize SVG parser with the document
-            this.svgParser = new SvgParser();
-            this.svgParser.svg = svgDoc;
-            this.svgParser.svgRoot = svgDoc.documentElement;
+            // Process the sub-part
+            const subPartParts = await this.processSingleItem(subPartItem);
+            console.log(`Generated ${subPartParts.length} parts for sub-part ${subPartSku}`);
+            parts.push(...subPartParts);
             
-            // Set the viewBox to match our target sheet dimensions (in mm)
-            const sheetWidth = 1000; // mm
-            const sheetHeight = 2000; // mm
-            this.svgParser.svgRoot.setAttribute('viewBox', `-${PADDING} -${PADDING} ${sheetWidth + 2 * PADDING} ${sheetHeight + 2 * PADDING}`);
-            
-            // Convert all paths to absolute coordinates first
-            const paths = svgDoc.getElementsByTagName('path');
-            
-            for (let i = 0; i < paths.length; i++) {
-              const path = paths[i];
-              
-              try {
-                if (!path.getAttribute('d')) {
-                  console.warn(`Path ${i + 1} has no 'd' attribute, skipping`);
-                  continue;
-                }
-                this.svgParser.pathToAbsolute(path);
-              } catch (error) {
-                console.error(`Error converting path ${i + 1} to absolute:`, error);
-                continue;
-              }
-            }
-            
-            // Clean and process the SVG
-            this.svgParser.cleanInput();
-            
-            // Get polygons from the parsed SVG
-            const polygons = [];
-            const elements = this.svgParser.svgRoot.children;
-            for (let i = 0; i < elements.length; i++) {
-              const element = elements[i];
-              if (this.svgParser.polygonElements.includes(element.tagName.toLowerCase())) {
-                try {
-                  const points = this.svgParser.polygonify(element);
-                  if (points && points.length > 0) {
-                    polygons.push(points);
-                  }
-                } catch (error) {
-                  // Ignore errors for non-outline paths
-                  continue;
-                }
-              }
-            }
-            // Always use the longest path as the part outline
-            if (polygons.length > 0) {
-              let bestPolygon = polygons[0];
-              let maxPoints = polygons[0].length;
-              for (let i = 1; i < polygons.length; i++) {
-                if (polygons[i].length > maxPoints) {
-                  bestPolygon = polygons[i];
-                  maxPoints = polygons[i].length;
-                }
-              }
-              // --- SCALE THE POLYGON TO MATCH CSV DIMENSIONS ---
-              const bounds = this.geometryUtil.getPolygonBounds(bestPolygon);
-              const partSvgWidth = bounds.width;
-              const partSvgHeight = bounds.height;
-              const csvWidth = dimensions.width;
-              const csvHeight = dimensions.height;
-              const scaleX = csvWidth / partSvgWidth;
-              const scaleY = csvHeight / partSvgHeight;
-              
-              // RAW COORDINATE TEST - Use raw SVG coordinates instead of scaled ones
-              let scaledPolygon;
-                // Use the original scaling logic for other parts
-                scaledPolygon = bestPolygon.map(pt => ({
-                x: (pt.x - bounds.x) * scaleX, // shift to (0,0) then scale
-                y: (pt.y - bounds.y) * scaleY
-              }));
-              // --- NORMALIZE ORIENTATION: Make all polygons 'horizontal' (width >= height) ---
-              const boundsNorm = this.geometryUtil.getPolygonBounds(scaledPolygon);
-              if (boundsNorm.height > boundsNorm.width) {
-                // Rotate by 90 degrees to make it horizontal
-                scaledPolygon = this.geometryUtil.rotatePolygon(scaledPolygon, 90);
-              }
-              // --- VALIDATE THE POLYGON (only the longest path) ---
-              function validatePolygon(polygon) {
-                if (!polygon || polygon.length < 3) {
-                  console.warn('Polygon is empty or too short before deduplication:', polygon);
-                  return null;
-                }
-                // Remove consecutive duplicate points
-                const unique = [];
-                for (let i = 0; i < polygon.length; i++) {
-                  const pt = polygon[i];
-                  if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number' || isNaN(pt.x) || isNaN(pt.y)) {
-                    console.warn('Polygon has invalid point:', pt, polygon);
-                    return null;
-                  }
-                  if (i === 0 || pt.x !== polygon[i - 1].x || pt.y !== polygon[i - 1].y) {
-                    unique.push(pt);
-                  }
-                }
-                // Ensure closed
-                if (unique.length > 2) {
-                  const first = unique[0];
-                  const last = unique[unique.length - 1];
-                  if (first.x !== last.x || first.y !== last.y) {
-                    unique.push({ ...first });
-                  }
-                }
-                if (unique.length < 4) {
-                  console.warn('Polygon too short after deduplication:', unique.length, unique);
-                  return null;
-                }
-                return unique;
-              }
-
-              scaledPolygon = validatePolygon(scaledPolygon);
-              if (!scaledPolygon) {
-                console.error(`Polygon for SKU ${item.sku} is invalid (empty, too short, or has invalid points). Skipping this part.`);
-                continue;
-              }
-
-              // Strict self-intersection check: reject if found
-              function hasSelfIntersection(polygon) {
-                if (polygon.length < 4) return false;
-                for (let i = 0; i < polygon.length - 1; i++) {
-                  const a1 = polygon[i];
-                  const a2 = polygon[i + 1];
-                  for (let j = i + 2; j < polygon.length - 1; j++) {
-                    // skip adjacent segments
-                    if (j === i + 1) continue;
-                    const b1 = polygon[j];
-                    const b2 = polygon[j + 1];
-                    // Check if segments intersect
-                    const det = (a2.x - a1.x) * (b2.y - b1.y) - (b2.x - b1.x) * (a2.y - a1.y);
-                    if (Math.abs(det) < 0.001) continue; // Parallel lines
-                    const t = ((b1.x - a1.x) * (b2.y - b1.y) - (b2.x - b1.x) * (b1.y - a1.y)) / det;
-                    const u = ((a2.x - a1.x) * (b1.y - a1.y) - (b1.x - a1.x) * (a2.y - a1.y)) / det;
-                    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-                      return true;
-                    }
-                  }
-                }
-                return false;
-              }
-              // DISABLED: Self-intersection check is giving false positives
-              // if (hasSelfIntersection(scaledPolygon)) {
-              //   console.warn(`Polygon for SKU ${item.sku} is self-intersecting. Please fix the SVG. Skipping this part.`);
-              //   // continue;
-              // }
-
-              if (!partSvgWidth || !partSvgHeight || scaledPolygon.length === 0) {
-                console.warn(`Invalid or empty cleaned polygon for SKU ${item.sku}`);
-                continue;
-              }
-              if (!scaledPolygon || !Array.isArray(scaledPolygon) || scaledPolygon.length === 0) {
-                console.error('Invalid cleaned polygon for SKU:', item.sku, scaledPolygon);
-                continue;
-              }
-              // --- SHIFT POLYGON TO ORIGIN ---
-              const { shifted, offset } = shiftPolygonToOrigin(scaledPolygon);
-              for (let q = 0; q < item.quantity; q++) {
-                const part = {
-                  id: `${item.sku}-${parts.length}`,
-                  polygons: [shifted],
-                  quantity: 1,
-                  source: item,
-                  rotation: 0,
-                  offset // Store the offset for later use if needed
-                };
-                // validate the part before pushing
-                if (!part.polygons || !Array.isArray(part.polygons[0]) || part.polygons[0].length === 0) {
-                  console.error('Invalid part structure:', part);
-                  continue;
-                }
-                parts.push(part);
-              }
-            } else {
-              console.warn(`No polygons generated for ${item.sku}`);
-            }
           } catch (error) {
-            console.error(`Error processing SVG for ${item.sku}:`, error);
+            console.error(`Error processing sub-part ${subPart.sku} for composite SKU ${adjustedItem.sku}:`, error);
           }
         }
+      } else if (adjustedItem.svgUrl && adjustedItem.svgUrl[0] !== 'noMatch') {
+        // Process regular item (not a composite SKU) that has existing SVG URLs
+        console.log(`Processing regular SKU ${adjustedItem.sku} with existing SVG URLs:`, adjustedItem.svgUrl);
+        const regularParts = await this.processSingleItem(adjustedItem);
+        console.log(`Generated ${regularParts.length} parts for regular SKU ${adjustedItem.sku}`);
+        parts.push(...regularParts);
+      } else {
+        // Try to generate SVG URL for regular SKU that doesn't have one
+        console.log(`Attempting to generate SVG URL for SKU ${adjustedItem.sku}`);
+        const generatedSvgUrl = await this.generateSvgUrl(adjustedItem.sku);
+        
+        if (!generatedSvgUrl) {
+          console.warn(`No SVG URL generated for SKU ${adjustedItem.sku}, skipping`);
+          continue;
+        }
+        
+        const itemWithSvg = {
+          ...adjustedItem,
+          svgUrl: [generatedSvgUrl]
+        };
+        
+        console.log(`Generated SVG URL for ${adjustedItem.sku}: ${generatedSvgUrl}`);
+        console.log('Item with generated SVG:', itemWithSvg);
+        
+        const regularParts = await this.processSingleItem(itemWithSvg);
+        console.log(`Generated ${regularParts.length} parts for SKU ${adjustedItem.sku} with generated URL`);
+        parts.push(...regularParts);
       }
     }
     
+    console.log(`\n=== Finished convertSvgsToParts ===`);
+    console.log(`Total parts generated: ${parts.length}`);
+    console.log('Final parts:', parts);
     
     return parts;
+  }
+
+  async processSingleItem(item) {
+    const parts = [];
+    
+    console.log(`\n--- processSingleItem called for SKU: ${item.sku} ---`);
+    console.log('Item with SVG URLs:', item);
+    
+    for (const svgUrl of item.svgUrl) {
+      console.log(`\n--- Processing SVG URL: ${svgUrl} ---`);
+      
+      try {            
+        // Fetch SVG content
+        console.log(`Fetching SVG from: ${svgUrl}`);
+        const response = await fetch(svgUrl);
+        console.log(`Fetch response status: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+          console.error(`Failed to fetch SVG for ${item.sku}: ${response.statusText}`);
+          continue;
+        }
+        
+        const svgContent = await response.text();
+        console.log(`SVG content length: ${svgContent.length} characters`);
+        console.log(`SVG content preview: ${svgContent.substring(0, 200)}...`);
+        
+        // Create a temporary SVG element to parse the content
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+        
+        // Check for parsing errors
+        const parserError = svgDoc.querySelector('parsererror');
+        if (parserError) {
+          console.error(`SVG parsing error for ${item.sku}:`, parserError.textContent);
+          continue;
+        }
+        
+        console.log('SVG parsed successfully');
+
+        // Get dimensions from CSV for this SKU
+        console.log(`Looking up dimensions for SKU: ${item.sku}`);
+        const dimensionsResponse = await fetch('/data/dxf_dimensions.csv');
+        const dimensionsText = await dimensionsResponse.text();
+        const dimensions = dimensionsText.split('\n')
+          .slice(1) // Skip header
+          .filter(line => line.trim()) // Remove empty lines
+          .map(line => {
+            const [item_name, min_x, min_y, min_z, max_x, max_y, max_z, width, height, depth] = line.split(',');
+            return { item_name, width: parseFloat(width), height: parseFloat(height) };
+          })
+          .find(dim => item.sku.includes(dim.item_name));
+
+        if (!dimensions) {
+          console.warn(`No dimensions found for SKU ${item.sku}`);
+          continue;
+        }
+        
+        console.log(`Found dimensions for ${item.sku}:`, dimensions);
+
+        // Initialize SVG parser with the document
+        this.svgParser = new SvgParser();
+        this.svgParser.svg = svgDoc;
+        this.svgParser.svgRoot = svgDoc.documentElement;
+        
+        // Set the viewBox to match our target sheet dimensions (in mm)
+        const sheetWidth = 1000; // mm
+        const sheetHeight = 2000; // mm
+        this.svgParser.svgRoot.setAttribute('viewBox', `-${PADDING} -${PADDING} ${sheetWidth + 2 * PADDING} ${sheetHeight + 2 * PADDING}`);
+        
+        // Convert all paths to absolute coordinates first
+        const paths = svgDoc.getElementsByTagName('path');
+        console.log(`Found ${paths.length} paths in SVG`);
+        
+        for (let i = 0; i < paths.length; i++) {
+          const path = paths[i];
+          
+          try {
+            if (!path.getAttribute('d')) {
+              console.warn(`Path ${i + 1} has no 'd' attribute, skipping`);
+              continue;
+            }
+            this.svgParser.pathToAbsolute(path);
+          } catch (error) {
+            console.error(`Error converting path ${i + 1} to absolute:`, error);
+            continue;
+          }
+        }
+        
+        // Clean and process the SVG
+        this.svgParser.cleanInput();
+        
+        // Get polygons from the parsed SVG
+        const polygons = [];
+        const elements = this.svgParser.svgRoot.children;
+        console.log(`Processing ${elements.length} SVG elements`);
+        
+        for (let i = 0; i < elements.length; i++) {
+          const element = elements[i];
+          if (this.svgParser.polygonElements.includes(element.tagName.toLowerCase())) {
+            try {
+              const points = this.svgParser.polygonify(element);
+              if (points && points.length > 0) {
+                polygons.push(points);
+                console.log(`Generated polygon with ${points.length} points from element ${element.tagName}`);
+              }
+            } catch (error) {
+              // Ignore errors for non-outline paths
+              console.log(`Skipping element ${element.tagName} (not an outline path)`);
+              continue;
+            }
+          }
+        }
+        
+        console.log(`Generated ${polygons.length} polygons from SVG`);
+        
+        // Always use the longest path as the part outline
+        if (polygons.length > 0) {
+          let bestPolygon = polygons[0];
+          let maxPoints = polygons[0].length;
+          for (let i = 1; i < polygons.length; i++) {
+            if (polygons[i].length > maxPoints) {
+              bestPolygon = polygons[i];
+              maxPoints = polygons[i].length;
+            }
+          }
+          
+          console.log(`Using polygon with ${maxPoints} points as the main outline`);
+          
+          // --- SCALE THE POLYGON TO MATCH CSV DIMENSIONS ---
+          const bounds = this.geometryUtil.getPolygonBounds(bestPolygon);
+          const partSvgWidth = bounds.width;
+          const partSvgHeight = bounds.height;
+          const csvWidth = dimensions.width;
+          const csvHeight = dimensions.height;
+          const scaleX = csvWidth / partSvgWidth;
+          const scaleY = csvHeight / partSvgHeight;
+          
+          console.log(`Scaling factors - X: ${scaleX}, Y: ${scaleY}`);
+          console.log(`SVG bounds: ${partSvgWidth}x${partSvgHeight}, CSV dimensions: ${csvWidth}x${csvHeight}`);
+          
+          // RAW COORDINATE TEST - Use raw SVG coordinates instead of scaled ones
+          let scaledPolygon;
+          // Use the original scaling logic for other parts
+          scaledPolygon = bestPolygon.map(pt => ({
+            x: (pt.x - bounds.x) * scaleX, // shift to (0,0) then scale
+            y: (pt.y - bounds.y) * scaleY
+          }));
+          
+          // --- NORMALIZE ORIENTATION: Make all polygons 'horizontal' (width >= height) ---
+          const boundsNorm = this.geometryUtil.getPolygonBounds(scaledPolygon);
+          if (boundsNorm.height > boundsNorm.width) {
+            // Rotate by 90 degrees to make it horizontal
+            scaledPolygon = this.geometryUtil.rotatePolygon(scaledPolygon, 90);
+            console.log(`Rotated polygon to make it horizontal`);
+          }
+          
+          // --- VALIDATE THE POLYGON (only the longest path) ---
+          function validatePolygon(polygon) {
+            if (!polygon || polygon.length < 3) {
+              console.warn('Polygon is empty or too short before deduplication:', polygon);
+              return null;
+            }
+            // Remove consecutive duplicate points
+            const unique = [];
+            for (let i = 0; i < polygon.length; i++) {
+              const pt = polygon[i];
+              if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number' || isNaN(pt.x) || isNaN(pt.y)) {
+                console.warn('Polygon has invalid point:', pt, polygon);
+                return null;
+              }
+              if (i === 0 || pt.x !== polygon[i - 1].x || pt.y !== polygon[i - 1].y) {
+                unique.push(pt);
+              }
+            }
+            // Ensure closed
+            if (unique.length > 2) {
+              const first = unique[0];
+              const last = unique[unique.length - 1];
+              if (first.x !== last.x || first.y !== last.y) {
+                unique.push({ ...first });
+              }
+            }
+            if (unique.length < 4) {
+              console.warn('Polygon too short after deduplication:', unique.length, unique);
+              return null;
+            }
+            return unique;
+          }
+
+          scaledPolygon = validatePolygon(scaledPolygon);
+          if (!scaledPolygon) {
+            console.error(`Polygon for SKU ${item.sku} is invalid (empty, too short, or has invalid points). Skipping this part.`);
+            continue;
+          }
+
+          if (!partSvgWidth || !partSvgHeight || scaledPolygon.length === 0) {
+            console.warn(`Invalid or empty cleaned polygon for SKU ${item.sku}`);
+            continue;
+          }
+          if (!scaledPolygon || !Array.isArray(scaledPolygon) || scaledPolygon.length === 0) {
+            console.error('Invalid cleaned polygon for SKU:', item.sku, scaledPolygon);
+            continue;
+          }
+          
+          // --- SHIFT POLYGON TO ORIGIN ---
+          const { shifted, offset } = shiftPolygonToOrigin(scaledPolygon);
+          
+          for (let q = 0; q < item.quantity; q++) {
+            const part = {
+              id: `${item.sku}-${parts.length}`,
+              polygons: [shifted],
+              quantity: 1,
+              source: item,
+              rotation: 0,
+              offset, // Store the offset for later use if needed
+              // Add metadata for composite SKU tracking
+              originalSku: item.originalSku || item.sku,
+              isSubPart: item.isSubPart || false,
+              subPartIndex: item.subPartIndex || 0
+            };
+            
+            // validate the part before pushing
+            if (!part.polygons || !Array.isArray(part.polygons[0]) || part.polygons[0].length === 0) {
+              console.error('Invalid part structure:', part);
+              continue;
+            }
+            
+            console.log(`Created part: ${part.id} with ${part.polygons[0].length} polygon points`);
+            parts.push(part);
+          }
+        } else {
+          console.warn(`No polygons generated for ${item.sku}`);
+        }
+      } catch (error) {
+        console.error(`Error processing SVG for ${item.sku}:`, error);
+      }
+    }
+    
+    console.log(`processSingleItem finished for ${item.sku}, generated ${parts.length} parts`);
+    return parts;
+  }
+
+  async generateSvgUrl(sku) {
+    try {
+      console.log(`Generating SVG URL for SKU: ${sku}`);
+      
+      // List all SVG files in the bucket
+      const { data: svgList, error: svgListError } = await supabase.storage
+        .from('inserts')
+        .list('', { 
+          limit: 1000,
+          sortBy: { column: 'name', order: 'asc' }
+        });
+      
+      if (svgListError) {
+        console.error('Storage bucket error:', svgListError);
+        return null;
+      }
+
+      // Get all SVG file names (without .svg), lowercased and trimmed
+      const svgNames = (svgList || [])
+        .filter(file => file.name.endsWith('.svg'))
+        .map(file => file.name.replace(/\.svg$/, '').trim());
+
+      console.log(`Available SVG files: ${svgNames.length} files`);
+      
+      // Use the same matching logic as the existing system
+      const skuOriginal = String(sku);
+      const skuLower = skuOriginal.toLowerCase().trim();
+      
+      // Remove last three characters from SKU for matching and convert to uppercase
+      const shortenedSku = (skuLower.length > 3 ? skuLower.slice(0, -3) : skuLower).toUpperCase();
+      
+      console.log(`SKU matching - Original: ${skuOriginal}, Lower: ${skuLower}, Shortened: ${shortenedSku}`);
+      
+      // Find all SVGs that are a prefix of the shortened SKU
+      const matchingSvgs = svgNames.filter(svgName => shortenedSku.startsWith(svgName));
+      
+      // Pick the longest prefix (most specific match)
+      let matchedSvg = null;
+      if (matchingSvgs.length > 0) {
+        matchedSvg = matchingSvgs.reduce((a, b) => (a.length > b.length ? a : b));
+        console.log(`Found exact match: ${matchedSvg}`);
+      } else {
+        // No exact match, try trimmed version (first 8 characters of shortenedSku)
+        const trimmedShortenedSku = shortenedSku.slice(0, -1);
+        console.log(`Trying trimmed SKU: ${trimmedShortenedSku}`);
+        
+        // Find all SVGs that start with the trimmed shortened SKU
+        const partSvgs = svgNames.filter(svgName => svgName.startsWith(trimmedShortenedSku));
+        if (partSvgs.length > 0) {
+          matchedSvg = partSvgs[0]; // Take the first match
+          console.log(`Found partial match: ${matchedSvg}`);
+        }
+      }
+
+      if (matchedSvg) {
+        const { data: urlData } = supabase.storage
+          .from('inserts')
+          .getPublicUrl('/' + matchedSvg + '.svg');
+        
+        if (urlData?.publicUrl) {
+          console.log(`Generated URL for ${sku}: ${urlData.publicUrl}`);
+          return urlData.publicUrl;
+        }
+      }
+      
+      console.warn(`No SVG found for SKU: ${sku}`);
+      return null;
+      
+    } catch (error) {
+      console.error(`Error generating SVG URL for ${sku}:`, error);
+      return null;
+    }
   }
 
   formatNestingResult(nestingResult, originalItems) {
@@ -356,30 +580,90 @@ export class NestingProcessor {
       return null;
     }
 
+    // Group parts by their original SKU to handle composite SKUs
+    const groupedPlacements = new Map();
+    
+    for (const placement of placementsArr) {
+      // Find the original part by id
+      const part = (nestingResult.placement || []).find(p => p.id === placement.id) || placement;
+      const originalSku = part.originalSku || part.source?.sku || part.source;
+      
+      if (!groupedPlacements.has(originalSku)) {
+        groupedPlacements.set(originalSku, []);
+      }
+      
+      groupedPlacements.get(originalSku).push({
+        ...placement,
+        source: part.source,
+        filename: part.source?.sku || part.filename,
+        polygons: part.polygons,
+        children: part.children || [],
+        originalSku: part.originalSku,
+        isSubPart: part.isSubPart || false,
+        subPartIndex: part.subPartIndex || 0
+      });
+    }
+
     // Create a single sheet with all placements
     const sheet = {
       sheet: 1, // Changed from 'Sheet1' to 1 to match NestingPlacement type
       sheetid: '1',
-      parts: placementsArr.map((placement, index) => {
-        // Find the original part by id
-        const part = (nestingResult.placement || []).find(p => p.id === placement.id) || placement;
-        const originalItem = originalItems.find(item => item.sku === (part.source?.sku || part.source));
-        return {
+      parts: []
+    };
+
+    // Process each group of placements
+    for (const [originalSku, placements] of groupedPlacements) {
+      const originalItem = originalItems.find(item => item.sku === originalSku);
+      
+      if (placements.length === 1) {
+        // Single part (not a composite SKU)
+        const placement = placements[0];
+        sheet.parts.push({
           x: placement.x,
           y: placement.y,
           rotation: placement.rotation || 0,
           id: placement.id,
-          source: part.source,
-          filename: part.source?.sku || part.filename,
-          polygons: part.polygons,
-          children: part.children || [],
+          source: placement.source,
+          filename: placement.filename,
+          polygons: placement.polygons,
+          children: placement.children || [],
           itemName: originalItem?.itemName,
           orderId: originalItem?.orderId,
           customerName: originalItem?.customerName,
-          priority: originalItem?.priority
-        };
-      })
-    };
+          priority: originalItem?.priority,
+          originalSku: placement.originalSku,
+          isSubPart: placement.isSubPart,
+          subPartIndex: placement.subPartIndex
+        });
+      } else {
+        // Composite SKU with multiple sub-parts
+        // Sort sub-parts by their index to maintain order
+        const sortedPlacements = placements.sort((a, b) => a.subPartIndex - b.subPartIndex);
+        
+        for (const placement of sortedPlacements) {
+          sheet.parts.push({
+            x: placement.x,
+            y: placement.y,
+            rotation: placement.rotation || 0,
+            id: placement.id,
+            source: placement.source,
+            filename: placement.filename,
+            polygons: placement.polygons,
+            children: placement.children || [],
+            itemName: originalItem?.itemName,
+            orderId: originalItem?.orderId,
+            customerName: originalItem?.customerName,
+            priority: originalItem?.priority,
+            originalSku: placement.originalSku,
+            isSubPart: placement.isSubPart,
+            subPartIndex: placement.subPartIndex,
+            // Add composite SKU metadata
+            compositeSku: originalSku,
+            subPartSku: placement.filename
+          });
+        }
+      }
+    }
 
     // Align placements to origin (0,0) for tightest fit in the viewBox
     this.alignPlacementsToOrigin(sheet.parts);

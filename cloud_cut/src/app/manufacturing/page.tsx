@@ -1315,7 +1315,10 @@ export default function Manufacturing() {
 
       // --- Time calculation For Parts---
       // Each piece takes 1 min 45 sec (105 seconds)
-      const totalPieces = calculateTotalItems(data.items);
+      // Use the actual number of parts from the nesting result instead of original item quantities
+      // This accounts for Twin Pack and Triple Pack adjustments
+      const actualParts = data.nestingResult?.placements?.[0]?.parts || [];
+      const totalPieces = actualParts.length;
       const totalSeconds = totalPieces * 105;
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
