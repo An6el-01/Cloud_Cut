@@ -45,7 +45,6 @@ export default function Stock() {
     const [activeTab, setActiveTab] = useState<'StockManagement' | 'DamageTracking'>('StockManagement');
     const {loading, error, items} = useSelector((state: RootState) => state.stock);
     const userProfile = useSelector((state: RootState) => state.auth.userProfile);
-    const [isRefreshing, setIsRefreshing] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 15;
     const [searchQuery, setSearchQuery] = useState('');
@@ -110,23 +109,6 @@ export default function Stock() {
     const currentTwoByOneItems = twoByOneItems.slice(startIndex, endIndex);
     const currentPackingBoxItems = packingBoxItems.slice(startIndex, endIndex);
 
-
-    const handleRefresh = () => {
-        setIsRefreshing(true);
-        dispatch(syncFinishedStock())
-            .then(() => {
-                dispatch(fetchFinishedStockFromSupabase({
-                    page: 1,
-                    perPage: 15
-                }));
-            })
-            .catch((error: any) => {
-                console.error('Error in syncFinishedStock:', error);
-            })
-            .finally(() => {
-                setIsRefreshing(false);
-            });
-    }
 
     useEffect(() => {
         dispatch(fetchFinishedStockFromSupabase({
@@ -421,34 +403,6 @@ export default function Stock() {
                                             />
                                         </svg>
                                     </div>
-                                    {/**Refresh Button */}
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                await Sentry.startSpan({
-                                                    name: 'handleRefresh-Stock',
-                                                }, async () => {
-                                                    handleRefresh();
-                                                });
-                                            } catch (error) {
-                                                console.error('Error in Sentry span:', error);
-                                                handleRefresh();
-                                            }
-                                        }}
-                                        className="flex items-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow transition-all duration-200
-                                            bg-gradient-to-br from-gray-700 to-gray-800 hover:from-gray-500 hover:to-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400
-                                            disabled:opacity-70 disabled:cursor-not-allowed"
-                                    >
-                                        <span className={`${isRefreshing ? "animate-spin" : ""} text-red-400`}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-                                                <path d="M21 3v5h-5"/>
-                                                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-                                                <path d="M8 16H3v5"/>
-                                            </svg>
-                                        </span>
-                                        <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
-                                    </button>
                                     {/* Sheet Booking Out Toggle Button */}
                                     {tableTab === '2 X 1 Sheets' && (
                                         <button
