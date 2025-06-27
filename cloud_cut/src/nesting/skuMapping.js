@@ -23,7 +23,7 @@ const SKU_MAPPING = {
   ],
   'SFI-FSYSC12': [
     { sku: 'SFI-FSYS12', quantity: 1 },
-    { sku: 'SFI-FSYS12', quantity: 1 }
+    { sku: 'SFI-FSOR13', quantity: 1 },
   ],
   'SFI-HAMT2': [
     { sku: 'SFI-HAMT2-01', quantity: 1 },
@@ -37,15 +37,6 @@ const SKU_MAPPING = {
     { sku: 'SFI-MPORG2-01', quantity: 1 },
     { sku: 'SFI-MPORG2-02', quantity: 1 },
     { sku: 'SFI-MPORG2-03', quantity: 1 },
-  ],
-  'SFI-MTBS3': [
-    { sku: 'SFI-MTC2', quantity: 1 },
-    { sku: 'SFI-MTCB2', quantity: 1 },
-    { sku: 'SFI-MTO2', quantity: 1 },
-  ],
-  'SFI-FSYSC12': [
-    { sku: 'SFI-FSYS12', quantity: 1 },
-    { sku: 'SFI-FSOR13', quantity: 1 },
   ]
 };
 

@@ -535,9 +535,11 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
         // rotate paths by given rotation
         var rotated = [];
         for (i = 0; i < paths.length; i++) {
+            console.log(`[PLACEMENT WORKER] Rotating part ${paths[i].id} by ${paths[i].rotation}°`);
             var r = {
                 ...paths[i],
-                polygons: [rotatePolygon(paths[i].polygons[0], paths[i].rotation)]
+                polygons: [rotatePolygon(paths[i].polygons[0], paths[i].rotation)],
+                rotation: paths[i].rotation // Ensure rotation property is preserved
             };
             rotated.push(r);
         }
@@ -822,66 +824,128 @@ PlacementWorker.prototype.place = function() {
     const placements = [];
     const unplaced = [...this.paths];
     
-    // Track the current Y position for stacking parts
-    let currentY = 10; // Start at the top with padding
+    // Track current position for placement
+    let currentX = 10;
+    let currentY = 10;
+    let isFirst90 = true;
+    
+    // Sheet dimensions
+    const maxY = 2000;
+    const maxX = 1000;
     
     while (unplaced.length > 0) {
         const part = unplaced[0];
-        
-        // Calculate the height of the current part
-        let partHeight = 0;
-        if (part.polygons && part.polygons[0]) {
+        const rotation = part.rotation || 0;
+
+        if (!part.polygons || !part.polygons[0]) {
+            console.warn(`[PLACE WARNING] Skipping part ${part.id} - no valid polygon`);
+            unplaced.shift();
+            continue;
+        }
+
+        if (rotation === 0) {
+            // No rotation - use original dimensions
             const bounds = this.calculateBounds(part.polygons[0]);
-            partHeight = bounds.maxY - bounds.minY;
-        }
-        
-        // All parts are placed at 0 degrees - use simple left-side placement
-        const placementPoint = { x: 10, y: currentY };
-        console.log(`[PLACE DEBUG] Placing part ${part.id} at (10, ${currentY.toFixed(2)})`);
-        
-        // Apply the placement (no rotation calculations needed)
-        part.x = placementPoint.x;
-        part.y = placementPoint.y;
-        part.rotation = 0; // All parts are 0 degrees
-        
-        // Add the part to placed list
-        placed.push(part);
-        placements.push({ 
-                    x: part.x,
-                    y: part.y,
-            id: part.id, 
-            rotation: 0, // All parts are 0 degrees
-            polygons: part.polygons, // Include the polygons for validation
-            source: part.source // Include source information
-        });
-        
-        // Update currentY for the next part (add the height of this part plus some spacing)
-        currentY += partHeight + 5; // Add 5 units of spacing between parts
-        
-        // Remove the part from unplaced list
-        unplaced.shift();
-        
-        console.log(`[PLACE DEBUG] Successfully placed part ${part.id} at (${part.x.toFixed(2)}, ${part.y.toFixed(2)}), next Y position: ${currentY.toFixed(2)}`);
-        }
-        
-        return {
-        success: true,
-        placements: placements,
-        placementsCount: placements.length
-    };
-};
+            let partWidth = bounds.maxX - bounds.minX;
+            let partHeight = bounds.maxY - bounds.minY;
 
-PlacementWorker.prototype.calculateBounds = function(polygon) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    
-    for (const pt of polygon) {
-        minX = Math.min(minX, pt.x);
-        minY = Math.min(minY, pt.y);
-        maxX = Math.max(maxX, pt.x);
-        maxY = Math.max(maxY, pt.y);
+            if (currentY + partHeight > maxY) {
+                console.warn(`[PLACE WARNING] Part ${part.id} would exceed maxY (${maxY})`);
+                break;
+            }
+
+            part.x = currentX;
+            part.y = currentY;
+
+            // Offset polygon to (currentX, currentY)
+            const offsetPolygon = part.polygons[0].map(pt => ({
+                x: pt.x - bounds.minX + currentX,
+                y: pt.y - bounds.minY + currentY
+            }));
+            part.polygons[0] = offsetPolygon;
+
+            placed.push(part);
+            placements.push({
+                x: part.x,
+                y: part.y,
+                id: part.id,
+                rotation: rotation,
+                polygons: [offsetPolygon],
+                source: part.source
+            });
+
+            console.log(`[PLACE DEBUG] Placed part ${part.id} (${rotation}°) at (${part.x.toFixed(2)}, ${part.y.toFixed(2)}) - dimensions: ${partWidth.toFixed(2)}x${partHeight.toFixed(2)}`);
+
+            currentY += partHeight + 5;
+            unplaced.shift();
+
+        } else if (rotation === 90) {
+            // For the first 90° part, start at the right edge
+            if (isFirst90) {
+                currentX = 990;
+                isFirst90 = false;
+            }
+            // 1. Normalize original polygon to origin
+            const orig = part.polygons[0];
+            let origMinX = Math.min(...orig.map(pt => pt.x));
+            let origMinY = Math.min(...orig.map(pt => pt.y));
+            const normalized = orig.map(pt => ({
+                x: pt.x - origMinX,
+                y: pt.y - origMinY
+            }));
+
+            // 2. Rotate the normalized polygon 90° about the origin
+            const rotated = rotatePolygon(normalized, 90);
+
+            // 3. Find bounds of the rotated polygon
+            let minX = Math.min(...rotated.map(pt => pt.x));
+            let maxX = Math.max(...rotated.map(pt => pt.x));
+            let minY = Math.min(...rotated.map(pt => pt.y));
+
+            // 4. Offset so right edge is at currentX, bottom at currentY
+            let offsetX = currentX - maxX;
+            let offsetY = currentY - minY;
+            const finalPolygon = rotated.map(pt => ({
+                x: pt.x + offsetX,
+                y: pt.y + offsetY
+            }));
+
+            part.polygons[0] = finalPolygon;
+            part.x = currentX;
+            part.y = currentY;
+
+            placed.push(part);
+            placements.push({
+                x: part.x,
+                y: part.y,
+                id: part.id,
+                rotation: rotation,
+                polygons: [finalPolygon],
+                source: part.source
+            });
+
+            // 5. Update currentX for next part (move left by width of rotated part)
+            let partWidth = maxX - minX;
+            currentX -= partWidth + 5;
+
+            unplaced.shift();
+        } else {
+            console.warn(`[PLACE WARNING] Unsupported rotation ${rotation}° for part ${part.id}`);
+            unplaced.shift();
+            continue;
+        }
     }
-
-    return { minX, minY, maxX, maxY };
+    
+    // Calculate fitness based on how many parts were placed
+    const fitness = unplaced.length > 0 ? unplaced.length * 1000 : placed.length;
+    
+    return {
+        success: placed.length > 0,
+        placements: placements,
+        placementsCount: placements.length,
+        fitness: fitness,
+        unplaced: unplaced.length
+    };
 };
 
 //clipperjs uses alerts for warnings

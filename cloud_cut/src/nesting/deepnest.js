@@ -1412,14 +1412,29 @@ function deepClonePart(part) {
 }
 
 function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
+    // Static counter to track nesting attempts
+    if (!GeneticAlgorithm.nestingAttempts) {
+        GeneticAlgorithm.nestingAttempts = 0;
+    }
+    GeneticAlgorithm.nestingAttempts++;
+    
     this.config = {
         populationSize: 10,
-        mutationRate: 10,
-        rotations: 2, // Only allow 2 rotations: 0 and 90 degrees
+        mutationRate: 0.1, // Changed from 10 to 0.1 to match NestingProcessor
+        rotations: [0, 90], // Use array format to match NestingProcessor
         generations: 3,
         fitnessThreshold: 0.1,
         ...config
     };
+    
+    console.log('[GENETIC ALGORITHM] Configuration:', this.config);
+    console.log('[GENETIC ALGORITHM] Rotation configuration:', this.config.rotations);
+    console.log(`[GENETIC ALGORITHM] Nesting attempt #${GeneticAlgorithm.nestingAttempts}`);
+    
+    // Determine which rotation to use based on nesting attempt number
+    const rotationIndex = (GeneticAlgorithm.nestingAttempts - 1) % 2; // 0 for even attempts, 1 for odd attempts
+    const selectedRotation = this.config.rotations[rotationIndex];
+    console.log(`[GENETIC ALGORITHM] Using rotation: ${selectedRotation}° (attempt ${GeneticAlgorithm.nestingAttempts} is ${rotationIndex === 0 ? 'even' : 'odd'})`);
     
     // Ensure binPolygon is provided
     if (!this.config.binPolygon) {
@@ -1459,28 +1474,34 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
     // Assign rotations at the order level (all parts in same order get same rotation)
     var angles = [];
     for (var i = 0; i < initialPlacement.length; i++) {
-        angles.push(0); // Initialize all to 0
+        angles.push(selectedRotation); // Use the selected rotation for all parts
     }
     
-    // Assign random rotation to each order group
+    // Log the rotation assignment
+    console.log(`[GENETIC ALGORITHM] All parts assigned rotation: ${selectedRotation}°`);
+    
+    // Log rotation assignment by order
     for (const [orderId, partIndices] of orderGroups) {
-        let orderRotation;
-        if (Array.isArray(this.config.rotations)) {
-            // Pick a random value from the array
-            orderRotation = this.config.rotations[Math.floor(Math.random() * this.config.rotations.length)];
-        } else {
-            // Assume it's a number
-            orderRotation = Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
-        }
-        for (const partIndex of partIndices) {
-            angles[partIndex] = orderRotation;
-        }
+        console.log(`[GENETIC ALGORITHM] Order ${orderId} assigned rotation: ${selectedRotation}° (${partIndices.length} parts)`);
     }
     
     this.population = [{ placement: initialPlacement, rotation: angles }];
+    
+    // Create diverse initial population with different rotations
     while (this.population.length < this.config.populationSize) {
         var mutant = this.mutate(this.population[0]);
         this.population.push(mutant);
+    }
+    
+    // Debug: Show rotation distribution in initial population
+    console.log('[GENETIC ALGORITHM] Initial population rotation distribution:');
+    for (let i = 0; i < this.population.length; i++) {
+        const individual = this.population[i];
+        const rotationCounts = {};
+        individual.rotation.forEach(rot => {
+            rotationCounts[rot] = (rotationCounts[rot] || 0) + 1;
+        });
+        console.log(`  Individual ${i}:`, rotationCounts);
     }
     
     // Test rotation consistency functionality
@@ -1509,7 +1530,7 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
     
     for (var i = 0; i < clone.placement.length; i++) {
         var rand = Math.random();
-        if (rand < 0.01 * this.config.mutationRate) {
+        if (rand < this.config.mutationRate) {
             //swap current part with the next part
             var j = i + 1;
             if (j < clone.placement.length) {
@@ -1521,7 +1542,7 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
         
         // Check if this part should have its rotation mutated
         rand = Math.random();
-        if (rand < 0.01 * this.config.mutationRate) {
+        if (rand < this.config.mutationRate) {
             // Find the order_id for this part
             const part = clone.placement[i];
             const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
@@ -1529,13 +1550,6 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
             // Get all parts in the same order
             const orderPartIndices = orderGroups.get(orderId) || [];
             
-            // Generate new rotation for the entire order
-            let newOrderRotation;
-            if (Array.isArray(this.config.rotations)) {
-                newOrderRotation = this.config.rotations[Math.floor(Math.random() * this.config.rotations.length)];
-            } else {
-                newOrderRotation = Math.floor(Math.random() * this.config.rotations) * (360 / this.config.rotations);
-            }
             
             // Apply the same rotation to all parts in this order
             for (const partIndex of orderPartIndices) {
@@ -1706,9 +1720,10 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
             console.warn('Filtering out invalid part:', p);
         }
         return isValid;
-    }).map(p => ({
+    }).map((p, i) => ({
         ...p,
-        polygons: p.polygons.map(poly => Array.isArray(poly) ? poly : [])
+        polygons: p.polygons.map(poly => Array.isArray(poly) ? poly : []),
+        rotation: individual.rotation[i] || 0 // Ensure rotation is assigned to each part
     }));
 
     if (validPlacement.length === 0){
@@ -1721,11 +1736,17 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
         this.config.binPolygon,
         validPlacement,
         validPlacement.map(p => p.id),
-        validPlacement.map((p, i) => individual.rotation[i] || 0),
+        validPlacement.map(p => p.rotation), // Use the rotation from the part object
         this.config,
         this.nfpCache,
         this.polygonOffset
     );
+
+    // Debug: Show rotations being passed to PlacementWorker
+    console.log('[PLACEMENT WORKER DEBUG] Rotations being passed:');
+    validPlacement.forEach((part, i) => {
+        console.log(`  Part ${part.id}: ${part.rotation}°`);
+    });
 
     // Place the parts and get the result
     const result = worker.place();
@@ -1784,12 +1805,10 @@ GeneticAlgorithm.prototype.evaluateFitness = async function(individual) {
             return false;
         }
         
-        const rotated = rotatePolygon(part.polygons[0], part.rotation || 0);
-        const translated = rotated.map(pt => ({
-            x: pt.x + (part.x || 0),
-            y: pt.y + (part.y || 0)
-        }));
-        return translated.every(pt => pointInPolygon(pt, binPolygon));
+        // The placement worker has already transformed the polygon to its final position
+        // So we can use the polygon directly without additional rotation/translation
+        const finalPolygon = part.polygons[0];
+        return finalPolygon.every(pt => pointInPolygon(pt, binPolygon));
     }
     if (result && result.success && result.placements) {
         const binPoly = Array.isArray(this.config.binPolygon) ? this.config.binPolygon : (this.config.binPolygon?.polygons?.[0] || []);
@@ -2104,5 +2123,16 @@ GeneticAlgorithm.prototype.testRotationConsistency = function() {
     console.log(`[GA TEST] Validation result: ${isValid ? 'PASS' : 'FAIL'}`);
     
     return isValid;
+};
+
+// Static method to reset the nesting attempt counter
+GeneticAlgorithm.resetNestingAttempts = function() {
+    GeneticAlgorithm.nestingAttempts = 0;
+    console.log('[GENETIC ALGORITHM] Nesting attempt counter reset to 0');
+};
+
+// Static method to get current nesting attempt number
+GeneticAlgorithm.getNestingAttempts = function() {
+    return GeneticAlgorithm.nestingAttempts || 0;
 };
 

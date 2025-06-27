@@ -84,7 +84,7 @@ export class NestingProcessor {
       const config = {
         spacing: 0, // Ensure no extra space between parts for tight packing
         tolerance: 0.1,
-        rotations: [0], // Only allow 0 degree rotations
+        rotations: [0, 90], // Allow 0 and 90 degree rotations for better packing
         useHoles: true,
         populationSize: 10,
         mutationRate: 0.1,
@@ -103,6 +103,7 @@ export class NestingProcessor {
         ]
       };
       console.log('Using nesting config:', config);
+      console.log('Rotation configuration:', config.rotations);
 
       // Run nesting algorithm
       console.log('Starting deepnest.nest()...');
@@ -279,39 +280,20 @@ export class NestingProcessor {
         console.log(`SVG content length: ${svgContent.length} characters`);
         console.log(`SVG content preview: ${svgContent.substring(0, 200)}...`);
         
-        // Create a temporary SVG element to parse the content
+        // Parse SVG content
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
         
-        // Check for parsing errors
-        const parserError = svgDoc.querySelector('parsererror');
-        if (parserError) {
-          console.error(`SVG parsing error for ${item.sku}:`, parserError.textContent);
+        if (svgDoc.documentElement.nodeName === 'parsererror') {
+          console.error(`Failed to parse SVG for ${item.sku}`);
           continue;
         }
         
-        console.log('SVG parsed successfully');
-
-        // Get dimensions from CSV for this SKU
-        console.log(`Looking up dimensions for SKU: ${item.sku}`);
-        const dimensionsResponse = await fetch('/data/dxf_dimensions.csv');
-        const dimensionsText = await dimensionsResponse.text();
-        const dimensions = dimensionsText.split('\n')
-          .slice(1) // Skip header
-          .filter(line => line.trim()) // Remove empty lines
-          .map(line => {
-            const [item_name, min_x, min_y, min_z, max_x, max_y, max_z, width, height, depth] = line.split(',');
-            return { item_name, width: parseFloat(width), height: parseFloat(height) };
-          })
-          .find(dim => item.sku.includes(dim.item_name));
-
-        if (!dimensions) {
-          console.warn(`No dimensions found for SKU ${item.sku}`);
-          continue;
-        }
+        console.log(`SVG parsed successfully`);
         
-        console.log(`Found dimensions for ${item.sku}:`, dimensions);
-
+        // Use SVG's original dimensions with 1:1 scaling (no CSV lookup needed)
+        console.log(`Processing SVG for SKU ${item.sku} with 1:1 scaling`);
+        
         // Initialize SVG parser with the document
         this.svgParser = new SvgParser();
         this.svgParser.svg = svgDoc;
@@ -381,24 +363,17 @@ export class NestingProcessor {
           
           console.log(`Using polygon with ${maxPoints} points as the main outline`);
           
-          // --- SCALE THE POLYGON TO MATCH CSV DIMENSIONS ---
+          // --- PROCESS POLYGON WITH 1:1 SCALING ---
           const bounds = this.geometryUtil.getPolygonBounds(bestPolygon);
           const partSvgWidth = bounds.width;
           const partSvgHeight = bounds.height;
-          const csvWidth = dimensions.width;
-          const csvHeight = dimensions.height;
-          const scaleX = csvWidth / partSvgWidth;
-          const scaleY = csvHeight / partSvgHeight;
           
-          console.log(`Scaling factors - X: ${scaleX}, Y: ${scaleY}`);
-          console.log(`SVG bounds: ${partSvgWidth}x${partSvgHeight}, CSV dimensions: ${csvWidth}x${csvHeight}`);
+          console.log(`SVG bounds: ${partSvgWidth.toFixed(2)}x${partSvgHeight.toFixed(2)}`);
           
-          // RAW COORDINATE TEST - Use raw SVG coordinates instead of scaled ones
-          let scaledPolygon;
-          // Use the original scaling logic for other parts
-          scaledPolygon = bestPolygon.map(pt => ({
-            x: (pt.x - bounds.x) * scaleX, // shift to (0,0) then scale
-            y: (pt.y - bounds.y) * scaleY
+          // Use 1:1 scaling - just shift polygon to origin (0,0)
+          let scaledPolygon = bestPolygon.map(pt => ({
+            x: pt.x - bounds.x, // shift to (0,0)
+            y: pt.y - bounds.y
           }));
           
           // --- NORMALIZE ORIENTATION: Make all polygons 'horizontal' (width >= height) ---
@@ -801,5 +776,32 @@ export class NestingProcessor {
     });
     
     console.log(`[ALIGN DEBUG] Final placement bounds: X(${debugMinX.toFixed(2)}-${debugMaxX.toFixed(2)}), Y(${debugMinY.toFixed(2)}-${debugMaxY.toFixed(2)})`);
+  }
+
+  // Method to reset the nesting attempt counter
+  resetNestingAttempts() {
+    if (typeof GeneticAlgorithm !== 'undefined' && GeneticAlgorithm.resetNestingAttempts) {
+      GeneticAlgorithm.resetNestingAttempts();
+    } else {
+      console.warn('[NESTING PROCESSOR] GeneticAlgorithm.resetNestingAttempts not available');
+    }
+  }
+
+  // Method to get current nesting attempt information
+  getNestingAttemptInfo() {
+    if (typeof GeneticAlgorithm !== 'undefined' && GeneticAlgorithm.getNestingAttempts) {
+      const attempts = GeneticAlgorithm.getNestingAttempts();
+      const rotationIndex = (attempts - 1) % 2;
+      const rotation = rotationIndex === 0 ? 0 : 90;
+      return {
+        attempts,
+        rotation,
+        rotationIndex,
+        isEvenAttempt: rotationIndex === 0
+      };
+    } else {
+      console.warn('[NESTING PROCESSOR] GeneticAlgorithm.getNestingAttempts not available');
+      return null;
+    }
   }
 } 
