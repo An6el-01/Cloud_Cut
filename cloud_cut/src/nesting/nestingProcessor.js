@@ -72,10 +72,10 @@ export class NestingProcessor {
       console.log('Starting nesting process with items:', items);
       
       // Convert SVG URLs to polygons
-      const parts = await this.convertSvgsToParts(items);
-      console.log('Converted items to parts:', parts);
+      let allParts = await this.convertSvgsToParts(items);
+      console.log('Converted items to parts:', allParts);
       
-      if (parts.length === 0) {
+      if (allParts.length === 0) {
         console.warn('No valid parts to nest');
         return null;
       }
@@ -105,24 +105,64 @@ export class NestingProcessor {
       console.log('Using nesting config:', config);
       console.log('Rotation configuration:', config.rotations);
 
-      // Run nesting algorithm
-      console.log('Starting deepnest.nest()...');
-      const result = await this.deepNest.nest(parts, config);
-      console.log('Nesting result:', result);
+      // Multi-sheet logic
+      let allSheets = [];
+      let sheetIndex = 1;
+      let remainingParts = allParts.slice();
+      let fitness = null;
 
-      // Process and format the result
-      const formattedResult = this.formatNestingResult(result, items);
-      console.log('Formatted nesting result:', formattedResult);
-      
-      if (this.deepNest && this.deepNest.binPolygon) {
-        console.log("Bin polygon (foamsheet) for nesting:", this.deepNest.binPolygon)
-      } else if (config && config.binPolygon) {
-        console.log('Bin polygon (foamsheet) from config:', config.binPolygon);
-      } else {
-        console.warn('No bin polygon (foamsheet) defined for nesting.')
+      while (remainingParts.length > 0) {
+        console.log(`\n--- Starting nesting for sheet #${sheetIndex} with ${remainingParts.length} parts ---`);
+        // Run nesting algorithm for current set of parts
+        const result = await this.deepNest.nest(remainingParts, config);
+        console.log(`Nesting result for sheet #${sheetIndex}:`, result);
+
+        // Find which parts were successfully placed (within bounds)
+        // We need to validate each placement against the bin polygon
+        const placedArr = result.placement || result.placements || [];
+        const successfullyPlacedIds = new Set();
+        
+        // Validate each placement to see if it's actually within bounds
+        for (const placement of placedArr) {
+          const part = placement;
+          if (part && part.id) {
+            // Check if this part is within the bin bounds
+            const isWithinBounds = this.isPartWithinBinBounds(part, config.binPolygon);
+            if (isWithinBounds) {
+              successfullyPlacedIds.add(part.id);
+            } else {
+              console.log(`Part ${part.id} is out of bounds, excluding from sheet #${sheetIndex}`);
+            }
+          }
+        }
+        
+        const placedParts = remainingParts.filter(p => successfullyPlacedIds.has(p.id));
+        const unplacedParts = remainingParts.filter(p => !successfullyPlacedIds.has(p.id));
+        
+        console.log(`Sheet #${sheetIndex}: Successfully placed ${placedParts.length} parts, ${unplacedParts.length} parts remaining`);
+
+        // Format and store this sheet's placements
+        const formatted = this.formatNestingResult(result, items, sheetIndex);
+        if (formatted && formatted.placements && formatted.placements[0]) {
+          allSheets.push(formatted.placements[0]);
+        }
+        if (fitness === null && formatted && formatted.fitness !== undefined) {
+          fitness = formatted.fitness;
+        }
+
+        // Prepare for next sheet
+        remainingParts = unplacedParts;
+        sheetIndex++;
+
+        // Safety: break if no progress (to avoid infinite loop)
+        if (placedParts.length === 0) {
+          console.warn('No parts could be placed on this sheet. Stopping to avoid infinite loop.');
+          break;
+        }
       }
-      
-      return formattedResult;
+
+      // Return all sheets as placements
+      return { fitness, placements: allSheets };
     } catch (error) {
       console.error('Error in nesting process:', error);
       return null;
@@ -582,7 +622,7 @@ export class NestingProcessor {
     return allMappedSkus.includes(sku);
   }
 
-  formatNestingResult(nestingResult, originalItems) {
+  formatNestingResult(nestingResult, originalItems, sheetIndex = 1) {
     if (!nestingResult) {
       return null;
     }
@@ -619,8 +659,8 @@ export class NestingProcessor {
 
     // Create a single sheet with all placements
     const sheet = {
-      sheet: 1, // Changed from 'Sheet1' to 1 to match NestingPlacement type
-      sheetid: '1',
+      sheet: sheetIndex, // Use the provided sheetIndex
+      sheetid: String(sheetIndex),
       parts: []
     };
 
@@ -803,5 +843,62 @@ export class NestingProcessor {
       console.warn('[NESTING PROCESSOR] GeneticAlgorithm.getNestingAttempts not available');
       return null;
     }
+  }
+
+  // Add helper method to check if a part is within bin bounds
+  isPartWithinBinBounds(part, binPolygon) {
+    if (!part || !part.polygons || !binPolygon) {
+      return false;
+    }
+    
+    try {
+      // Get the part's polygon
+      const partPolygon = part.polygons[0];
+      if (!partPolygon || !Array.isArray(partPolygon)) {
+        return false;
+      }
+      
+      // Transform the part polygon to its placed position
+      const placedPolygon = partPolygon.map(point => ({
+        x: point.x + (part.x || 0),
+        y: point.y + (part.y || 0)
+      }));
+      
+      // Check if all points of the part are within the bin polygon
+      for (const point of placedPolygon) {
+        if (!this.pointInPolygon(point, binPolygon)) {
+          return false;
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking part bounds:', error);
+      return false;
+    }
+  }
+  
+  // Helper method to check if a point is inside a polygon
+  pointInPolygon(point, polygon) {
+    if (!point || !polygon || polygon.length < 3) {
+      return false;
+    }
+    
+    let inside = false;
+    const x = point.x;
+    const y = point.y;
+    
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].x;
+      const yi = polygon[i].y;
+      const xj = polygon[j].x;
+      const yj = polygon[j].y;
+      
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    
+    return inside;
   }
 } 

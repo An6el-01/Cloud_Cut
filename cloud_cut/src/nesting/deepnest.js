@@ -1552,6 +1552,8 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
             
             
             // Apply the same rotation to all parts in this order
+            const allowedRotations = this.config.rotations || [0, 90];
+            const newOrderRotation = allowedRotations[Math.floor(Math.random() * allowedRotations.length)];
             for (const partIndex of orderPartIndices) {
                 clone.rotation[partIndex] = newOrderRotation;
             }
