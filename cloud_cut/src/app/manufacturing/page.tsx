@@ -1716,7 +1716,7 @@ export default function Manufacturing() {
     
     let dxfLines: string[] = [];
     
-    // DXF Header
+    // DXF Header with proper units (millimeters)
     dxfLines.push('0');
     dxfLines.push('SECTION');
     dxfLines.push('2');
@@ -1729,6 +1729,10 @@ export default function Manufacturing() {
     dxfLines.push('$DWGCODEPAGE');
     dxfLines.push('3');
     dxfLines.push('ANSI_1252');
+    dxfLines.push('9');
+    dxfLines.push('$INSUNITS');
+    dxfLines.push('70');
+    dxfLines.push('4'); // 4 = Millimeters
     dxfLines.push('9');
     dxfLines.push('$INSBASE');
     dxfLines.push('10');
@@ -1808,7 +1812,7 @@ export default function Manufacturing() {
     dxfLines.push('2');
     dxfLines.push('ENTITIES');
     
-    // Add bin boundary (green background from visualization)
+    // Add bin boundary (foam sheet boundary) - 1000mm x 2000mm with padding
     const binPolygon = [
       { x: PADDING, y: PADDING },
       { x: 1000 + PADDING, y: PADDING },

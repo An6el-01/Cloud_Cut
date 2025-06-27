@@ -519,33 +519,58 @@ export class NestingProcessor {
 
       console.log(`Available SVG files: ${svgNames.length} files`);
       
-      // Use the same matching logic as the existing system
-      const skuOriginal = String(sku);
-      const skuLower = skuOriginal.toLowerCase().trim();
+      // Check if this SKU is part of a composite mapping
+      const isCompositeSubPart = this.isCompositeSubPart(sku);
       
-      // Remove last three characters from SKU for matching and convert to uppercase
-      const shortenedSku = (skuLower.length > 3 ? skuLower.slice(0, -3) : skuLower).toUpperCase();
-      
-      console.log(`SKU matching - Original: ${skuOriginal}, Lower: ${skuLower}, Shortened: ${shortenedSku}`);
-      
-      // Find all SVGs that are a prefix of the shortened SKU
-      const matchingSvgs = svgNames.filter(svgName => shortenedSku.startsWith(svgName));
-      
-      // Pick the longest prefix (most specific match)
       let matchedSvg = null;
-      if (matchingSvgs.length > 0) {
-        matchedSvg = matchingSvgs.reduce((a, b) => (a.length > b.length ? a : b));
-        console.log(`Found exact match: ${matchedSvg}`);
-      } else {
-        // No exact match, try trimmed version (first 8 characters of shortenedSku)
-        const trimmedShortenedSku = shortenedSku.slice(0, -1);
-        console.log(`Trying trimmed SKU: ${trimmedShortenedSku}`);
+      
+      if (isCompositeSubPart) {
+        // For composite sub-parts, use exact SKU matching
+        console.log(`SKU ${sku} is a composite sub-part, using exact matching`);
         
-        // Find all SVGs that start with the trimmed shortened SKU
-        const partSvgs = svgNames.filter(svgName => svgName.startsWith(trimmedShortenedSku));
-        if (partSvgs.length > 0) {
-          matchedSvg = partSvgs[0]; // Take the first match
-          console.log(`Found partial match: ${matchedSvg}`);
+        // Look for exact match first
+        const exactMatch = svgNames.find(svgName => svgName === sku);
+        if (exactMatch) {
+          matchedSvg = exactMatch;
+          console.log(`Found exact match for composite sub-part: ${matchedSvg}`);
+        } else {
+          // If no exact match, try case-insensitive match
+          const caseInsensitiveMatch = svgNames.find(svgName => 
+            svgName.toLowerCase() === sku.toLowerCase()
+          );
+          if (caseInsensitiveMatch) {
+            matchedSvg = caseInsensitiveMatch;
+            console.log(`Found case-insensitive match for composite sub-part: ${matchedSvg}`);
+          }
+        }
+      } else {
+        // For regular SKUs, use the existing shortened SKU matching logic
+        const skuOriginal = String(sku);
+        const skuLower = skuOriginal.toLowerCase().trim();
+        
+        // Remove last three characters from SKU for matching and convert to uppercase
+        const shortenedSku = (skuLower.length > 3 ? skuLower.slice(0, -3) : skuLower).toUpperCase();
+        
+        console.log(`SKU matching - Original: ${skuOriginal}, Lower: ${skuLower}, Shortened: ${shortenedSku}`);
+        
+        // Find all SVGs that are a prefix of the shortened SKU
+        const matchingSvgs = svgNames.filter(svgName => shortenedSku.startsWith(svgName));
+        
+        // Pick the longest prefix (most specific match)
+        if (matchingSvgs.length > 0) {
+          matchedSvg = matchingSvgs.reduce((a, b) => (a.length > b.length ? a : b));
+          console.log(`Found exact match: ${matchedSvg}`);
+        } else {
+          // No exact match, try trimmed version (first 8 characters of shortenedSku)
+          const trimmedShortenedSku = shortenedSku.slice(0, -1);
+          console.log(`Trying trimmed SKU: ${trimmedShortenedSku}`);
+          
+          // Find all SVGs that start with the trimmed shortened SKU
+          const partSvgs = svgNames.filter(svgName => svgName.startsWith(trimmedShortenedSku));
+          if (partSvgs.length > 0) {
+            matchedSvg = partSvgs[0]; // Take the first match
+            console.log(`Found partial match: ${matchedSvg}`);
+          }
         }
       }
 
@@ -567,6 +592,19 @@ export class NestingProcessor {
       console.error(`Error generating SVG URL for ${sku}:`, error);
       return null;
     }
+  }
+
+  // Helper method to check if a SKU is a composite sub-part
+  isCompositeSubPart(sku) {
+    // Get all mapped SKUs (both composite and sub-parts)
+    const allMappedSkus = getAllMappedSkus();
+    
+    console.log(`[isCompositeSubPart] Checking SKU: ${sku}`);
+    console.log(`[isCompositeSubPart] All mapped SKUs:`, allMappedSkus);
+    console.log(`[isCompositeSubPart] SKU ${sku} in mapped SKUs:`, allMappedSkus.includes(sku));
+    
+    // Check if this SKU is in the mapped SKUs list
+    return allMappedSkus.includes(sku);
   }
 
   formatNestingResult(nestingResult, originalItems) {
