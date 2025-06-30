@@ -1421,7 +1421,7 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
     this.config = {
         populationSize: 10,
         mutationRate: 0.1, // Changed from 10 to 0.1 to match NestingProcessor
-        rotations: [0, 90], // Use array format to match NestingProcessor
+        rotations: [0], // Only allow 0 degree rotations
         generations: 3,
         fitnessThreshold: 0.1,
         ...config
@@ -1431,10 +1431,9 @@ function GeneticAlgorithm(adam, config, polygonOffset, nfpCache) {
     console.log('[GENETIC ALGORITHM] Rotation configuration:', this.config.rotations);
     console.log(`[GENETIC ALGORITHM] Nesting attempt #${GeneticAlgorithm.nestingAttempts}`);
     
-    // Determine which rotation to use based on nesting attempt number
-    const rotationIndex = (GeneticAlgorithm.nestingAttempts - 1) % 2; // 0 for even attempts, 1 for odd attempts
-    const selectedRotation = this.config.rotations[rotationIndex];
-    console.log(`[GENETIC ALGORITHM] Using rotation: ${selectedRotation}° (attempt ${GeneticAlgorithm.nestingAttempts} is ${rotationIndex === 0 ? 'even' : 'odd'})`);
+    // Only use 0-degree rotation
+    const selectedRotation = 0;
+    console.log(`[GENETIC ALGORITHM] Using rotation: ${selectedRotation}°`);
     
     // Ensure binPolygon is provided
     if (!this.config.binPolygon) {
@@ -1552,8 +1551,8 @@ GeneticAlgorithm.prototype.mutate = function (individual) {
             
             
             // Apply the same rotation to all parts in this order
-            const allowedRotations = this.config.rotations || [0, 90];
-            const newOrderRotation = allowedRotations[Math.floor(Math.random() * allowedRotations.length)];
+            const allowedRotations = [0]; // Only allow 0 degree rotations
+            const newOrderRotation = 0; // Always use 0 degrees
             for (const partIndex of orderPartIndices) {
                 clone.rotation[partIndex] = newOrderRotation;
             }
@@ -2108,7 +2107,7 @@ GeneticAlgorithm.prototype.testRotationConsistency = function() {
             { id: 'part4', source: { orderId: 'order2', sku: 'SKU4' } },
             { id: 'part5', source: { orderId: 'order1', sku: 'SKU5' } }
         ],
-        rotation: [0, 0, 0, 0, 0] // Only 0 and 90 degree rotations
+        rotation: [0, 0, 0, 0, 0] // Only 0 degree rotations
     };
     
     console.log('[GA TEST] Before enforcement:');

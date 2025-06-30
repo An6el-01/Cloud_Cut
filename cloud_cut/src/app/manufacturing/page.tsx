@@ -82,8 +82,6 @@ export default function Manufacturing() {
   const [currentMediumStock, setCurrentMediumStock] = useState(0)
   const [adjustedMediumSheetQuantity, setAdjustedMediumSheetQuantity] = useState(selectedMediumSheetQuantity || 0)
   const [nestLocks, setNestLocks] = useState<Record<string, boolean>>({});
-  // Add selectedSheetIndex state
-  const [selectedSheetIndex, setSelectedSheetIndex] = useState<number | null>(null);
 
   // Improved function for tab changes that completely prevents changes for operators
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
@@ -1290,159 +1288,140 @@ export default function Manufacturing() {
       );
     }
 
-    const rows: JSX.Element[] = [];
-    let globalIndex = 0;
-
-    Object.entries(nestingQueueData).forEach(([foamSheet, data], foamSheetIndex) => {
+    return Object.entries(nestingQueueData).map(([foamSheet, data], index) => {
       // Calculate the lowest priority from all items in this foam sheet
       const lowestPriority = Math.min(...data.items.map((item: NestingItem) => item.priority || 10));
 
-      // Get all sheets for this foam sheet
-      const allSheets = data.nestingResult?.placements || [];
-      
-      if (allSheets.length === 0) {
-        // No nesting result, create a single row with no data
-        rows.push(createNestingRow(foamSheet, data, null, globalIndex, foamSheetIndex));
-        globalIndex++;
-      } else {
-        // Create a row for each sheet
-        allSheets.forEach((sheet, sheetIndex) => {
-          rows.push(createNestingRow(foamSheet, data, sheet, globalIndex, foamSheetIndex, sheetIndex));
-          globalIndex++;
-        });
-      }
-    });
+      // --- Yield calculation ---
+      // Always use the fallback bin polygon (standard foam sheet size)
+      const binPolygon = [
+        { x: 0, y: 0 },
+        { x: 1000, y: 0 },
+        { x: 1000, y: 2000 },
+        { x: 0, y: 2000 },
+        { x: 0, y: 0 }
+      ];
+      const binArea = polygonArea(binPolygon);
+      // Get all placed parts (first sheet only)
+      const placements = data.nestingResult?.placements?.[0]?.parts || [];
+      const totalPartsArea = placements.reduce((sum, part) => {
+        if (part.polygons && part.polygons[0]) {
+          return sum + polygonArea(part.polygons[0]);
+        }
+        return sum;
+      }, 0);
+      const yieldPercent = binArea > 0 ? (totalPartsArea / binArea) * 100 : 0;
+      // --- End yield calculation ---
 
-    return rows;
-  };
+      // --- Time calculation For Parts---
+      // Each piece takes 1 min 45 sec (105 seconds)
+      // Use the actual number of parts from the nesting result instead of original item quantities
+      // This accounts for Twin Pack and Triple Pack adjustments
+      const actualParts = data.nestingResult?.placements?.[0]?.parts || [];
+      const totalPieces = actualParts.length;
+      const totalSeconds = totalPieces * 105;
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      const timeString = `${minutes}m ${seconds}s`;
+      // --- End time calculation ---
 
-  // Helper function to create a nesting row
-  const createNestingRow = (
-    foamSheet: string, 
-    data: ProcessedNestingData, 
-    sheet: NestingPlacement | null, 
-    globalIndex: number, 
-    foamSheetIndex: number,
-    sheetIndex: number = 0
-  ) => {
-    // --- Yield calculation ---
-    // Always use the fallback bin polygon (standard foam sheet size)
-    const binPolygon = [
-      { x: 0, y: 0 },
-      { x: 1000, y: 0 },
-      { x: 1000, y: 2000 },
-      { x: 0, y: 2000 },
-      { x: 0, y: 0 }
-    ];
-    const binArea = polygonArea(binPolygon);
-    
-    // Get placed parts for this specific sheet
-    const placements = sheet?.parts || [];
-    const totalPartsArea = placements.reduce((sum, part) => {
-      if (part.polygons && part.polygons[0]) {
-        return sum + polygonArea(part.polygons[0]);
-      }
-      return sum;
-    }, 0);
-    const yieldPercent = binArea > 0 ? (totalPartsArea / binArea) * 100 : 0;
-    // --- End yield calculation ---
+      // --- Nesting ID ---
+      const nestingId = `NST-${index + 1}`;
+      // --- End Nesting ID ---
 
-    // --- Time calculation For Parts---
-    // Each piece takes 1 min 45 sec (105 seconds)
-    // Use the actual number of parts from this specific sheet
-    const totalPieces = placements.length;
-    const totalSeconds = totalPieces * 105;
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const timeString = `${minutes}m ${seconds}s`;
-    // --- End time calculation ---
+      // --- Lock state ---
+      const isLocked = !!nestLocks[foamSheet];
+      // --- End Lock state ---
 
-    // --- Nesting ID ---
-    const nestingId = `NST-${globalIndex + 1}`;
-    // --- End Nesting ID ---
-
-    // --- Lock state ---
-    const isLocked = !!nestLocks[foamSheet];
-    // --- End Lock state ---
-
-    // Create unique key for each sheet
-    const rowKey = `${foamSheet}-${sheetIndex}`;
-    const allSheets = data.nestingResult?.placements || [];
-    const sheetNumber = allSheets.length > 1 ? ` (Sheet ${sheetIndex + 1})` : '';
-
-    return (
-      <tr
-        key={rowKey}
-        onClick={() => {
-          setSelectedNestingRow(foamSheet);
-          setSelectedMediumSheet(formatMediumSheetName(foamSheet));
-          setSelectedSheetIndex(sheetIndex); // Track which sheet is selected
-        }}
-        className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
-          selectedNestingRow === foamSheet 
-            ? 'bg-blue-200 border-l-4 border-blue-500' 
-            : globalIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-        }`}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
+      return (
+        <tr
+          key={foamSheet}
+          onClick={() => {
             setSelectedNestingRow(foamSheet);
             setSelectedMediumSheet(formatMediumSheetName(foamSheet));
-          }
-        }}
-        aria-selected={selectedNestingRow === foamSheet}
-      >
-        <td className="px-6 py-4 text-left">
-          <div className="flex items-center justify-center">
-            <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
-            <span className="text-black text-lg">
-              {formatMediumSheetName(foamSheet)}
+          }}
+          className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
+            selectedNestingRow === foamSheet 
+              ? 'bg-blue-200 border-l-4 border-blue-500' 
+              : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+          }`}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSelectedNestingRow(foamSheet);
+              setSelectedMediumSheet(formatMediumSheetName(foamSheet));
+            }
+          }}
+          aria-selected={selectedNestingRow === foamSheet}
+        >
+          <td className="px-6 py-4 text-left">
+            <div className="flex items-center justify-center">
+              <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
+              <span className="text-black text-lg">
+                {formatMediumSheetName(foamSheet)}
+              </span>
+            </div>
+          </td>
+          <td className="px-6 py-4 text-center">{nestingId}</td>
+          <td className="px-6 py-4 text-center">
+            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+              {totalPieces}
             </span>
-          </div>
-        </td>
-        <td className="px-6 py-4 text-center">{nestingId}</td>
-        <td className="px-6 py-4 text-center">
-          <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-            {totalPieces}
-          </span>
-        </td>
-        <td className="px-6 py-4 text-center">
-          {yieldPercent > 0 ? `${yieldPercent.toFixed(1)}%` : '—'}
-        </td>
-        <td className="px-6 py-4 text-center">{timeString}</td>
-         {/* Lock icon column */}
-         <td className="px-6 py-4 text-center">
-          <button
-            type="button"
-            aria-label={isLocked ? 'Unlock nest' : 'Lock nest'}
-            onClick={e => {
-              e.stopPropagation();
-              setNestLocks(prev => ({ ...prev, [foamSheet]: !isLocked }));
-            }}
-            className="focus:outline-none"
-          >
-            {isLocked ? (
-              // Locked icon
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
-                <path d="M7 11V7a5 5 0 0110 0v4" stroke="#374151" strokeWidth="2" fill="none" />
-                <circle cx="12" cy="15" r="1.5" fill="#374151" />
-              </svg>
-            ) : (
-              // Unlocked icon
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
-                <path d="M7 11V7a5 5 0 0110 0" stroke="#374151" strokeWidth="2" fill="none" />
-                <circle cx="12" cy="15" r="1.5" fill="#374151" />
-              </svg>
-            )}
-          </button>
-        </td>
-      </tr>
-    );
+          </td>
+          {/* <td className="px-6 py-4 text-center text-lg font-semibold text-black">
+            {lowestPriority}
+          </td> */}
+          <td className="px-6 py-4 text-center">
+            {yieldPercent > 0 ? `${yieldPercent.toFixed(1)}%` : '—'}
+          </td>
+          <td className="px-6 py-4 text-center">{timeString}</td>
+           {/* Lock icon column */}
+           <td className="px-6 py-4 text-center">
+            <button
+              type="button"
+              aria-label={isLocked ? 'Unlock nest' : 'Lock nest'}
+              onClick={e => {
+                e.stopPropagation();
+                setNestLocks(prev => ({ ...prev, [foamSheet]: !isLocked }));
+              }}
+              className="focus:outline-none"
+            >
+              {isLocked ? (
+                // Locked icon
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
+                  <path d="M7 11V7a5 5 0 0110 0v4" stroke="#374151" strokeWidth="2" fill="none" />
+                  <circle cx="12" cy="15" r="1.5" fill="#374151" />
+                </svg>
+              ) : (
+                // Unlocked icon
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
+                  <path d="M7 11V7a5 5 0 0110 0" stroke="#374151" strokeWidth="2" fill="none" />
+                  <circle cx="12" cy="15" r="1.5" fill="#374151" />
+                </svg>
+              )}
+            </button>
+          </td>
+        </tr>
+      );
+    });
   };
+
+  // Function to calculate bounding box for the polygon
+  // function getBoundingBox(points: { x: number, y: number}[]) {
+  //   const xs = points.map(p => p.x);
+  //   const ys = points.map(p => p.y);
+
+  //   return{
+  //     minX: Math.min(...xs),
+  //     maxX: Math.max(...xs),
+  //     minY: Math.min(...ys),
+  //     maxY: Math.max(...ys),
+  //   };
+  // }
 
   const handleConfirmMediumSheet = async () => {
     if (!selectedFoamSheet) return;
@@ -1737,7 +1716,7 @@ export default function Manufacturing() {
     
     let dxfLines: string[] = [];
     
-    // DXF Header with proper units (millimeters)
+    // DXF Header
     dxfLines.push('0');
     dxfLines.push('SECTION');
     dxfLines.push('2');
@@ -1750,10 +1729,6 @@ export default function Manufacturing() {
     dxfLines.push('$DWGCODEPAGE');
     dxfLines.push('3');
     dxfLines.push('ANSI_1252');
-    dxfLines.push('9');
-    dxfLines.push('$INSUNITS');
-    dxfLines.push('70');
-    dxfLines.push('4'); // 4 = Millimeters
     dxfLines.push('9');
     dxfLines.push('$INSBASE');
     dxfLines.push('10');
@@ -1833,7 +1808,7 @@ export default function Manufacturing() {
     dxfLines.push('2');
     dxfLines.push('ENTITIES');
     
-    // Add bin boundary (foam sheet boundary) - 1000mm x 2000mm with padding
+    // Add bin boundary (green background from visualization)
     const binPolygon = [
       { x: PADDING, y: PADDING },
       { x: 1000 + PADDING, y: PADDING },
@@ -2375,11 +2350,8 @@ export default function Manufacturing() {
                     </div>
                   ) : selectedNestingRow ? (
                     (() => {
-                      // Get the correct sheet index (default to 0 if null)
-                      const sheetIdx = selectedSheetIndex ?? 0;
-                      const placementsArr = nestingQueueData[selectedNestingRow as string]?.nestingResult?.placements || [];
-                      const selectedPlacement = placementsArr[sheetIdx] || null;
-                      const allParts = selectedPlacement?.parts || [];
+                      // Get all parts for the current placement
+                      const allParts = nestingQueueData[selectedNestingRow as string].nestingResult?.placements.flatMap((placement: NestingPlacement) => placement.parts) || [];
                       // Gather all points after translation/rotation
                       let allPoints: { x: number, y: number }[] = [];
                       allParts.forEach((part: NestingPart) => {

@@ -84,7 +84,7 @@ export class NestingProcessor {
       const config = {
         spacing: 0, // Ensure no extra space between parts for tight packing
         tolerance: 0.1,
-        rotations: [0, 90], // Allow 0 and 90 degree rotations for better packing
+        rotations: [0], // Only allow 0 degree rotations
         useHoles: true,
         populationSize: 10,
         mutationRate: 0.1,
@@ -105,63 +105,20 @@ export class NestingProcessor {
       console.log('Using nesting config:', config);
       console.log('Rotation configuration:', config.rotations);
 
-      // Multi-sheet logic
+      // Single-sheet logic: nest all parts in one go
       let allSheets = [];
-      let sheetIndex = 1;
-      let remainingParts = allParts.slice();
       let fitness = null;
-
-      while (remainingParts.length > 0) {
-        console.log(`\n--- Starting nesting for sheet #${sheetIndex} with ${remainingParts.length} parts ---`);
-        // Run nesting algorithm for current set of parts
-        const result = await this.deepNest.nest(remainingParts, config);
-        console.log(`Nesting result for sheet #${sheetIndex}:`, result);
-
-        // Find which parts were successfully placed (within bounds)
-        // We need to validate each placement against the bin polygon
-        const placedArr = result.placement || result.placements || [];
-        const successfullyPlacedIds = new Set();
-        
-        // Validate each placement to see if it's actually within bounds
-        for (const placement of placedArr) {
-          const part = placement;
-          if (part && part.id) {
-            // Check if this part is within the bin bounds
-            const isWithinBounds = this.isPartWithinBinBounds(part, config.binPolygon);
-            if (isWithinBounds) {
-              successfullyPlacedIds.add(part.id);
-            } else {
-              console.log(`Part ${part.id} is out of bounds, excluding from sheet #${sheetIndex}`);
-            }
-          }
-        }
-        
-        const placedParts = remainingParts.filter(p => successfullyPlacedIds.has(p.id));
-        const unplacedParts = remainingParts.filter(p => !successfullyPlacedIds.has(p.id));
-        
-        console.log(`Sheet #${sheetIndex}: Successfully placed ${placedParts.length} parts, ${unplacedParts.length} parts remaining`);
-
-        // Format and store this sheet's placements
-        const formatted = this.formatNestingResult(result, items, sheetIndex);
-        if (formatted && formatted.placements && formatted.placements[0]) {
-          allSheets.push(formatted.placements[0]);
-        }
-        if (fitness === null && formatted && formatted.fitness !== undefined) {
-          fitness = formatted.fitness;
-        }
-
-        // Prepare for next sheet
-        remainingParts = unplacedParts;
-        sheetIndex++;
-
-        // Safety: break if no progress (to avoid infinite loop)
-        if (placedParts.length === 0) {
-          console.warn('No parts could be placed on this sheet. Stopping to avoid infinite loop.');
-          break;
-        }
+      // Run nesting algorithm for all parts at once
+      const result = await this.deepNest.nest(allParts, config);
+      // Format and store this sheet's placements
+      const formatted = this.formatNestingResult(result, items, 1);
+      if (formatted && formatted.placements && formatted.placements[0]) {
+        allSheets.push(formatted.placements[0]);
       }
-
-      // Return all sheets as placements
+      if (formatted && formatted.fitness !== undefined) {
+        fitness = formatted.fitness;
+      }
+      // Return only one sheet as placements
       return { fitness, placements: allSheets };
     } catch (error) {
       console.error('Error in nesting process:', error);
@@ -415,14 +372,6 @@ export class NestingProcessor {
             x: pt.x - bounds.x, // shift to (0,0)
             y: pt.y - bounds.y
           }));
-          
-          // --- NORMALIZE ORIENTATION: Make all polygons 'horizontal' (width >= height) ---
-          const boundsNorm = this.geometryUtil.getPolygonBounds(scaledPolygon);
-          if (boundsNorm.height > boundsNorm.width) {
-            // Rotate by 90 degrees to make it horizontal
-            scaledPolygon = this.geometryUtil.rotatePolygon(scaledPolygon, 90);
-            console.log(`Rotated polygon to make it horizontal`);
-          }
           
           // --- VALIDATE THE POLYGON (only the longest path) ---
           function validatePolygon(polygon) {
@@ -831,13 +780,13 @@ export class NestingProcessor {
   getNestingAttemptInfo() {
     if (typeof GeneticAlgorithm !== 'undefined' && GeneticAlgorithm.getNestingAttempts) {
       const attempts = GeneticAlgorithm.getNestingAttempts();
-      const rotationIndex = (attempts - 1) % 2;
-      const rotation = rotationIndex === 0 ? 0 : 90;
+      // Only support 0-degree rotation
+      const rotation = 0;
       return {
         attempts,
         rotation,
-        rotationIndex,
-        isEvenAttempt: rotationIndex === 0
+        rotationIndex: 0,
+        isEvenAttempt: true
       };
     } else {
       console.warn('[NESTING PROCESSOR] GeneticAlgorithm.getNestingAttempts not available');

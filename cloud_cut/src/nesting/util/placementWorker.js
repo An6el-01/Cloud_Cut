@@ -405,19 +405,12 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 }
             }
             
-            // Use rotation-specific fallback coordinates
-            const rotation = part && part.rotation ? part.rotation : 0;
+            // Use (10,10) as fallback point for all rotations (only 0 degrees now)
             let fallbackPoint;
             
-            if (rotation === 90) {
-                // For 90-degree rotation, place near the right edge but with margin to ensure it fits
-                // Bin bounds are (10,10) to (1010,2010), so use (900,10) to give margin
-                fallbackPoint = { x: 990, y: 10 };
-                console.warn(`[PLACE DEBUG] Forcibly using (900,10) as placement point for 90° rotated part (part fully inside bin)`);
-            } else {
-                fallbackPoint = { x: 10, y: 10 }; // Use (10,10) instead of (0,0) to stay within bin bounds
+            // Use (10,10) as fallback point for all rotations (only 0 degrees now)
+            fallbackPoint = { x: 10, y: 10 };
                 console.warn(`[PLACE DEBUG] Forcibly using (10,10) as placement point for ${rotation}° rotated part (part fully inside bin)`);
-            }
             
             if (isPartFullyInsideBin(fallbackPoint, binPolygon)) {
                 return fallbackPoint;
@@ -652,15 +645,9 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 if (!placementPoint) {
                     console.warn(`[PLACE DEBUG] pickBottomLeftPoint failed, using simple fallback for part ${part.id}`);
                     
-                    // Use rotation-specific fallback coordinates
-                    const rotation = part.rotation || 0;
-                    if (rotation === 90) {
-                        placementPoint = { x: 990, y: 10 };
-                        console.log(`[PLACE DEBUG] Using simple fallback (990,10) for 90° rotated part ${part.id}`);
-                } else {
+                    // Use (10,10) as fallback point for all rotations (only 0 degrees now)
                         placementPoint = { x: 10, y: 10 };
-                        console.log(`[PLACE DEBUG] Using simple fallback (10,10) for ${rotation}° rotated part ${part.id}`);
-                    }
+                    console.log(`[PLACE DEBUG] Using simple fallback (10,10) for part ${part.id}`);
                 }
 
                 console.log(`[PLACE DEBUG] Selected placement point (${placementPoint.x.toFixed(2)}, ${placementPoint.y.toFixed(2)}) for part ${part.id}`);
@@ -693,41 +680,9 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, po
                 }
 
                 if (!overlaps){
-                    //For rotated parts, we need to ensure the placement coordinates represent the bottom-left of the rotated part
-                    if (part.rotation && part.rotation !== 0) {
-                        // Calculate the bounds of the rotated part to find its bottom-left
-                        const angle = part.rotation * Math.PI / 180;
-                        const cos = Math.cos(angle);
-                        const sin = Math.sin(angle);
-                        
-                        // Rotate the part polygon to find its bounds
-                        const rotatedPolygon = part.polygons[0].map(pt => ({
-                            x: pt.x * cos - pt.y * sin,
-                            y: pt.x * sin + pt.y * cos
-                        }));
-                        
-                        // Find the bottom-left of the rotated polygon
-                        let minX = Infinity, minY = Infinity;
-                        for (const pt of rotatedPolygon) {
-                            minX = Math.min(minX, pt.x);
-                            minY = Math.min(minY, pt.y);
-                        }
-                        
-                        // The placement point from NFP represents where the part should be placed
-                        // We need to adjust it so that the bottom-left of the rotated part is at the placement point
-                        // If the rotated part's bottom-left is at (minX, minY), we need to shift by (-minX, -minY)
-                        part.x = placementPoint.x - minX;
-                        part.y = placementPoint.y - minY;
-                        
-                        console.log(`[PLACEMENT FIX] Part ${part.id} (rotation: ${part.rotation}°):`);
-                        console.log(`  NFP placement point: (${placementPoint.x.toFixed(2)}, ${placementPoint.y.toFixed(2)})`);
-                        console.log(`  Rotated polygon bottom-left: (${minX.toFixed(2)}, ${minY.toFixed(2)})`);
-                        console.log(`  Final placement coordinates: (${part.x.toFixed(2)}, ${part.y.toFixed(2)})`);
-                    } else {
-                        // For non-rotated parts, use the placement point directly
+                    // For 0-degree rotations, use the placement point directly
                         part.x = placementPoint.x;
                         part.y = placementPoint.y;
-                    }
                     
                 placed.push(part);
                     placements.push({ 
@@ -824,95 +779,103 @@ PlacementWorker.prototype.place = function() {
     const placements = [];
     const unplaced = [...this.paths];
     
-    // Track current position for placement
-    let currentX = 10;
-    let currentY = 10;
-    let isFirst90 = true;
-    
     // Sheet dimensions
-    const maxY = 2000;
-    const maxX = 1000;
+    const maxX = 990;
+    const startX = 10;
+    const startY = 10;
     
-    while (unplaced.length > 0) {
-        const part = unplaced[0];
-        const rotation = part.rotation || 0;
-
-        if (!part.polygons || !part.polygons[0]) {
-            console.warn(`[PLACE WARNING] Skipping part ${part.id} - no valid polygon`);
-            unplaced.shift();
-            continue;
-        }
+    // Track rotation for each order
+    const orderRotations = new Map();
+    
+    // 1. Sort parts by height descending
+    const partsWithBounds = unplaced.map(part => {
+            const bounds = this.calculateBounds(part.polygons[0]);
+        return {
+            part,
+            bounds,
+            width: bounds.maxX - bounds.minX,
+            height: bounds.maxY - bounds.minY
+        };
+    });
+    partsWithBounds.sort((a, b) => b.height - a.height);
+    
+    let currentX = startX;
+    let currentY = startY;
+    let rowAnchor = null;
+    let rowIndex = 0;
+    
+    let i = 0;
+    while (i < partsWithBounds.length) {
+        let { part, bounds, width, height } = partsWithBounds[i];
+        let placedThisPart = false;
+        
+        // Get order ID for this part
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        
+        // Check if this order already has a set rotation
+        const orderRotation = orderRotations.get(orderId);
+        const isFirstPartOfOrder = orderRotation === undefined;
+        
+        // Determine rotations to try based on whether order has parts placed
+        let tryRotations = isFirstPartOfOrder ? [0, 90] : [orderRotation];
+        
+        let canFitInCurrentRow = false;
+        let bestFitRotation = null;
+        let bestFitData = null;
+        
+                // First, check if the part can fit in current row with any rotation
+        for (const rotation of tryRotations) {
+            let testWidth, testHeight;
 
         if (rotation === 0) {
-            // No rotation - use original dimensions
-            const bounds = this.calculateBounds(part.polygons[0]);
-            let partWidth = bounds.maxX - bounds.minX;
-            let partHeight = bounds.maxY - bounds.minY;
-
-            if (currentY + partHeight > maxY) {
-                console.warn(`[PLACE WARNING] Part ${part.id} would exceed maxY (${maxY})`);
-                break;
+                testWidth = width;
+                testHeight = height;
+            } else if (rotation === 90) {
+                testWidth = height;
+                testHeight = width;
             }
-
-            part.x = currentX;
-            part.y = currentY;
-
-            // Offset polygon to (currentX, currentY)
-            const offsetPolygon = part.polygons[0].map(pt => ({
+            
+            // Check bounds based on rotation
+            let fitsInBounds = false;
+            if (rotation === 90) {
+                // For 90° rotation: check if x <= 990
+                fitsInBounds = currentX <= 990;
+            } else if (rotation === 0) {
+                // For 0° rotation: check if x + width <= 990
+                fitsInBounds = (currentX + width) <= 990;
+            }
+            
+            // Check if it fits in current row
+            if (fitsInBounds && currentX + testWidth <= maxX) {
+                canFitInCurrentRow = true;
+                bestFitRotation = rotation;
+                bestFitData = { testWidth, testHeight };
+                break; // Use first fitting rotation
+            }
+        }
+        
+        if (canFitInCurrentRow) {
+            // Place the part with the best fitting rotation
+            const rotation = bestFitRotation;
+            const { testWidth, testHeight } = bestFitData;
+            
+            let testPolygon;
+            if (rotation === 0) {
+                testPolygon = part.polygons[0].map(pt => ({
                 x: pt.x - bounds.minX + currentX,
                 y: pt.y - bounds.minY + currentY
             }));
-            part.polygons[0] = offsetPolygon;
-
-            placed.push(part);
-            placements.push({
-                x: part.x,
-                y: part.y,
-                id: part.id,
-                rotation: rotation,
-                polygons: [offsetPolygon],
-                source: part.source
-            });
-
-            console.log(`[PLACE DEBUG] Placed part ${part.id} (${rotation}°) at (${part.x.toFixed(2)}, ${part.y.toFixed(2)}) - dimensions: ${partWidth.toFixed(2)}x${partHeight.toFixed(2)}`);
-
-            currentY += partHeight + 5;
-            unplaced.shift();
-
-        } else if (rotation === 90) {
-            // For the first 90° part, start at the right edge
-            if (isFirst90) {
-                currentX = 990;
-                isFirst90 = false;
+            } else if (rotation === 90) {
+                testPolygon = rotatePolygon(part.polygons[0].map(pt => ({ x: pt.x - bounds.minX, y: pt.y - bounds.minY })), 90).map(pt => ({
+                    x: pt.x + currentX,
+                    y: pt.y + currentY
+                }));
             }
-            // 1. Normalize original polygon to origin
-            const orig = part.polygons[0];
-            let origMinX = Math.min(...orig.map(pt => pt.x));
-            let origMinY = Math.min(...orig.map(pt => pt.y));
-            const normalized = orig.map(pt => ({
-                x: pt.x - origMinX,
-                y: pt.y - origMinY
-            }));
-
-            // 2. Rotate the normalized polygon 90° about the origin
-            const rotated = rotatePolygon(normalized, 90);
-
-            // 3. Find bounds of the rotated polygon
-            let minX = Math.min(...rotated.map(pt => pt.x));
-            let maxX = Math.max(...rotated.map(pt => pt.x));
-            let minY = Math.min(...rotated.map(pt => pt.y));
-
-            // 4. Offset so right edge is at currentX, bottom at currentY
-            let offsetX = currentX - maxX;
-            let offsetY = currentY - minY;
-            const finalPolygon = rotated.map(pt => ({
-                x: pt.x + offsetX,
-                y: pt.y + offsetY
-            }));
-
-            part.polygons[0] = finalPolygon;
-            part.x = currentX;
+            
+            part.rotation = rotation;
+            part.x = rotation === 90 ? currentX + height : currentX;
             part.y = currentY;
+            part.polygons[0] = testPolygon;
 
             placed.push(part);
             placements.push({
@@ -920,31 +883,419 @@ PlacementWorker.prototype.place = function() {
                 y: part.y,
                 id: part.id,
                 rotation: rotation,
-                polygons: [finalPolygon],
-                source: part.source
-            });
+            polygons: [testPolygon],
+            source: { ...part.source, originalWidth: width, originalHeight: height }
+        });
 
-            // 5. Update currentX for next part (move left by width of rotated part)
-            let partWidth = maxX - minX;
-            currentX -= partWidth + 5;
-
-            unplaced.shift();
+            currentX += testWidth + 5;
+            placedThisPart = true;
+            
+            if (isFirstPartOfOrder) {
+                orderRotations.set(orderId, rotation);
+            }
+            
+            // Remove this part from the array and continue with next part
+            partsWithBounds.splice(i, 1);
         } else {
-            console.warn(`[PLACE WARNING] Unsupported rotation ${rotation}° for part ${part.id}`);
-            unplaced.shift();
-            continue;
+            // Part doesn't fit in current row
+            // Try to find other parts from different orders that might fit
+            let foundAlternativePart = false;
+            
+            for (let j = i + 1; j < partsWithBounds.length; j++) {
+                const altPart = partsWithBounds[j];
+                const altOrderId = altPart.part.source?.orderId || altPart.part.source?.order_id || 'unknown';
+                const altOrderRotation = orderRotations.get(altOrderId);
+                const altIsFirstPartOfOrder = altOrderRotation === undefined;
+                
+                // Determine rotations to try for alternative part
+                const altTryRotations = altIsFirstPartOfOrder ? [0, 90] : [altOrderRotation];
+                
+                // Check if alternative part can fit in current row
+                for (const altRotation of altTryRotations) {
+                    let altTestWidth;
+                    
+                    if (altRotation === 0) {
+                        altTestWidth = altPart.width;
+                    } else if (altRotation === 90) {
+                        altTestWidth = altPart.height;
+                    }
+                    
+                    // Check bounds based on rotation
+                    let altFitsInBounds = false;
+                    if (altRotation === 90) {
+                        // For 90° rotation: check if x <= 990
+                        altFitsInBounds = currentX <= 990;
+                    } else if (altRotation === 0) {
+                        // For 0° rotation: check if x + width <= 990
+                        altFitsInBounds = (currentX + altPart.width) <= 990;
+                    }
+                    
+                    if (altFitsInBounds && currentX + altTestWidth <= maxX) {
+                        // This alternative part fits! Place it and continue
+                        const altTestHeight = altRotation === 0 ? altPart.height : altPart.width;
+                        
+                        let altTestPolygon;
+                        if (altRotation === 0) {
+                            altTestPolygon = altPart.part.polygons[0].map(pt => ({
+                                x: pt.x - altPart.bounds.minX + currentX,
+                                y: pt.y - altPart.bounds.minY + currentY
+                            }));
+                        } else if (altRotation === 90) {
+                            altTestPolygon = rotatePolygon(altPart.part.polygons[0].map(pt => ({ 
+                                x: pt.x - altPart.bounds.minX, 
+                                y: pt.y - altPart.bounds.minY 
+                            })), 90).map(pt => ({
+                                x: pt.x + currentX,
+                                y: pt.y + currentY
+                            }));
+                        }
+                        
+                        altPart.part.rotation = altRotation;
+                        altPart.part.x = altRotation === 90 ? currentX + altPart.height : currentX;
+                        altPart.part.y = currentY;
+                        altPart.part.polygons[0] = altTestPolygon;
+                        
+                        placed.push(altPart.part);
+                        placements.push({
+                            x: altPart.part.x,
+                            y: altPart.part.y,
+                            id: altPart.part.id,
+                            rotation: altRotation,
+                            polygons: [altTestPolygon],
+                            source: { ...altPart.part.source, originalWidth: altPart.width, originalHeight: altPart.height }
+                        });
+                        
+                        currentX += altTestWidth + 5;
+                        
+                        if (altIsFirstPartOfOrder) {
+                            orderRotations.set(altOrderId, altRotation);
+                        }
+                        
+                        // Remove the alternative part from the array
+                        partsWithBounds.splice(j, 1);
+                        foundAlternativePart = true;
+                        break;
+                    }
+                }
+                
+                if (foundAlternativePart) {
+                    break;
+                }
+            }
+            
+            // If we found and placed an alternative part, continue with current index
+            // Otherwise, move to next part
+            if (!foundAlternativePart) {
+                i++;
+            }
         }
     }
     
-    // Calculate fitness based on how many parts were placed
-    const fitness = unplaced.length > 0 ? unplaced.length * 1000 : placed.length;
-    
+    // Handle any remaining parts that couldn't be placed in current rows
+    // Start new rows as needed
+    while (partsWithBounds.length > 0) {
+        console.log(`[NEW ROW DEBUG] Starting new row placement process. Remaining parts: ${partsWithBounds.length}`);
+        
+        // --- NEXT ROW LOGIC ---
+        // Find the group of placed parts with the highest y coordinate (current row)
+        let maxY = -Infinity;
+        for (const p of placed) {
+            maxY = Math.max(maxY, p.y);
+        }
+        
+        console.log(`[NEW ROW DEBUG] Found maxY (current row): ${maxY}`);
+        
+        // Get all parts at this maxY (the current row)
+        const currentRowParts = placed.filter(p => p.y === maxY);
+        console.log(`[NEW ROW DEBUG] Current row parts count: ${currentRowParts.length}`);
+        currentRowParts.forEach((part, index) => {
+            console.log(`[NEW ROW DEBUG] Current row part ${index}: ${part.id} at (${part.x}, ${part.y}) rotation: ${part.rotation}°`);
+        });
+        
+        // For each, get the row height (0°: height, 90°: width) using original bounds
+        let minRowDim = Infinity;
+        let anchor = null;
+        console.log(`[NEW ROW DEBUG] Calculating anchor based on row dimensions...`);
+        
+        for (const p of currentRowParts) {
+            // Find the original bounds for this part to get the correct row dimension
+            let rowDim;
+            if (p.rotation === 0) {
+                // For 0° rotation, row dimension is the original height
+                rowDim = p.source?.originalHeight || (p.polygons[0].reduce((h, pt) => Math.max(h, pt.y), -Infinity) - p.polygons[0].reduce((h, pt) => Math.min(h, pt.y), Infinity));
+            } else {
+                // For 90° rotation, row dimension is the original width  
+                rowDim = p.source?.originalWidth || (p.polygons[0].reduce((w, pt) => Math.max(w, pt.x), -Infinity) - p.polygons[0].reduce((w, pt) => Math.min(w, pt.x), Infinity));
+            }
+            
+            console.log(`[NEW ROW DEBUG] Part ${p.id}: rotation=${p.rotation}°, rowDim=${rowDim}, x=${p.x}`);
+            
+            // Detailed anchor selection logic with debugging
+            console.log(`[NEW ROW DEBUG] Comparing: rowDim=${rowDim} vs minRowDim=${minRowDim}`);
+            console.log(`[NEW ROW DEBUG] Current anchor: ${anchor?.id || 'none'}`);
+            
+            const isSmallerRowDim = rowDim < minRowDim;
+            const isSameRowDim = rowDim === minRowDim;
+            const isCloserToX0 = !anchor || p.x < anchor.x;
+            
+            console.log(`[NEW ROW DEBUG] isSmallerRowDim: ${isSmallerRowDim}`);
+            console.log(`[NEW ROW DEBUG] isSameRowDim: ${isSameRowDim}, isCloserToX0: ${isCloserToX0}`);
+            
+            if (isSmallerRowDim || (isSameRowDim && isCloserToX0)) {
+                const reason = isSmallerRowDim ? 'smaller rowDim' : 'same rowDim but closer to x=0';
+                console.log(`[NEW ROW DEBUG] ✓ NEW ANCHOR: ${p.id} (${reason})`);
+                minRowDim = rowDim;
+                anchor = p;
+            } else {
+                console.log(`[NEW ROW DEBUG] ✗ REJECTED: ${p.id}`);
+            }
+        }
+        
+        console.log(`[NEW ROW DEBUG] Selected anchor: ${anchor?.id} at (${anchor?.x}, ${anchor?.y}) with rotation ${anchor?.rotation}° and rowDim ${minRowDim}`);
+        
+        // Set currentX and currentY based on anchor rotation and new part rotation
+        if (!anchor) {
+            console.log(`[NEW ROW DEBUG] No anchor found, using fallback position`);
+            currentX = startX;
+            currentY = currentY + 100; // fallback if no anchor
+        } else {
+            // Will be set based on anchor and new part rotations below
+            currentX = anchor.x;
+            currentY = anchor.y;
+            console.log(`[NEW ROW DEBUG] Initial coordinates from anchor: (${currentX}, ${currentY})`);
+        }
+        
+        // Try to place the first remaining part in the new row
+        const { part, bounds, width, height } = partsWithBounds[0];
+        const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+        const orderRotation = orderRotations.get(orderId);
+        const isFirstPartOfOrder = orderRotation === undefined;
+        
+        console.log(`[NEW ROW DEBUG] Part to place: ${part.id} from order ${orderId}`);
+        console.log(`[NEW ROW DEBUG] Part dimensions: width=${width}, height=${height}`);
+        console.log(`[NEW ROW DEBUG] Order rotation: ${orderRotation}, isFirstPartOfOrder: ${isFirstPartOfOrder}`);
+        
+        // Determine best rotation for this part
+        let bestRotation = 0;
+        let bestWidth = width;
+        let bestHeight = height;
+        
+        if (isFirstPartOfOrder) {
+            // Try both rotations and pick the best fit
+            if (height < width) {
+                // If 90° rotation makes it narrower, prefer that
+                bestRotation = 90;
+                bestWidth = height;
+                bestHeight = width;
+            }
+            console.log(`[NEW ROW DEBUG] First part of order, selected rotation: ${bestRotation}° (width=${bestWidth}, height=${bestHeight})`);
+        } else {
+            // Use the order's established rotation
+            bestRotation = orderRotation;
+            if (bestRotation === 90) {
+                bestWidth = height;
+                bestHeight = width;
+            }
+            console.log(`[NEW ROW DEBUG] Using established order rotation: ${bestRotation}° (width=${bestWidth}, height=${bestHeight})`);
+        }
+        
+        // Calculate placement coordinates based on anchor and new part rotations
+        if (anchor) {
+            const anchorOriginalWidth = anchor.source?.originalWidth || 0;
+            const anchorOriginalHeight = anchor.source?.originalHeight || 0;
+            
+            console.log(`[NEW ROW DEBUG] Anchor original dimensions: width=${anchorOriginalWidth}, height=${anchorOriginalHeight}`);
+            console.log(`[NEW ROW DEBUG] Calculating new coordinates based on anchor rotation=${anchor.rotation}° and new part rotation=${bestRotation}°`);
+            
+            if (anchor.rotation === 0) {
+                // Anchor has rotation 0
+                if (bestRotation === 0) {
+                    // New part rotation = 0: x = anchor.x, y = 10 + anchor.height
+                    currentX = anchor.x;
+                    currentY = 10 + anchorOriginalHeight;
+                    console.log(`[NEW ROW DEBUG] Case: Anchor 0°, Part 0° → x=${currentX}, y=${currentY}`);
+                } else if (bestRotation === 90) {
+                    // New part rotation = 90: x = anchor.x + newPart.height, y = 10 + anchor.height
+                    currentX = anchor.x + height;
+                    currentY = 10 + anchorOriginalHeight;
+                    console.log(`[NEW ROW DEBUG] Case: Anchor 0°, Part 90° → x=${currentX} (${anchor.x} + ${height}), y=${currentY}`);
+                }
+            } else if (anchor.rotation === 90) {
+                // Anchor has rotation 90
+                if (bestRotation === 0) {
+                    // New part rotation = 0: x = anchor.x - anchor.height, y = 10 + anchor.width
+                    currentX = anchor.x - anchorOriginalHeight;
+                    currentY = 10 + anchorOriginalWidth;
+                    console.log(`[NEW ROW DEBUG] Case: Anchor 90°, Part 0° → x=${currentX} (${anchor.x} - ${anchorOriginalHeight}), y=${currentY}`);
+                } else if (bestRotation === 90) {
+                    // New part rotation = 90: x = anchor.x, y = 10 + anchor.width
+                    currentX = anchor.x;
+                    currentY = 10 + anchorOriginalWidth;
+                    console.log(`[NEW ROW DEBUG] Case: Anchor 90°, Part 90° → x=${currentX}, y=${currentY}`);
+                }
+            }
+        }
+        
+        // Check if part fits within bounds before placing
+        let canPlaceInNewRow = false;
+        if (bestRotation === 90) {
+            // For 90° rotation: check if x <= 990
+            canPlaceInNewRow = currentX <= 990;
+            console.log(`[NEW ROW DEBUG] Bounds check for 90° rotation: currentX (${currentX}) <= 990 = ${canPlaceInNewRow}`);
+        } else if (bestRotation === 0) {
+            // For 0° rotation: check if x + width <= 990
+            canPlaceInNewRow = (currentX + width) <= 990;
+            console.log(`[NEW ROW DEBUG] Bounds check for 0° rotation: currentX + width (${currentX} + ${width} = ${currentX + width}) <= 990 = ${canPlaceInNewRow}`);
+        }
+        
+        // If part doesn't fit, skip placement (will be handled in next iteration)
+        if (!canPlaceInNewRow) {
+            console.log(`[NEW ROW DEBUG] Part ${part.id} doesn't fit in new row, exiting placement loop`);
+            break; // Exit the new row placement loop
+        }
+        
+        // Place the part in the new row
+        let testPolygon;
+        if (bestRotation === 0) {
+            testPolygon = part.polygons[0].map(pt => ({
+                x: pt.x - bounds.minX + currentX,
+                y: pt.y - bounds.minY + currentY
+            }));
+            part.x = currentX;
+        } else if (bestRotation === 90) {
+            testPolygon = rotatePolygon(part.polygons[0].map(pt => ({ 
+                x: pt.x - bounds.minX, 
+                y: pt.y - bounds.minY 
+            })), 90).map(pt => ({
+                x: pt.x + currentX,
+                y: pt.y + currentY
+            }));
+            part.x = currentX + height;
+        }
+        
+                part.rotation = bestRotation;
+            part.y = currentY;
+        part.polygons[0] = testPolygon;
+
+        console.log(`[NEW ROW DEBUG] Final part placement: ${part.id} at (${part.x}, ${part.y}) with rotation ${part.rotation}°`);
+
+            placed.push(part);
+            placements.push({
+                x: part.x,
+                y: part.y,
+                id: part.id,
+            rotation: bestRotation,
+            polygons: [testPolygon],
+            source: { ...part.source, originalWidth: width, originalHeight: height }
+        });
+
+        currentX += bestWidth + 5;
+        console.log(`[NEW ROW DEBUG] Updated currentX for next part: ${currentX} (added ${bestWidth} + 5)`);
+        
+        if (isFirstPartOfOrder) {
+            orderRotations.set(orderId, bestRotation);
+            console.log(`[NEW ROW DEBUG] Set order ${orderId} rotation to ${bestRotation}°`);
+        }
+        
+        // Remove the placed part
+        partsWithBounds.shift();
+        console.log(`[NEW ROW DEBUG] Removed placed part, remaining parts: ${partsWithBounds.length}`);
+        console.log(`[NEW ROW DEBUG] ================================`);
+        
+        // Continue placing parts in this new row
+        let newRowIndex = 0;
+        while (newRowIndex < partsWithBounds.length) {
+            const { part: nextPart, bounds: nextBounds, width: nextWidth, height: nextHeight } = partsWithBounds[newRowIndex];
+            const nextOrderId = nextPart.source?.orderId || nextPart.source?.order_id || 'unknown';
+            const nextOrderRotation = orderRotations.get(nextOrderId);
+            const nextIsFirstPartOfOrder = nextOrderRotation === undefined;
+            
+            let canFitInNewRow = false;
+            let newRowBestRotation = null;
+            let newRowBestWidth = null;
+            
+            // Determine rotations to try
+            const newRowTryRotations = nextIsFirstPartOfOrder ? [0, 90] : [nextOrderRotation];
+            
+            for (const rotation of newRowTryRotations) {
+                const testWidth = rotation === 0 ? nextWidth : nextHeight;
+                
+                // Check bounds based on rotation
+                let fitsInBounds = false;
+                if (rotation === 90) {
+                    // For 90° rotation: check if x <= 990
+                    fitsInBounds = currentX <= 990;
+                } else if (rotation === 0) {
+                    // For 0° rotation: check if x + width <= 990
+                    fitsInBounds = (currentX + nextWidth) <= 990;
+                }
+                
+                if (fitsInBounds && currentX + testWidth <= maxX) {
+                    canFitInNewRow = true;
+                    newRowBestRotation = rotation;
+                    newRowBestWidth = testWidth;
+                    break;
+                }
+            }
+            
+            if (canFitInNewRow) {
+                // Place this part in the new row
+                const testHeight = newRowBestRotation === 0 ? nextHeight : nextWidth;
+                
+                let nextTestPolygon;
+                if (newRowBestRotation === 0) {
+                    nextTestPolygon = nextPart.polygons[0].map(pt => ({
+                        x: pt.x - nextBounds.minX + currentX,
+                        y: pt.y - nextBounds.minY + currentY
+                    }));
+                    nextPart.x = currentX;
+                } else if (newRowBestRotation === 90) {
+                    nextTestPolygon = rotatePolygon(nextPart.polygons[0].map(pt => ({ 
+                        x: pt.x - nextBounds.minX, 
+                        y: pt.y - nextBounds.minY 
+                    })), 90).map(pt => ({
+                        x: pt.x + currentX,
+                        y: pt.y + currentY
+                    }));
+                    nextPart.x = currentX + nextHeight;
+                }
+                
+                nextPart.rotation = newRowBestRotation;
+                nextPart.y = currentY;
+                nextPart.polygons[0] = nextTestPolygon;
+                
+                placed.push(nextPart);
+                placements.push({
+                    x: nextPart.x,
+                    y: nextPart.y,
+                    id: nextPart.id,
+                    rotation: newRowBestRotation,
+                    polygons: [nextTestPolygon],
+                    source: { ...nextPart.source, originalWidth: nextWidth, originalHeight: nextHeight }
+                });
+                
+                currentX += newRowBestWidth + 5;
+                
+                if (nextIsFirstPartOfOrder) {
+                    orderRotations.set(nextOrderId, newRowBestRotation);
+                }
+                
+                // Remove the placed part
+                partsWithBounds.splice(newRowIndex, 1);
+            } else {
+                // This part doesn't fit, try next part
+                newRowIndex++;
+            }
+        }
+    }
+    // Fitness: penalize for unplaced parts
+    const fitness = (partsWithBounds.length - placed.length) * 1000;
     return {
         success: placed.length > 0,
         placements: placements,
         placementsCount: placements.length,
         fitness: fitness,
-        unplaced: unplaced.length
+        unplaced: partsWithBounds.length - placed.length
     };
 };
 
