@@ -326,14 +326,6 @@ export default function Manufacturing() {
     return ordersWithMediumSheets[sku] || [];
   };
 
-  // Function to get quantity of a specific medium sheet in an order
-  // const getMediumSheetQuantityInOrder = (orderId: string, sku: string) => {
-  //   const items = allOrderItems[orderId] || [];
-  //   return items
-  //     .filter(item => item.sku_id === sku && !item.completed)
-  //     .reduce((sum, item) => sum + item.quantity, 0);
-  // };
-
   // Function to handle clicking on a medium sheet row
   const handleMediumSheetClick = (sku: string) => {
     // Toggle selection: if clicking the same sheet, deselect it; otherwise select the new sheet
@@ -783,98 +775,6 @@ export default function Manufacturing() {
     });
   };
 
-  // const handleMarkManufactured = (packingOrderIds: string[], markCompletedOrderIds: string[]) => {
-  //   return Sentry.startSpan({
-  //     name: 'handleMarkManufactured',
-  //     op: 'business.function'
-  //   }, async () => {
-  //     console.log("Manufacturing: handleMarkManufactured called with:", {
-  //       packingOrderIds,
-  //       markCompletedOrderIds,
-  //       orderIdsToPacking,
-  //       orderIdsToMarkCompleted
-  //     });
-
-  //     // Close the confirmation dialog
-  //     setShowManuConfirmDialog(false);
-
-  //     // Reset the orderIds arrays immediately
-  //     setOrderIdsToPacking([]);
-  //     setOrderIdsToMarkCompleted([]);
-
-  //     console.log("Manufacturing: Dialog closed, beginning order processing");
-
-  //     // Process orders that should be marked as manufactured (ready for packing)
-  //     for (const orderId of packingOrderIds) {
-  //       // Add this order to pending manufactured orders for UI feedback
-  //       setPendingManufacturedOrders(prev => new Set(prev).add(orderId));
-
-  //       console.log(`Manufacturing: Marking order ${orderId} as manufactured`);
-  //       // Show loading state
-  //       setIsRefreshing(true);
-
-  //       try {
-  //         // Update the manufactured status in Redux and Supabase
-  //         dispatch(updateOrderManufacturedStatus({ orderId, manufactured: true }));
-  //       } catch (error) {
-  //         console.error("Error marking order as manufactured (handleMarkManufactured):", error);
-  //       }
-  //     }
-
-  //     // Process orders where only specific items should be marked as completed
-  //     for (const orderId of markCompletedOrderIds) {
-  //       // Find the items with the current medium sheet SKU
-  //       const orderItems = allOrderItems[orderId] || [];
-  //       const mediumSheetItems = orderItems.filter(item =>
-  //         item.sku_id === selectedFoamSheet && !item.completed
-  //       );
-
-  //       // Mark each medium sheet item as completed
-  //       for (const item of mediumSheetItems) {
-  //         try {
-  //           dispatch(updateItemCompleted({
-  //             orderId,
-  //             itemId: item.id,
-  //             completed: true
-  //           }));
-  //         } catch (error) {
-  //           console.error(`Error marking item ${item.id} as completed:`, error);
-  //         }
-  //       }
-  //     }
-
-  //     // Refresh the orders list after a delay to ensure updates complete
-  //     setTimeout(() => {
-  //       console.log(`Refreshing orders after processing`);
-
-  //       // Refresh orders data
-  //       dispatch(fetchOrdersFromSupabase({
-  //         page: currentPage,
-  //         perPage: ordersPerPage,
-  //         manufactured: false,
-  //         packed: false,
-  //         status: "Pending",
-  //         view: 'manufacturing'
-  //       }))
-  //         .finally(() => {
-  //           setIsRefreshing(false);
-  //           // Clear pending states
-  //           setPendingItemToComplete(null);
-  //           setPendingManufacturedOrders(new Set());
-  //           setCheckedOrders(new Set());
-  //           setAllMediumSheetOrdersChecked(false);
-
-  //           // Refresh medium sheets view if active
-  //           if (activeTab === 'medium' && selectedFoamSheet) {
-  //             // Force refresh by temporarily clearing and resetting the selected foam sheet
-  //             const currentSheet = selectedFoamSheet;
-  //             setSelectedFoamSheet(null);
-  //             setTimeout(() => setSelectedFoamSheet(currentSheet), 100);
-  //           }
-  //         });
-  //     }, 2000);
-  //   });
-  // };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -914,114 +814,6 @@ export default function Manufacturing() {
       setMediumSheetPage(newPage);
     }
   };
-
-  // Function to mark all orders with the selected medium sheet as manufactured
-  // const markAllMediumSheetOrdersAsManufactured = () => {
-  //   Sentry.startSpan({
-  //     name: 'markAllMediumSheetOrdersAsManufactured',
-  //   }, async () => {
-  //     console.log('markAllMediumSheetOrdersAsManufactured');
-  //     if (selectedFoamSheet) {
-  //       // Toggle the main checkbox state
-  //       const newCheckedState = !allMediumSheetOrdersChecked;
-  //       setAllMediumSheetOrdersChecked(newCheckedState);
-
-  //       // Get all orders with the selected medium sheet
-  //       const ordersWithSheet = findOrdersWithMediumSheet(selectedFoamSheet);
-
-  //       // Create a new Set for checked orders
-  //       const newCheckedOrders = new Set(checkedOrders);
-
-  //       // If toggling to checked state, add all orders to the checked set
-  //       // If toggling to unchecked state, remove all orders from the checked set
-  //       ordersWithSheet.forEach(order => {
-  //         if (newCheckedState) {
-  //           newCheckedOrders.add(order.order_id);
-  //         } else {
-  //           newCheckedOrders.delete(order.order_id);
-  //         }
-  //       });
-
-  //       // Update the checked orders state
-  //       setCheckedOrders(newCheckedOrders);
-
-  //       // If we're checking the main checkbox, process all orders for manufacturing actions
-  //       if (newCheckedState) {
-  //         // Arrays to store order IDs based on their status
-  //         const orderIdsForPacking: string[] = [];
-  //         const orderIdsForMarkCompleted: string[] = [];
-
-  //         // Process each order with this medium sheet
-  //         for (const order of ordersWithSheet) {
-  //           // Get all items for this order
-  //           const orderItems = allOrderItems[order.order_id] || [];
-
-  //           // Get all manufacturing items (items with SKU starting with SFI, SFC, or SFS)
-  //           const manufacturingItems = orderItems.filter(item =>
-  //             (item.sku_id.startsWith('SFI') ||
-  //               item.sku_id.startsWith('SFC') ||
-  //               item.sku_id.startsWith('SFS')) &&
-  //             !item.completed
-  //           );
-
-  //           // Get items with the current medium sheet SKU
-  //           const mediumSheetItems = orderItems.filter(item =>
-  //             item.sku_id === selectedFoamSheet && !item.completed
-  //           );
-
-  //           // Case A: The medium sheet is the ONLY item in the order that needs manufacturing
-  //           const isOnlyManufacturingItem = manufacturingItems.length === mediumSheetItems.length;
-
-  //           // Case B: The medium sheet is the LAST item left to be manufactured
-  //           const isLastManufacturingItem =
-  //             manufacturingItems.every(item =>
-  //               mediumSheetItems.some(mediumItem => mediumItem.id === item.id)
-  //             );
-
-  //           // If either case is true, add to packing array, otherwise add to mark completed
-  //           if (isOnlyManufacturingItem || isLastManufacturingItem) {
-  //             orderIdsForPacking.push(order.order_id);
-  //           } else {
-  //             orderIdsForMarkCompleted.push(order.order_id);
-  //           }
-  //         }
-
-  //         // Store the arrays in state and show the confirmation dialog
-  //         setOrderIdsToPacking(orderIdsForPacking);
-  //         setOrderIdsToMarkCompleted(orderIdsForMarkCompleted);
-
-  //         // Log the results
-  //         console.log('Manufacturing: Batch Order Processing:', {
-  //           orderIdsForPacking,
-  //           orderIdsForMarkCompleted,
-  //           totalOrders: orderIdsForPacking.length + orderIdsForMarkCompleted.length
-  //         });
-
-  //         // Show the confirmation dialog if we have any orders to process
-  //         if (orderIdsForPacking.length > 0 || orderIdsForMarkCompleted.length > 0) {
-  //           // For batch processing, we don't need a specific progress value
-  //           console.log("Manufacturing: Setting up batch processing confirmation dialog");
-  //           setCurrentOrderProgress('0');
-
-  //           // Log the state just before showing the dialog
-  //           setTimeout(() => {
-  //             console.log("Manufacturing: State just before showing batch dialog:", {
-  //               orderIdsToPacking,
-  //               orderIdsToMarkCompleted,
-  //               currentOrderProgress: '0',
-  //               showConfirmDialog: false // Will be set to true next
-  //             });
-  //           }, 0);
-
-  //           setShowMediumSheetConfirmDialog(true);
-
-  //           // Log that we've triggered the dialog
-  //           console.log("Manufacturing: Batch confirmation dialog triggered");
-  //         }
-  //       }
-  //     }
-  //   });
-  // }
 
   // Add a useEffect to refresh orders data when selectedFoamSheet changes
   useEffect(() => {
@@ -1270,11 +1062,6 @@ export default function Manufacturing() {
     }
   }
 
-  // Add this function to calculate total items for a foam sheet
-  // const calculateTotalItems = (items: NestingItem[]): number => {
-  //   return items.reduce((total, item) => total + item.quantity, 0);
-  // };
-
   // Helper to calculate the area of a polygon
   function polygonArea(points: { x: number, y: number }[]): number {
     let area = 0;
@@ -1388,6 +1175,24 @@ export default function Manufacturing() {
         globalIndex++;
         const nestingId = `NST-${globalIndex}`;
 
+        // Log placement details for multi-sheet results
+        if (sheets.length > 1) {
+          console.log(`📦 MULTI-SHEET DEBUGGING - Sheet ${sheetIndex + 1}/${sheets.length} for foam ${foamSheet}:`);
+          console.log(`   - Sheet ID: ${sheet.sheet || sheet.sheetid || 'unknown'}`);
+          console.log(`   - Parts count: ${sheet.parts?.length || 0}`);
+          console.log(`   - Placements:`, sheet.parts?.map(part => ({
+            id: part.id,
+            x: part.x,
+            y: part.y,
+            rotation: part.rotation || 0,
+            orderId: part.orderId,
+            customerName: part.customerName,
+            itemName: part.itemName,
+            polygonCount: part.polygons?.length || 0,
+            firstPolygonPoints: part.polygons?.[0]?.length || 0
+          })) || []);
+        }
+
         // Calculate yield for this specific sheet
         const binPolygon = [
           { x: 0, y: 0 },
@@ -1407,20 +1212,134 @@ export default function Manufacturing() {
         const yieldPercent = binArea > 0 ? (totalPartsArea / binArea) * 100 : 0;
 
         // Calculate time for this sheet
+        // const totalPieces = placements.length;
+        // const totalSeconds = totalPieces * 105;
+        // const minutes = Math.floor(totalSeconds / 60);
+        // const seconds = totalSeconds % 60;
+        // const timeString = `${minutes}m ${seconds}s`;
+
+        // Actual time calculation
         const totalPieces = placements.length;
-        const totalSeconds = totalPieces * 105;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        const timeString = `${minutes}m ${seconds}s`;
+
+        // Calculate total time for this sheet
+        let totalTimeSeconds = 0;
+
+        // Extract foam depth from foam sheet name
+        const getFoamDepth = (foamSheetName: string): number => {
+          const match = foamSheetName.match(/(\d+)mm/);
+          if (match) {
+            return parseInt(match[1]);
+          }
+          // Fallback: try to extract from formatted name
+          const formattedName = formatMediumSheetName(foamSheetName);
+          const formattedMatch = formattedName.match(/\[(\d+)mm\]/);
+          if (formattedMatch) {
+            return parseInt(formattedMatch[1]);
+          }
+          return 30; // Default to 30mm if not found
+        };
+
+        const foamDepth = getFoamDepth(foamSheet);
+
+        // Calculate corner time based on foam depth
+        const getCornerTime = (depth: number): number => {
+          if (depth <= 30) return 2;
+          if (depth <= 50) return 3.5;
+          if (depth <= 70) return 4.5;
+          return 4.5; // Default for depths > 70mm
+        };
+
+        const cornerTimePerCorner = getCornerTime(foamDepth);
+        placements.forEach((part: NestingPart, partIndex: number) => {
+          if (part.polygons && part.polygons[0]) {
+            const points = part.polygons[0];
+            
+            // Use simplified bounding box approach for more realistic perimeter calculation
+            const xCoords = points.map(p => p.x);
+            const yCoords = points.map(p => p.y);
+            const minX = Math.min(...xCoords);
+            const maxX = Math.max(...xCoords);
+            const minY = Math.min(...yCoords);
+            const maxY = Math.max(...yCoords);
+            
+            const width = maxX - minX; // in mm
+            const height = maxY - minY; // in mm
+            
+            // Calculate realistic perimeter (rectangular approximation for time estimation)
+            const actualPerimeter = (width + height) * 2;
+            
+            // Count corners using more selective approach
+            let cornerCount = 0;
+            const angleThresholdDegrees = 45; // Only count significant direction changes
+            const angleThresholdRadians = angleThresholdDegrees * (Math.PI / 180);
+            const minSegmentLength = 5; // Ignore very small segments under 5mm
+            
+            for (let i = 0; i < points.length; i++) {
+              const prevPoint = points[(i - 1 + points.length) % points.length];
+              const currentPoint = points[i];
+              const nextPoint = points[(i + 1) % points.length];
+              
+              // Calculate vectors and their lengths
+              const vec1x = currentPoint.x - prevPoint.x;
+              const vec1y = currentPoint.y - prevPoint.y;
+              const vec2x = nextPoint.x - currentPoint.x;
+              const vec2y = nextPoint.y - currentPoint.y;
+              
+              const mag1 = Math.sqrt(vec1x * vec1x + vec1y * vec1y);
+              const mag2 = Math.sqrt(vec2x * vec2x + vec2y * vec2y);
+              
+              // Only consider corners where both segments are significant length
+              if (mag1 > minSegmentLength && mag2 > minSegmentLength) {
+                // Calculate angle between vectors
+                const dot = vec1x * vec2x + vec1y * vec2y;
+                const cosAngle = dot / (mag1 * mag2);
+                const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+                
+                // Count as corner if angle change is significant
+                if (angle > angleThresholdRadians) {
+                  cornerCount++;
+                }
+              }
+            }
+            
+            // Apply realistic corner count bounds
+            if (cornerCount < 4) {
+              cornerCount = 4; // Minimum for simple rectangular shapes
+            } else if (cornerCount > 12) {
+              cornerCount = 12; // Cap for complex shapes to avoid unrealistic times
+            }
+            
+            // Calculate time: cutting speed is 16mm per second, so time = distance / speed
+            const perimeterTime = actualPerimeter / 16; // perimeter in mm / 16 mm/s = seconds
+            const partCornerTime = cornerCount * cornerTimePerCorner;
+            const partTime = perimeterTime + partCornerTime;
+          
+            totalTimeSeconds += partTime;
+          }
+        });
+
+        // Format time string
+        const formatTime = (seconds: number): string => {
+          const totalMinutes = Math.floor(seconds / 60);
+          const remainingSeconds = Math.floor(seconds % 60);
+          const hours = Math.floor(totalMinutes / 60);
+          const minutes = totalMinutes % 60;
+          
+          if (hours > 0) {
+            return `${hours}h ${minutes}m ${remainingSeconds}s`;
+          } else {
+            return `${minutes}m ${remainingSeconds}s`;
+          }
+        };
+
+        const timeString = formatTime(totalTimeSeconds);
 
         // Lock state for this specific sheet
         const lockKey = `${foamSheet}-${sheetIndex}`;
         const isLocked = !!nestLocks[lockKey];
 
         // Sheet display name
-        const sheetDisplayName = sheets.length > 1 
-          ? `${formatMediumSheetName(foamSheet)} (Sheet ${sheetIndex + 1})`
-          : formatMediumSheetName(foamSheet);
+        const sheetDisplayName = formatMediumSheetName(foamSheet);
 
         allRows.push(
           <tr
