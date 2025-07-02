@@ -119,6 +119,7 @@ export interface NestingPlacement {
 export interface NestingResult {
     fitness: number;
     placements: NestingPlacement[];
+    sheetsUsed?: number;
 }
 
 export interface ProcessedNestingData {

@@ -413,69 +413,6 @@ export const syncOrders = createAsyncThunk(
         return acc;
       }, {});
 
-      // AutoMark order items in manufacturing with the SKU Prefix "SFI" or "SFC" as completed
-      const autoCompleteItems = async () => {
-        try {
-          // Get all active items that need to be auto-completed
-          const { data: itemsToUpdate, error: fetchError } = await supabase
-            .from('order_items')
-            .select('*')
-            .in('order_id', pendingOrderIds)
-            .eq('completed', false)
-            .or('sku_id.ilike.SFI%,sku_id.ilike.SFC%');
-
-          if (fetchError) {
-            console.error('Error fetching items for auto-completion:', fetchError);
-            return;
-          }
-
-          if (itemsToUpdate && itemsToUpdate.length > 0) {
-            console.log(`Found ${itemsToUpdate.length} items to auto-complete`);
-
-            // Update items in batches to avoid rate limiting
-            const batchSize = 20;
-            for (let i = 0; i < itemsToUpdate.length; i += batchSize) {
-              const batch = itemsToUpdate.slice(i, i + batchSize);
-              const itemIds = batch.map(item => item.id);
-
-              const { error: updateError } = await supabase
-                .from('order_items')
-                .update({ 
-                  completed: true,
-                  updated_at: new Date().toISOString()
-                })
-                .in('id', itemIds);
-
-              if (updateError) {
-                console.error('Error updating items in batch:', updateError);
-              } else {
-                console.log(`Successfully auto-completed batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(itemsToUpdate.length/batchSize)}`);
-              }
-
-              // Update Redux state for each item
-              batch.forEach((item) => {
-                const typedItem = item as unknown as OrderItem;
-                const orderId = typedItem.order_id;
-                const items = updatedOrderItems[orderId] || [];
-                const itemIndex = items.findIndex((i: OrderItem) => i.id === typedItem.id);
-                if (itemIndex !== -1) {
-                  items[itemIndex].completed = true;
-                }
-              });
-
-              // Small delay to prevent rate limiting
-              if (i + batchSize < itemsToUpdate.length) {
-                await new Promise(resolve => setTimeout(resolve, 300));
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error in auto-complete items process:', error);
-        }
-      };
-
-      // Execute the auto-complete function
-      await autoCompleteItems();
 
       // AutoMark orders as Manufactured if all items with the SKU Prefix "SFI", "SFC", or "SFS" are completed
       const autoMarkManufactured = async () => {

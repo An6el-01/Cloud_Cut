@@ -312,7 +312,7 @@ import { syncOrders, fetchOrdersFromSupabase, exportPendingOrdersCSV } from '@/r
 const ordersReducer = ordersSlice.reducer;
 
 // Create a new reducer that wraps the original one and adds the extraReducers
-const enhancedOrdersReducer = (state: OrdersState | undefined, action: AnyAction) => {
+const enhancedOrdersReducer = (state: OrdersState | undefined = initialState, action: AnyAction): OrdersState => {
   // First, let the original reducer handle the action
   let newState = ordersReducer(state, action);
   

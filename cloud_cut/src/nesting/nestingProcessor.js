@@ -69,7 +69,7 @@ export class NestingProcessor {
 
   async processNesting(items) {
     try {
-      console.log('Starting nesting process with items:', items);
+      console.log('Starting multi-sheet nesting process with items:', items);
       
       // Convert SVG URLs to polygons
       let allParts = await this.convertSvgsToParts(items);
@@ -103,35 +103,115 @@ export class NestingProcessor {
         ]
       };
       console.log('Using nesting config:', config);
-      console.log('Rotation configuration:', config.rotations);
 
-      // Single-sheet logic: nest all parts in one go
+      // Multi-sheet logic: try to nest all parts, then handle overflow
       let allSheets = [];
-      let fitness = null;
-      // Run nesting algorithm for all parts at once
-      console.log('📦 Starting DeepNest.nest() call...');
-      console.log('📦 Parts to nest:', allParts.length);
-      console.log('📦 Config:', config);
-      
-      const result = await this.deepNest.nest(allParts, config);
-      
-      console.log('📦 DeepNest.nest() completed!');
-      console.log('📦 Result:', result);
-      
-        // Format and store this sheet's placements
-      console.log('📦 Formatting nesting result...');
-      const formatted = this.formatNestingResult(result, items, 1);
-      console.log('📦 Formatted result:', formatted);
-        if (formatted && formatted.placements && formatted.placements[0]) {
-          allSheets.push(formatted.placements[0]);
+      let remainingParts = [...allParts]; // Copy all parts to start
+      let sheetIndex = 1;
+      const maxSheets = 10; // Safety limit to prevent infinite loops
+      let overallFitness = 0;
+
+      console.log(`📦 Starting multi-sheet nesting with ${remainingParts.length} parts...`);
+
+      while (remainingParts.length > 0 && sheetIndex <= maxSheets) {
+        console.log(`📦 Processing sheet ${sheetIndex} with ${remainingParts.length} remaining parts`);
+        
+        // Try to nest remaining parts
+        const result = await this.deepNest.nest(remainingParts, config);
+        console.log(`📦 Sheet ${sheetIndex} nesting completed:`, {
+          placementsCount: result.placements?.length || 0,
+          unplacedCount: result.paths?.length || 0,
+          fitness: result.fitness
+        });
+
+        if (!result || !result.placements || result.placements.length === 0) {
+          console.warn(`📦 No placements found for sheet ${sheetIndex}, stopping nesting`);
+          break;
         }
-      if (formatted && formatted.fitness !== undefined) {
-          fitness = formatted.fitness;
+
+        // Handle multiple placement groups from a single nesting call
+        if (result.placements && Array.isArray(result.placements) && result.placements.length > 0) {
+          console.log(`📦 Processing ${result.placements.length} placement groups from nesting result`);
+          
+          for (let groupIndex = 0; groupIndex < result.placements.length; groupIndex++) {
+            const placementGroup = result.placements[groupIndex];
+            if (placementGroup && placementGroup.length > 0) {
+              // Create a modified result object for this specific placement group
+              const groupResult = {
+                ...result,
+                placements: [placementGroup]  // Only include this specific placement group
+              };
+              
+              const formatted = this.formatNestingResult(groupResult, items, sheetIndex);
+              if (formatted && formatted.placements && formatted.placements[0]) {
+                allSheets.push(formatted.placements[0]);
+                console.log(`📦 Sheet ${sheetIndex} formatted successfully with ${formatted.placements[0].parts.length} parts (group ${groupIndex + 1}/${result.placements.length})`);
+                
+                if (formatted.fitness !== undefined) {
+                  overallFitness += formatted.fitness;
+                }
+                
+                sheetIndex++;
+              }
+            }
+          }
+          
+          // Decrement sheetIndex by 1 since it will be incremented at the end of the loop
+          sheetIndex--;
+        } else {
+          // Fallback to original logic if no placement groups found
+          const formatted = this.formatNestingResult(result, items, sheetIndex);
+          if (formatted && formatted.placements && formatted.placements[0]) {
+            allSheets.push(formatted.placements[0]);
+            console.log(`📦 Sheet ${sheetIndex} formatted successfully with ${formatted.placements[0].parts.length} parts`);
+          }
+
+          if (formatted && formatted.fitness !== undefined) {
+            overallFitness += formatted.fitness;
+          }
         }
-      // Return only one sheet as placements
-      return { fitness, placements: allSheets };
+
+        // Check if there are unplaced parts
+        if (!result.paths || result.paths.length === 0) {
+          console.log(`📦 All parts placed successfully in ${allSheets.length} sheet(s)`);
+          break;
+        }
+
+        // Identify unplaced parts for next iteration
+        const unplacedParts = this.identifyUnplacedParts(allParts, result.paths);
+        console.log(`📦 Identified ${unplacedParts.length} unplaced parts for next sheet`);
+
+        if (unplacedParts.length === remainingParts.length) {
+          // No progress made - likely infinite loop scenario
+          console.warn(`📦 No progress made on sheet ${sheetIndex}, applying order-based splitting`);
+          const splitResult = this.splitPartsByOrder(unplacedParts, Math.ceil(unplacedParts.length / 2));
+          remainingParts = splitResult.priorityParts;
+          console.log(`📦 Reduced parts to ${remainingParts.length} for next attempt`);
+          
+          if (remainingParts.length === 0) {
+            console.warn('📦 No parts could be prioritized, stopping nesting');
+            break;
+          }
+        } else {
+          remainingParts = unplacedParts;
+        }
+
+        sheetIndex++;
+      }
+
+      if (sheetIndex > maxSheets) {
+        console.warn(`📦 Reached maximum sheet limit (${maxSheets}), some parts may remain unplaced`);
+      }
+
+      console.log(`📦 Multi-sheet nesting completed: ${allSheets.length} sheets created`);
+      return { 
+        fitness: overallFitness, 
+        placements: allSheets,
+        sheetsUsed: allSheets.length 
+      };
+
     } catch (error) {
-      console.error('Error in nesting process:', error);
+      console.error('Error in multi-sheet nesting process:', error);
       return null;
     }
   }
@@ -161,11 +241,14 @@ export class NestingProcessor {
       if (item.itemName && typeof item.itemName === 'string') {
         const itemNameLower = item.itemName.toLowerCase();
         
-        if (itemNameLower.includes('twin pack')) {
+        // Check for Twin Pack variants (twin pack, twinpack, twin-pack)
+        if (itemNameLower.includes('twin pack') || itemNameLower.includes('twinpack') || itemNameLower.includes('twin-pack')) {
           adjustedQuantity = item.quantity * 2;
           packType = 'Twin Pack';
           console.log(`Detected Twin Pack in item name. Adjusting quantity from ${item.quantity} to ${adjustedQuantity}`);
-        } else if (itemNameLower.includes('triple pack')) {
+        } 
+        // Check for Triple Pack variants (triple pack, triplepack, triple-pack)
+        else if (itemNameLower.includes('triple pack') || itemNameLower.includes('triplepack') || itemNameLower.includes('triple-pack')) {
           adjustedQuantity = item.quantity * 3;
           packType = 'Triple Pack';
           console.log(`Detected Triple Pack in item name. Adjusting quantity from ${item.quantity} to ${adjustedQuantity}`);
@@ -1073,5 +1156,101 @@ export class NestingProcessor {
     report.push(`Summary: ${validatedCount}/${totalParts} parts validated`);
     
     return report.join('\n');
+  }
+
+  /**
+   * Identify unplaced parts by comparing original parts with the paths returned by nesting
+   */
+  identifyUnplacedParts(originalParts, unplacedPaths) {
+    if (!unplacedPaths || unplacedPaths.length === 0) {
+      return [];
+    }
+
+    console.log('🔍 Identifying unplaced parts:', {
+      originalCount: originalParts.length,
+      unplacedPathsCount: unplacedPaths.length
+    });
+
+    const unplacedParts = [];
+    
+    // Match unplaced paths back to original parts by ID
+    for (const path of unplacedPaths) {
+      const originalPart = originalParts.find(part => part.id === path.id);
+      if (originalPart) {
+        unplacedParts.push(originalPart);
+        console.log(`🔍 Found unplaced part: ${originalPart.sku || originalPart.source?.sku} (ID: ${originalPart.id})`);
+      } else {
+        console.warn(`🔍 Could not find original part for unplaced path ID: ${path.id}`);
+      }
+    }
+
+    console.log(`🔍 Identified ${unplacedParts.length} unplaced parts`);
+    return unplacedParts;
+  }
+
+  /**
+   * Split parts by order, prioritizing keeping orders together
+   * Returns a smaller set of parts that should fit in one sheet
+   */
+  splitPartsByOrder(parts, targetCount) {
+    console.log(`📋 Splitting ${parts.length} parts to target ${targetCount} parts`);
+
+    // Group parts by order ID
+    const orderGroups = new Map();
+    for (const part of parts) {
+      const orderId = part.source?.orderId || part.source?.order_id || 'unknown';
+      if (!orderGroups.has(orderId)) {
+        orderGroups.set(orderId, []);
+      }
+      orderGroups.get(orderId).push(part);
+    }
+
+    console.log(`📋 Found ${orderGroups.size} distinct orders`);
+
+    // Sort orders by priority (lowest priority number = highest priority)
+    const sortedOrders = Array.from(orderGroups.entries()).sort((a, b) => {
+      const priorityA = Math.min(...a[1].map(part => part.source?.priority || 10));
+      const priorityB = Math.min(...b[1].map(part => part.source?.priority || 10));
+      return priorityA - priorityB;
+    });
+
+    console.log('📋 Order priorities:', sortedOrders.map(([orderId, parts]) => ({
+      orderId,
+      partCount: parts.length,
+      priority: Math.min(...parts.map(part => part.source?.priority || 10))
+    })));
+
+    // Select complete orders until we approach target count
+    const priorityParts = [];
+    const remainingParts = [];
+    
+    for (const [orderId, orderParts] of sortedOrders) {
+      if (priorityParts.length + orderParts.length <= targetCount) {
+        // Add entire order
+        priorityParts.push(...orderParts);
+        console.log(`📋 Added complete order ${orderId} (${orderParts.length} parts)`);
+      } else {
+        // Can't fit entire order, add to remaining
+        remainingParts.push(...orderParts);
+        console.log(`📋 Deferred order ${orderId} (${orderParts.length} parts) to remaining`);
+      }
+    }
+
+    // If we haven't reached target count and there are remaining parts,
+    // add individual parts from the highest priority remaining order
+    if (priorityParts.length < targetCount && remainingParts.length > 0) {
+      const partsToAdd = targetCount - priorityParts.length;
+      const additionalParts = remainingParts.slice(0, partsToAdd);
+      priorityParts.push(...additionalParts);
+      remainingParts.splice(0, partsToAdd);
+      console.log(`📋 Added ${additionalParts.length} individual parts to reach target`);
+    }
+
+    console.log(`📋 Split result: ${priorityParts.length} priority parts, ${remainingParts.length} deferred parts`);
+
+    return {
+      priorityParts,
+      remainingParts
+    };
   }
 } 
