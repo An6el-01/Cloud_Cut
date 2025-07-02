@@ -8,6 +8,7 @@ import { PlacementWorker } from './util/placementWorker';
 import { GeometryUtil } from './util/geometryutil';
 import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus } from './skuMapping';
 import { createClient } from '@supabase/supabase-js';
+import { validateSvgDimensions, generateCorrectedSvg, EXPECTED_DIMENSIONS } from '../utils/svgDimensionValidator';
 
 const PADDING = 10; // 10mm padding
 const SHEET_WIDTH = 980; // 1000 - 2*PADDING to ensure 10-990 range
@@ -110,14 +111,14 @@ export class NestingProcessor {
       let fitness = null;
       // Run nesting algorithm for all parts at once
       const result = await this.deepNest.nest(allParts, config);
-      // Format and store this sheet's placements
+        // Format and store this sheet's placements
       const formatted = this.formatNestingResult(result, items, 1);
-      if (formatted && formatted.placements && formatted.placements[0]) {
-        allSheets.push(formatted.placements[0]);
-      }
+        if (formatted && formatted.placements && formatted.placements[0]) {
+          allSheets.push(formatted.placements[0]);
+        }
       if (formatted && formatted.fitness !== undefined) {
-        fitness = formatted.fitness;
-      }
+          fitness = formatted.fitness;
+        }
       // Return only one sheet as placements
       return { fitness, placements: allSheets };
     } catch (error) {
@@ -250,6 +251,12 @@ export class NestingProcessor {
     console.log(`Total parts generated: ${parts.length}`);
     console.log('Final parts:', parts);
     
+    // Generate and log dimension validation report
+    if (parts.length > 0) {
+      const validationReport = this.generateDimensionValidationReport(parts);
+      console.log('\n' + validationReport);
+    }
+    
     return parts;
   }
 
@@ -273,11 +280,57 @@ export class NestingProcessor {
           continue;
         }
         
-        const svgContent = await response.text();
+        let svgContent = await response.text();
         console.log(`SVG content length: ${svgContent.length} characters`);
         console.log(`SVG content preview: ${svgContent.substring(0, 200)}...`);
         
-        // Parse SVG content
+        // --- SVG DIMENSION VALIDATION AND CORRECTION ---
+        try {
+          if (EXPECTED_DIMENSIONS[item.sku]) {
+            console.log(`🔍 Validating dimensions for SKU: ${item.sku}`);
+            const validation = validateSvgDimensions(item.sku, svgContent);
+            
+            console.log(`📏 Expected: ${validation.expectedDimensions.width}mm × ${validation.expectedDimensions.height}mm`);
+            console.log(`📏 Actual: ${validation.actualDimensions.width.toFixed(2)}${validation.actualDimensions.unit} × ${validation.actualDimensions.height.toFixed(2)}${validation.actualDimensions.unit}`);
+            
+            if (!validation.isValid) {
+              console.warn(`⚠️  Dimension validation failed for ${item.sku}:`);
+              console.warn(`   Width difference: ${validation.dimensionDifference.widthDiffPercent.toFixed(1)}%`);
+              console.warn(`   Height difference: ${validation.dimensionDifference.heightDiffPercent.toFixed(1)}%`);
+              
+              // Generate corrected SVG
+              console.log(`🔧 Generating corrected SVG for ${item.sku}...`);
+              const correctedSvg = generateCorrectedSvg(item.sku, svgContent);
+              
+              if (correctedSvg !== svgContent) {
+                svgContent = correctedSvg;
+                console.log(`✅ SVG dimensions corrected for ${item.sku}`);
+                
+                // Re-validate to confirm correction
+                const revalidation = validateSvgDimensions(item.sku, svgContent);
+                if (revalidation.isValid) {
+                  console.log(`✅ Corrected SVG passed validation for ${item.sku}`);
+                } else {
+                  console.warn(`⚠️  Corrected SVG still has dimension issues for ${item.sku}`);
+                }
+              } else {
+                console.warn(`⚠️  Could not automatically correct SVG dimensions for ${item.sku}`);
+                validation.recommendations.forEach(rec => {
+                  console.warn(`   💡 ${rec}`);
+                });
+              }
+            } else {
+              console.log(`✅ SVG dimensions are valid for ${item.sku}`);
+            }
+          } else {
+            console.log(`ℹ️  No expected dimensions found for SKU: ${item.sku}, skipping validation`);
+          }
+        } catch (validationError) {
+          console.error(`❌ Error during dimension validation for ${item.sku}:`, validationError);
+          // Continue with original SVG content if validation fails
+        }
+        
+        // Parse SVG content (now potentially corrected)
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
         
@@ -360,18 +413,48 @@ export class NestingProcessor {
           
           console.log(`Using polygon with ${maxPoints} points as the main outline`);
           
-          // --- PROCESS POLYGON WITH 1:1 SCALING ---
+          // --- PROCESS POLYGON WITH DIMENSION-AWARE SCALING ---
           const bounds = this.geometryUtil.getPolygonBounds(bestPolygon);
           const partSvgWidth = bounds.width;
           const partSvgHeight = bounds.height;
           
-          console.log(`SVG bounds: ${partSvgWidth.toFixed(2)}x${partSvgHeight.toFixed(2)}`);
+          console.log(`SVG polygon bounds: ${partSvgWidth.toFixed(2)}x${partSvgHeight.toFixed(2)}`);
           
-          // Use 1:1 scaling - just shift polygon to origin (0,0)
-          let scaledPolygon = bestPolygon.map(pt => ({
-            x: pt.x - bounds.x, // shift to (0,0)
-            y: pt.y - bounds.y
-          }));
+          // Apply dimension-aware scaling if expected dimensions are known
+          let scaledPolygon;
+          if (EXPECTED_DIMENSIONS[item.sku]) {
+            const expected = EXPECTED_DIMENSIONS[item.sku];
+            
+            // Calculate scaling factors to match expected dimensions
+            const scaleX = expected.width / partSvgWidth;
+            const scaleY = expected.height / partSvgHeight;
+            
+            // Use uniform scaling to maintain aspect ratio (use the smaller scale factor)
+            const uniformScale = Math.min(scaleX, scaleY);
+            
+            console.log(`📐 Applying dimension scaling for ${item.sku}:`);
+            console.log(`   Expected: ${expected.width}mm × ${expected.height}mm`);
+            console.log(`   Polygon bounds: ${partSvgWidth.toFixed(2)} × ${partSvgHeight.toFixed(2)}`);
+            console.log(`   Scale factors: X=${scaleX.toFixed(3)}, Y=${scaleY.toFixed(3)}`);
+            console.log(`   Uniform scale: ${uniformScale.toFixed(3)}`);
+            
+            // Apply scaling and shift to origin
+            scaledPolygon = bestPolygon.map(pt => ({
+              x: (pt.x - bounds.x) * uniformScale,
+              y: (pt.y - bounds.y) * uniformScale
+            }));
+            
+            // Update bounds after scaling
+            const scaledBounds = this.geometryUtil.getPolygonBounds(scaledPolygon);
+            console.log(`✅ Scaled polygon bounds: ${scaledBounds.width.toFixed(2)}mm × ${scaledBounds.height.toFixed(2)}mm`);
+          } else {
+            // Fallback to 1:1 scaling - just shift polygon to origin (0,0)
+            console.log(`Using 1:1 scaling for ${item.sku} (no expected dimensions available)`);
+            scaledPolygon = bestPolygon.map(pt => ({
+              x: pt.x - bounds.x,
+              y: pt.y - bounds.y
+            }));
+          }
           
           // --- VALIDATE THE POLYGON (only the longest path) ---
           function validatePolygon(polygon) {
@@ -435,7 +518,14 @@ export class NestingProcessor {
               // Add metadata for composite SKU tracking
               originalSku: item.originalSku || item.sku,
               isSubPart: item.isSubPart || false,
-              subPartIndex: item.subPartIndex || 0
+              subPartIndex: item.subPartIndex || 0,
+              // Add dimension validation metadata
+              dimensionValidated: EXPECTED_DIMENSIONS[item.sku] ? true : false,
+              expectedDimensions: EXPECTED_DIMENSIONS[item.sku] || null,
+              actualDimensions: {
+                width: this.geometryUtil.getPolygonBounds(shifted).width,
+                height: this.geometryUtil.getPolygonBounds(shifted).height
+              }
             };
             
             // validate the part before pushing
@@ -456,6 +546,22 @@ export class NestingProcessor {
     }
     
     console.log(`processSingleItem finished for ${item.sku}, generated ${parts.length} parts`);
+    
+    // Log dimension validation summary
+    if (parts.length > 0) {
+      const validatedParts = parts.filter(p => p.dimensionValidated);
+      if (validatedParts.length > 0) {
+        console.log(`📊 Dimension validation summary for ${item.sku}:`);
+        console.log(`   ${validatedParts.length}/${parts.length} parts had dimension validation`);
+        
+        const samplePart = validatedParts[0];
+        if (samplePart.expectedDimensions) {
+          console.log(`   Expected: ${samplePart.expectedDimensions.width}mm × ${samplePart.expectedDimensions.height}mm`);
+          console.log(`   Final: ${samplePart.actualDimensions.width.toFixed(2)}mm × ${samplePart.actualDimensions.height.toFixed(2)}mm`);
+        }
+      }
+    }
+    
     return parts;
   }
 
@@ -849,5 +955,60 @@ export class NestingProcessor {
     }
     
     return inside;
+  }
+
+  /**
+   * Generate a dimension validation report for all processed parts
+   */
+  generateDimensionValidationReport(parts) {
+    const report = [];
+    report.push('🔍 Nesting Dimension Validation Report');
+    report.push('='.repeat(50));
+    report.push('');
+    
+    const validatedParts = parts.filter(p => p.dimensionValidated);
+    const skuGroups = {};
+    
+    // Group parts by SKU
+    validatedParts.forEach(part => {
+      const sku = part.source.sku;
+      if (!skuGroups[sku]) {
+        skuGroups[sku] = {
+          sku,
+          parts: [],
+          expected: part.expectedDimensions,
+          sample: part.actualDimensions
+        };
+      }
+      skuGroups[sku].parts.push(part);
+    });
+    
+    Object.values(skuGroups).forEach((group, index) => {
+      report.push(`${index + 1}. ${group.sku} (${group.parts.length} parts)`);
+      if (group.expected) {
+        report.push(`   Expected: ${group.expected.width}mm × ${group.expected.height}mm`);
+        report.push(`   Actual: ${group.sample.width.toFixed(2)}mm × ${group.sample.height.toFixed(2)}mm`);
+        
+        const widthDiff = Math.abs(group.sample.width - group.expected.width);
+        const heightDiff = Math.abs(group.sample.height - group.expected.height);
+        const widthPercent = (widthDiff / group.expected.width) * 100;
+        const heightPercent = (heightDiff / group.expected.height) * 100;
+        
+        if (widthPercent <= 5 && heightPercent <= 5) {
+          report.push(`   ✅ Dimensions within tolerance (≤5%)`);
+        } else {
+          report.push(`   ⚠️  Dimensions outside tolerance:`);
+          report.push(`      Width difference: ${widthPercent.toFixed(1)}%`);
+          report.push(`      Height difference: ${heightPercent.toFixed(1)}%`);
+        }
+      }
+      report.push('');
+    });
+    
+    const totalParts = parts.length;
+    const validatedCount = validatedParts.length;
+    report.push(`Summary: ${validatedCount}/${totalParts} parts validated`);
+    
+    return report.join('\n');
   }
 } 
