@@ -1,5 +1,7 @@
 /**
  * Contains geometric operations and utilities 
+ * Enhanced with SVGnest NFP (No-Fit Polygon) algorithms
+ * Original SVGnest algorithms by Jack Qiao, adapted for CloudCut
  */
 
 //floating point comparison tolerance
@@ -96,7 +98,7 @@ function _onSegment(A, B, p, tolerance){
     if ( 
         (_almostEqual(p.x, A.x, tolerance) &&
         _almostEqual(p.y, A.y, tolerance)) ||
-        (_almostEqual(p.x, B.x, tolerance) && _almostEqual(p.y, B,y, tolerance))
+        (_almostEqual(p.x, B.x, tolerance) && _almostEqual(p.y, B.y, tolerance))
     ){
         return false;
     }
@@ -107,7 +109,7 @@ function _onSegment(A, B, p, tolerance){
         return false;
     }
 
-    var dot = (p.x - A.x) * (B.x - A.x) + (p.y - A,y) * (B.y - A.y);
+    var dot = (p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y);
 
     if(dot < 0 || _almostEqual(dot, 0, tolerance)){
         return false;
@@ -115,7 +117,7 @@ function _onSegment(A, B, p, tolerance){
 
     var len2 = (B.x - A.x) * (B.x - A.x) + (B.y - A.y) * (B.y - A.y);
 
-    if(dor > len2 || _almostEqual(dot, len2, tolerance)){
+    if(dot > len2 || _almostEqual(dot, len2, tolerance)){
         return false;
     }
     return true;
@@ -136,9 +138,10 @@ function _lineIntersect(A, B, E, F, infinite){
 
     var denom = a1 * b2 - a2 * b1;
 
-    (x =(b1 * c2 - b2 * c1) / denom), (y = (a2 * c1 - a1 * c2) / denom);
+    x = (b1 * c2 - b2 * c1) / denom;
+    y = (a2 * c1 - a1 * c2) / denom;
 
-    if (!isFinite(x) || isFinite(y)) {
+    if (!isFinite(x) || !isFinite(y)) {
         return null;
     }
 
@@ -299,7 +302,7 @@ module.exports = {
                                 segment.c2,
                                 0.5
                             );
-                            todo.splice(0, 1, divide[0], divide[1]);
+                        todo.splice(0, 1, divided[0], divided[1]);
                         }
                 }
                 return finished;
@@ -2157,6 +2160,439 @@ module.exports = {
     // Helper function for cross product
     crossProduct: function (o, a, b) {
       return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    },
+
+    // SVGnest NFP Functions - Essential placement algorithms
+    // returns an interior NFP for the special case where A is a rectangle
+    noFitPolygonRectangle: function(A, B){
+        var minAx = A[0].x;
+        var minAy = A[0].y;
+        var maxAx = A[0].x;
+        var maxAy = A[0].y;
+        
+        for(var i=1; i<A.length; i++){
+            if(A[i].x < minAx){
+                minAx = A[i].x;
+            }
+            if(A[i].y < minAy){
+                minAy = A[i].y;
+            }
+            if(A[i].x > maxAx){
+                maxAx = A[i].x;
+            }
+            if(A[i].y > maxAy){
+                maxAy = A[i].y;
+            }
+        }
+        
+        var minBx = B[0].x;
+        var minBy = B[0].y;
+        var maxBx = B[0].x;
+        var maxBy = B[0].y;
+        for(i=1; i<B.length; i++){
+            if(B[i].x < minBx){
+                minBx = B[i].x;
+            }
+            if(B[i].y < minBy){
+                minBy = B[i].y;
+            }
+            if(B[i].x > maxBx){
+                maxBx = B[i].x;
+            }
+            if(B[i].y > maxBy){
+                maxBy = B[i].y;
+            }
+        }
+        
+        if(maxBx-minBx > maxAx-minAx){
+            return null;
+        }
+        if(maxBy-minBy > maxAy-minAy){
+            return null;
+        }
+        
+        return [[
+        {x: minAx-minBx+B[0].x, y: minAy-minBy+B[0].y},
+        {x: maxAx-maxBx+B[0].x, y: minAy-minBy+B[0].y},
+        {x: maxAx-maxBx+B[0].x, y: maxAy-maxBy+B[0].y},
+        {x: minAx-minBx+B[0].x, y: maxAy-maxBy+B[0].y}
+        ]];
+    },
+
+    // checks if a polygon is a rectangle (for optimization)
+    isRectangle: function(poly, tolerance){
+        var bb = this.getPolygonBounds(poly);
+        tolerance = tolerance || TOL;
+        
+        for(var i=0; i<poly.length; i++){
+            if(!_almostEqual(poly[i].x, bb.x, tolerance) && !_almostEqual(poly[i].x, bb.x+bb.width, tolerance)){
+                return false;
+            }
+            if(!_almostEqual(poly[i].y, bb.y, tolerance) && !_almostEqual(poly[i].y, bb.y+bb.height, tolerance)){
+                return false;
+            }
+        }
+        
+        return true;
+    },
+
+    // searches for an arrangement of A and B such that they do not overlap
+    // if an NFP is given, only search for startpoints that have not already been traversed in the given NFP
+    searchStartPoint: function(A,B,inside,NFP){
+        // clone arrays
+        A = A.slice(0);
+        B = B.slice(0);
+        
+        // close the loop for polygons
+        if(A[0] != A[A.length-1]){
+            A.push(A[0]);
+        }
+        
+        if(B[0] != B[B.length-1]){
+            B.push(B[0]);
+        }
+                    
+        for(var i=0; i<A.length-1; i++){
+            if(!A[i].marked){
+                A[i].marked = true;
+                for(var j=0; j<B.length; j++){
+                    B.offsetx = A[i].x - B[j].x;
+                    B.offsety = A[i].y - B[j].y;
+                    
+                    var Binside = null;
+                    for(var k=0; k<B.length; k++){
+                        var inpoly = this.pointInPolygon({x: B[k].x + B.offsetx, y: B[k].y + B.offsety}, A);
+                        if(inpoly !== null){
+                            Binside = inpoly;
+                            break;
+                        }
+                    }
+                    
+                    if(Binside === null){ // A and B are the same
+                        return null;
+                    }
+                                        
+                    var startPoint = {x: B.offsetx, y: B.offsety};  
+                    if(((Binside && inside) || (!Binside && !inside)) && !this.intersect(A,B) && !inNfp(startPoint, NFP)){
+                        return startPoint;
+                    }
+                }
+            }
+        }
+        
+        // returns true if point already exists in the given nfp
+        function inNfp(p, nfp){
+            if(!nfp || nfp.length == 0){
+                return false;
+            }
+            
+            for(var i=0; i<nfp.length; i++){
+                for(var j=0; j<nfp[i].length; j++){
+                    if(_almostEqual(p.x, nfp[i][j].x) && _almostEqual(p.y, nfp[i][j].y)){
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        }
+                    
+        return null;
+    },
+
+    // given a static polygon A and a movable polygon B, compute a no fit polygon by orbiting B about A
+    // if the inside flag is set, B is orbited inside of A rather than outside
+    // if the searchEdges flag is set, all edges of A are explored for NFPs - multiple 
+    noFitPolygon: function(A, B, inside, searchEdges){
+        if(!A || A.length < 3 || !B || B.length < 3){
+            return null;
+        }
+                    
+        A.offsetx = 0;
+        A.offsety = 0;
+        
+        var i, j;
+        
+        var minA = A[0].y;
+        var minAindex = 0;
+        
+        var maxB = B[0].y;
+        var maxBindex = 0;
+        
+        for(i=1; i<A.length; i++){
+            A[i].marked = false;
+            if(A[i].y < minA){
+                minA = A[i].y;
+                minAindex = i;
+            }
+        }
+        
+        for(i=1; i<B.length; i++){
+            B[i].marked = false;
+            if(B[i].y > maxB){
+                maxB = B[i].y;
+                maxBindex = i;
+            }
+        }
+                    
+        if(!inside){
+            // shift B such that the bottom-most point of B is at the top-most point of A. This guarantees an initial placement with no intersections
+            var startpoint = {
+                x: A[minAindex].x-B[maxBindex].x,
+                y: A[minAindex].y-B[maxBindex].y
+            };
+        }
+        else{
+            // no reliable heuristic for inside
+            var startpoint = this.searchStartPoint(A,B,true);
+        }
+                    
+        var NFPlist = [];
+                    
+        while(startpoint !== null){
+            
+            B.offsetx = startpoint.x;
+            B.offsety = startpoint.y;
+
+            // maintain a list of touching points/edges
+            var touching;
+            
+            var prevvector = null; // keep track of previous vector
+            var NFP = [{
+                x: B[0].x+B.offsetx,
+                y: B[0].y+B.offsety
+            }];
+            
+            var referencex = B[0].x+B.offsetx;
+            var referencey = B[0].y+B.offsety;
+            var startx = referencex;
+            var starty = referencey;
+            var counter = 0;
+            
+            while(counter < 10*(A.length + B.length)){ // sanity check, prevent infinite loop
+                touching = [];
+                // find touching vertices/edges
+                for(i=0; i<A.length; i++){
+                    var nexti = (i==A.length-1) ? 0 : i+1;
+                    for(j=0; j<B.length; j++){
+                        var nextj = (j==B.length-1) ? 0 : j+1;
+                        if(_almostEqual(A[i].x, B[j].x+B.offsetx) && _almostEqual(A[i].y, B[j].y+B.offsety)){
+                            touching.push({  type: 0, A: i, B: j });
+                        }
+                        else if(_onSegment(A[i],A[nexti],{x: B[j].x+B.offsetx, y: B[j].y + B.offsety})){
+                            touching.push({  type: 1, A: nexti, B: j });
+                        }
+                        else if(_onSegment({x: B[j].x+B.offsetx, y: B[j].y + B.offsety},{x: B[nextj].x+B.offsetx, y: B[nextj].y + B.offsety},A[i])){
+                            touching.push({  type: 2, A: i, B: nextj });
+                        }
+                    }
+                }
+                
+                // generate translation vectors from touching vertices/edges
+                var vectors = [];
+                for(i=0; i<touching.length; i++){
+                    var vertexA = A[touching[i].A];
+                    vertexA.marked = true;
+                    
+                    // adjacent A vertices
+                    var prevAindex = touching[i].A-1;
+                    var nextAindex = touching[i].A+1;
+                    
+                    prevAindex = (prevAindex < 0) ? A.length-1 : prevAindex; // loop
+                    nextAindex = (nextAindex >= A.length) ? 0 : nextAindex; // loop
+                    
+                    var prevA = A[prevAindex];
+                    var nextA = A[nextAindex];
+                    
+                    // adjacent B vertices
+                    var vertexB = B[touching[i].B];
+                    
+                    var prevBindex = touching[i].B-1;
+                    var nextBindex = touching[i].B+1;
+                    
+                    prevBindex = (prevBindex < 0) ? B.length-1 : prevBindex; // loop
+                    nextBindex = (nextBindex >= B.length) ? 0 : nextBindex; // loop
+                    
+                    var prevB = B[prevBindex];
+                    var nextB = B[nextBindex];
+                    
+                    if(touching[i].type == 0){
+                        
+                        var vA1 = {
+                            x: prevA.x-vertexA.x,
+                            y: prevA.y-vertexA.y,
+                            start: vertexA,
+                            end: prevA
+                        };
+                        
+                        var vA2 = {
+                            x: nextA.x-vertexA.x,
+                            y: nextA.y-vertexA.y,
+                            start: vertexA,
+                            end: nextA
+                        };
+                        
+                        // B vectors need to be inverted
+                        var vB1 = {
+                            x: vertexB.x-prevB.x,
+                            y: vertexB.y-prevB.y,
+                            start: prevB,
+                            end: vertexB
+                        };
+                        
+                        var vB2 = {
+                            x: vertexB.x-nextB.x,
+                            y: vertexB.y-nextB.y,
+                            start: nextB,
+                            end: vertexB
+                        };
+                        
+                        vectors.push(vA1);
+                        vectors.push(vA2);
+                        vectors.push(vB1);
+                        vectors.push(vB2);
+                    }
+                    else if(touching[i].type == 1){
+                        vectors.push({
+                            x: vertexA.x-(vertexB.x+B.offsetx),
+                            y: vertexA.y-(vertexB.y+B.offsety),
+                            start: prevA,
+                            end: vertexA
+                        });
+                        
+                        vectors.push({
+                            x: prevA.x-(vertexB.x+B.offsetx),
+                            y: prevA.y-(vertexB.y+B.offsety),
+                            start: vertexA,
+                            end: prevA
+                        });
+                    }
+                    else if(touching[i].type == 2){
+                        vectors.push({
+                            x: vertexA.x-(vertexB.x+B.offsetx),
+                            y: vertexA.y-(vertexB.y+B.offsety),
+                            start: prevB,
+                            end: vertexB
+                        });
+                        
+                        vectors.push({
+                            x: vertexA.x-(prevB.x+B.offsetx),
+                            y: vertexA.y-(prevB.y+B.offsety),
+                            start: vertexB,
+                            end: prevB
+                        });
+                    }
+                }
+
+                // select the best translation vector
+                var translate = null;
+                var maxd = 0;
+                
+                for(i=0; i<vectors.length; i++){
+                    if(vectors[i].x == 0 && vectors[i].y == 0){
+                        continue;
+                    }
+                    
+                    // if this vector points us back to where we came from, ignore it.
+                    // ie cross product = 0, dot product < 0
+                    if(prevvector && vectors[i].y * prevvector.y + vectors[i].x * prevvector.x < 0){
+                        
+                        // compare magnitude with unit vectors
+                        var vectorlength = Math.sqrt(vectors[i].x*vectors[i].x+vectors[i].y*vectors[i].y);
+                        var unitv = {x: vectors[i].x/vectorlength, y:vectors[i].y/vectorlength};
+                        
+                        var prevlength = Math.sqrt(prevvector.x*prevvector.x+prevvector.y*prevvector.y);
+                        var prevunit = {x: prevvector.x/prevlength, y:prevvector.y/prevlength};
+                        
+                        // we need to scale down to unit vectors to normalize vector length. Could also just do a tan here
+                        if(Math.abs(unitv.y * prevunit.x - unitv.x * prevunit.y) < 0.0001){
+                            continue;
+                        }
+                    }
+                    
+                    // TODO: slide distance calculation would go here
+                    var d = 1; // simplified for now
+                    var vecd2 = vectors[i].x*vectors[i].x + vectors[i].y*vectors[i].y;
+                    
+                    if(d === null || d*d > vecd2){
+                        var vecd = Math.sqrt(vectors[i].x*vectors[i].x + vectors[i].y*vectors[i].y);
+                        d = vecd;
+                    }
+                    
+                    if(d !== null && d > maxd){
+                        maxd = d;
+                        translate = vectors[i];
+                    }
+                }
+                
+                
+                if(translate === null || _almostEqual(maxd, 0)){
+                    // didn't close the loop, something went wrong here
+                    NFP = null;
+                    break;
+                }
+                
+                translate.start.marked = true;
+                translate.end.marked = true;
+                
+                prevvector = translate;
+                
+                // trim
+                var vlength2 = translate.x*translate.x + translate.y*translate.y;
+                if(maxd*maxd < vlength2 && !_almostEqual(maxd*maxd, vlength2)){
+                    var scale = Math.sqrt((maxd*maxd)/vlength2);
+                    translate.x *= scale;
+                    translate.y *= scale;
+                }
+                                    
+                referencex += translate.x;
+                referencey += translate.y;
+                
+                if(_almostEqual(referencex, startx) && _almostEqual(referencey, starty)){
+                    // we've made a full loop
+                    break;
+                }
+                
+                // if A and B start on a touching horizontal line, the end point may not be the start point
+                var looped = false;
+                if(NFP.length > 0){
+                    for(i=0; i<NFP.length-1; i++){
+                        if(_almostEqual(referencex, NFP[i].x) && _almostEqual(referencey, NFP[i].y)){
+                            looped = true;
+                        }
+                    }
+                }
+                
+                if(looped){
+                    // we've made a full loop
+                    break;
+                }
+                
+                NFP.push({
+                    x: referencex,
+                    y: referencey
+                });
+                
+                B.offsetx += translate.x;
+                B.offsety += translate.y;
+                
+                counter++;
+            }
+            
+            if(NFP && NFP.length > 0){
+                NFPlist.push(NFP);
+            }
+            
+            if(!searchEdges){
+                // only get outer NFP or first inner NFP
+                break;
+            }
+            
+            startpoint = this.searchStartPoint(A,B,inside,NFPlist);
+            
+        }
+        
+        return NFPlist;
     },
   },
 };

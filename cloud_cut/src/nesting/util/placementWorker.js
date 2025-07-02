@@ -1,168 +1,61 @@
 /**
- * Handles the placement of parts
+ * SVGnest PlacementWorker - Extracted and adapted for CloudCut
+ * Original from SVGnest by Jack Qiao
+ * Adapted for CloudCut nesting system
  */
 
-const { getOuterNfp, getInnerNfp } = require('../background');
-const { GeometryUtil } = require('./geometryUtilLib');
+// Import required dependencies
+const { GeometryUtil } = require('./geometryutil');
+const ClipperLib = require('./clipperLib');
 
-const { GeometryUtil: OldGeometryUtil } = require("./geometryutil");
-
-function getOrCreateNfp(A, B, config, nfpCache, type = 'outer'){
-
-    // Validate input parts
-    if (!A || !B || !A.polygons || !B.polygons || !A.polygons[0] || !B.polygons[0]) {
-        console.error(`[NFP ERROR] Invalid parts provided:`, { A, B });
-        return null;
-    }
-
-    // Ensure parts have required properties for caching
-    if (!A.id || !B.id) {
-        console.warn(`[NFP WARNING] Parts missing id property:`, { A_id: A.id, B_id: B.id });
-        // Create temporary IDs if missing
-        A.id = A.id || `temp_${Math.random().toString(36).substr(2, 9)}`;
-        B.id = B.id || `temp_${Math.random().toString(36).substr(2, 9)}`;
-    }
-
-    // Ensure parts have source properties for caching
-    if (!A.source) {
-        A.source = A.id;
-    }
-    if (!B.source) {
-        B.source = B.id;
-    }
-    // Check cache first using the correct interface
-    const cacheKey = {
-        A: A.id,
-        B: B.id,
-        Arotation: A.rotation,
-        Brotation: B.rotation
-    };
-    
-    if (nfpCache && nfpCache.find) {
-        const cachedNfp = nfpCache.find(cacheKey, type === 'inner');
-        if (cachedNfp) {
-            return normalizeNfpFormat(cachedNfp, type);
-        }
-    }
-    // Calculate NFP
-    let nfp;
-    if (type === 'outer') {
-        nfp = getOuterNfp(A.polygons[0], B.polygons[0], false, nfpCache);
-    } else {
-        nfp = getInnerNfp(A.polygons[0], B.polygons[0], config, nfpCache);
-    }
-
-    // Normalize the NFP format before caching
-    const normalizedNfp = normalizeNfpFormat(nfp, type);
-
-    // Cache the normalized result using the correct interface
-    if (nfpCache && nfpCache.insert) {
-        nfpCache.insert({
-            ...cacheKey,
-            nfp: normalizedNfp
-        }, type === 'inner');
-    }
-
-    return normalizedNfp;
-}
-
-// Helper function to normalize NFP format
-function normalizeNfpFormat(nfp, type) {
-    if (!nfp || nfp.length === 0) {
-        return [];
-    }
-
-    // Handle different input formats
-    let normalizedNfp;
-
-    if (Array.isArray(nfp)) {
-        if (nfp.length === 0) {
-            return [];
-        }
-
-        // Check if nfp is a flat array of points
-        if (nfp[0] && typeof nfp[0] === 'object' && nfp[0].x !== undefined) {
-            // Flat array of points - wrap in another array
-            normalizedNfp = [nfp];
-        } else if (Array.isArray(nfp[0])) {
-            // Already array of arrays - use as is
-            normalizedNfp = nfp;
-        } else {
-            // Unknown format - try to handle gracefully
-            console.warn(`[NFP NORMALIZE] Unknown array format:`, nfp);
-            normalizedNfp = [nfp];
-        }
-    } else if (nfp && typeof nfp === 'object' && nfp.children) {
-        // Object with children property
-        normalizedNfp = Array.isArray(nfp.children) ? nfp.children : [nfp.children];
-    } else {
-        // Unknown format - wrap in array
-        console.warn(`[NFP NORMALIZE] Unknown object format:`, nfp);
-        normalizedNfp = [nfp];
-    }
-
-    // Validate the normalized result
-    if (!Array.isArray(normalizedNfp)) {
-        console.error(`[NFP NORMALIZE] Failed to normalize NFP:`, nfp);
-        return [];
-    }
-
-    // Ensure each element is an array of points
-    for (let i = 0; i < normalizedNfp.length; i++) {
-        if (!Array.isArray(normalizedNfp[i])) {
-            console.warn(`[NFP NORMALIZE] Element ${i} is not an array:`, normalizedNfp[i]);
-            normalizedNfp[i] = [normalizedNfp[i]];
-        }
-    }
-
-    return normalizedNfp;
-}
-
+// jsClipper uses X/Y instead of x/y...
 function toClipperCoordinates(polygon){
     var clone = [];
-    for (var i = 0; i < polygon.length; i++){
+    for(var i=0; i<polygon.length; i++){
         clone.push({
             X: polygon[i].x,
-            Y: polygon[i].y,
+            Y: polygon[i].y
         });
     }
+    
     return clone;
 }
 
 function toNestCoordinates(polygon, scale){
     var clone = [];
-    for (var i = 0; i < polygon.length; i++){
+    for(var i=0; i<polygon.length; i++){
         clone.push({
-            x: polygon[i].X / scale,
-            y: polygon[i].Y / scale,
+            x: polygon[i].X/scale,
+            y: polygon[i].Y/scale
         });
     }
+    
     return clone;
 }
 
 function rotatePolygon(polygon, degrees){
     var rotated = [];
-    var angle = (degrees * Math.PI) / 180;
-    for (var i = 0; i < polygon.length; i++){
+    var angle = degrees * Math.PI / 180;
+    for(var i=0; i<polygon.length; i++){
         var x = polygon[i].x;
         var y = polygon[i].y;
-        var x1 = x * Math.cos(angle) - y * Math.sin(angle);
-        var y1 = x * Math.sin(angle) + y * Math.cos(angle);
-
-        rotated.push({ x: x1, y: y1 });
+        var x1 = x*Math.cos(angle)-y*Math.sin(angle);
+        var y1 = x*Math.sin(angle)+y*Math.cos(angle);
+                        
+        rotated.push({x:x1, y:y1});
     }
-
-    if (polygon.children && polygon.children.length > 0){
+    
+    if(polygon.children && polygon.children.length > 0){
         rotated.children = [];
-        for (var j = 0; j < polygon.children.length; j++){
+        for(var j=0; j<polygon.children.length; j++){
             rotated.children.push(rotatePolygon(polygon.children[j], degrees));
         }
     }
-
+    
     return rotated;
 }
 
-function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache, polygonOffset) {
+function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache){
     
     // Validate bin polygon
     if (!binPolygon || !Array.isArray(binPolygon) || binPolygon.length < 3) {

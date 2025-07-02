@@ -8,7 +8,9 @@ import { GeometryUtil } from './util/geometryutil';
 import { NfpCache } from './nfpDb';
 import simplify from 'simplify-js';
 
-const { PlacementWorker } = require('./util/placementWorker');
+// Import SVGnest placement worker and integration
+const { PlacementWorker } = require('./util/svgNestPlacementWorker');
+const { SvgNestIntegration } = require('./util/svgNestIntegration');
 
 export class DeepNest {
     constructor(eventEmitter) {
@@ -1358,11 +1360,31 @@ export class DeepNest {
 
     async nest(parts, config) {
         try {
+            console.log('[DEEPNEST] Starting SVGnest placement algorithm');
+            console.log('[DEEPNEST] Input parts:', parts.length);
+            console.log('[DEEPNEST] Config:', config);
+            
+            // Validate input parts
+            console.log('[DEEPNEST] Validating input parts...');
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                console.log(`[DEEPNEST] Part ${i}:`, {
+                    sku: part.sku,
+                    id: part.id,
+                    hasPolygons: !!part.polygons,
+                    polygonCount: part.polygons ? part.polygons.length : 0,
+                    firstPolygonPoints: part.polygons && part.polygons[0] ? part.polygons[0].length : 0
+                });
+                
+                if (!part.polygons || !part.polygons[0] || part.polygons[0].length === 0) {
+                    console.warn(`[DEEPNEST] Part ${part.sku} has invalid polygon data`);
+                }
+            }
             
             // Use the bin polygon from config if it exists, otherwise create a default one
             let binPolygon = config.binPolygon;
             if (!binPolygon) {
-                console.warn('No binPolygon in config, creating default one');
+                console.warn('[DEEPNEST] No binPolygon in config, creating default one');
                 binPolygon = [
                     { x: 0, y: 0 },
                     { x: config.width || 1000, y: 0 },
@@ -1370,33 +1392,44 @@ export class DeepNest {
                     { x: 0, y: config.height || 2000 }
                 ];
             } else {
-                console.log('Using binPolygon from config:', binPolygon);
+                console.log('[DEEPNEST] Using binPolygon from config:', binPolygon);
             }
 
-            // Create a function to offset polygons
-            const polygonOffset = (polygon, offset) => {
-                if (!Array.isArray(polygon)) {
-                    console.warn('polygonOffset received non-array polygon:', polygon);
-                    return polygon;
-                }
-                return polygon.map(point => ({
-                    x: point.x + (offset.x || 0),
-                    y: point.y + (offset.y || 0)
-                }));
+            // Create SVGnest integration instance
+            console.log('[DEEPNEST] Creating SVGnest integration instance...');
+            const svgNestConfig = {
+                clipperScale: 10000000,
+                spacing: config.spacing || 0,
+                rotations: [0], // CloudCut uses fixed 0-degree rotations
+                exploreConcave: config.exploreConcave || false,
+                curveTolerance: config.tolerance || 0.1
             };
+            console.log('[DEEPNEST] SVGnest config:', svgNestConfig);
 
-            // Create the genetic algorithm with the bin polygon and config
-            const ga = new GeneticAlgorithm(parts, {
-                ...config,
-                binPolygon
-            }, polygonOffset, this.nfpCache);
+            const svgNestIntegration = new SvgNestIntegration(svgNestConfig);
+            console.log('[DEEPNEST] SVGnest integration instance created successfully');
             
-            // Run the genetic algorithm
-            const result = await ga.run();
+            // Perform placement using SVGnest algorithms
+            console.log('[DEEPNEST] Starting SVGnest placement...');
+            const result = await svgNestIntegration.performPlacement(parts, binPolygon);
+            console.log('[DEEPNEST] SVGnest placement completed successfully');
+            
+            console.log('[DEEPNEST] Result summary:', {
+                placementsFound: result.placements.length,
+                fitness: result.fitness,
+                unplacedParts: result.paths.length,
+                resultKeys: Object.keys(result)
+            });
+
+            // Log NFP cache statistics
+            const cacheStats = svgNestIntegration.getCacheStats();
+            console.log('[DEEPNEST] NFP Cache Stats:', cacheStats);
             
             return result;
+            
         } catch (error) {
-            console.error('Error in nesting process:', error);
+            console.error('[DEEPNEST] Error in nesting process:', error);
+            console.error('[DEEPNEST] Error stack:', error.stack);
             throw error;
         }
     }

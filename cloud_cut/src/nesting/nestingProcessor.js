@@ -4,7 +4,6 @@
 
 import { DeepNest } from './deepnest';
 import { SvgParser } from './svgparser';
-import { PlacementWorker } from './util/placementWorker';
 import { GeometryUtil } from './util/geometryutil';
 import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus } from './skuMapping';
 import { createClient } from '@supabase/supabase-js';
@@ -110,9 +109,19 @@ export class NestingProcessor {
       let allSheets = [];
       let fitness = null;
       // Run nesting algorithm for all parts at once
+      console.log('📦 Starting DeepNest.nest() call...');
+      console.log('📦 Parts to nest:', allParts.length);
+      console.log('📦 Config:', config);
+      
       const result = await this.deepNest.nest(allParts, config);
+      
+      console.log('📦 DeepNest.nest() completed!');
+      console.log('📦 Result:', result);
+      
         // Format and store this sheet's placements
+      console.log('📦 Formatting nesting result...');
       const formatted = this.formatNestingResult(result, items, 1);
+      console.log('📦 Formatted result:', formatted);
         if (formatted && formatted.placements && formatted.placements[0]) {
           allSheets.push(formatted.placements[0]);
         }
@@ -682,18 +691,50 @@ export class NestingProcessor {
       return null;
     }
 
+    console.log('[FORMAT DEBUG] formatNestingResult called with:', {
+      hasPlacementsArray: !!nestingResult.placements,
+      placementsLength: nestingResult.placements?.length || 0,
+      fitness: nestingResult.fitness,
+      firstSheetLength: nestingResult.placements?.[0]?.length || 0
+    });
+
     // Use the best individual's placements array for x/y/rotation/id
-    const placementsArr = nestingResult.placements || nestingResult.placement;
+    const placementsArr = nestingResult.placements?.[0] || []; // Get the first sheet's placements
     if (!placementsArr || placementsArr.length === 0) {
+      console.warn('[FORMAT DEBUG] No placements found in nesting result');
       return null;
+    }
+
+    console.log('[FORMAT DEBUG] Processing placements array with', placementsArr.length, 'items');
+    
+    // Debug first placement data structure
+    if (placementsArr[0]) {
+      const firstPlacement = placementsArr[0];
+      console.log('[FORMAT DEBUG] First placement structure:', {
+        keys: Object.keys(firstPlacement),
+        id: firstPlacement.id,
+        sku: firstPlacement.sku,
+        hasPolygons: !!firstPlacement.polygons,
+        polygonsType: typeof firstPlacement.polygons,
+        polygonsLength: firstPlacement.polygons?.length || 0,
+        x: firstPlacement.x,
+        y: firstPlacement.y
+      });
     }
 
     // Group parts by their original SKU to handle composite SKUs
     const groupedPlacements = new Map();
     
     for (const placement of placementsArr) {
-      // Find the original part by id
-      const part = (nestingResult.placement || []).find(p => p.id === placement.id) || placement;
+      console.log('[FORMAT DEBUG] Processing placement:', {
+        id: placement.id,
+        sku: placement.sku,
+        hasPolygons: !!placement.polygons,
+        polygonCount: placement.polygons?.length || 0
+      });
+      
+      // The placement should already have all the data we need from SVGnest integration
+      const part = placement;
       const originalSku = part.originalSku || part.source?.sku || part.source;
       
       if (!groupedPlacements.has(originalSku)) {
@@ -822,10 +863,25 @@ export class NestingProcessor {
   }
 
   alignPlacementsToOrigin(placements) {
+    console.log('[ALIGN DEBUG] alignPlacementsToOrigin called with placements:', placements.length);
+    
     // Check if placements need to be shifted to fit within bounds
     // Only shift if the minimum placement is outside the bounds (10-990 for X, 10-1990 for Y)
     let minX = Infinity, minY = Infinity;
-    placements.forEach(part => {
+    placements.forEach((part, index) => {
+      console.log(`[ALIGN DEBUG] Processing part ${index}:`, {
+        id: part.id,
+        hasPolygons: !!part.polygons,
+        polygonsLength: part.polygons ? part.polygons.length : 0,
+        firstPolygonLength: part.polygons && part.polygons[0] ? part.polygons[0].length : 0
+      });
+      
+      // Defensive check for polygons
+      if (!part.polygons || !part.polygons[0] || !Array.isArray(part.polygons[0])) {
+        console.warn(`[ALIGN DEBUG] Part ${part.id} has invalid polygons structure, skipping`);
+        return;
+      }
+      
       part.polygons[0].forEach(pt => {
         minX = Math.min(minX, pt.x + (part.x || 0));
         minY = Math.min(minY, pt.y + (part.y || 0));
@@ -860,6 +916,12 @@ export class NestingProcessor {
     // --- DEBUG LOG: Confirm placements are within bounds ---
     let debugMinX = Infinity, debugMinY = Infinity, debugMaxX = -Infinity, debugMaxY = -Infinity;
     placements.forEach(part => {
+      // Defensive check for polygons
+      if (!part.polygons || !part.polygons[0] || !Array.isArray(part.polygons[0])) {
+        console.warn(`[ALIGN DEBUG] Part ${part.id} has invalid polygons structure in bounds check, skipping`);
+        return;
+      }
+      
       part.polygons[0].forEach(pt => {
         const absX = pt.x + (part.x || 0);
         const absY = pt.y + (part.y || 0);
@@ -909,7 +971,8 @@ export class NestingProcessor {
     try {
       // Get the part's polygon
       const partPolygon = part.polygons[0];
-      if (!partPolygon || !Array.isArray(partPolygon)) {
+      if (!partPolygon || !Array.isArray(partPolygon) || partPolygon.length === 0) {
+        console.warn(`[BOUNDS CHECK] Part ${part.id} has invalid polygon structure`);
         return false;
       }
       
