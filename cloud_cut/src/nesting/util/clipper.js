@@ -81,19 +81,19 @@
   
     var ClipperLib = {};
     var isNode = false;
-    /*if (typeof module !== 'undefined' && module.exports)
+    if (typeof module !== 'undefined' && module.exports)
     {
       module.exports = ClipperLib;
       isNode = true;
     }
     else
-    {*/
-    if (typeof window !== "undefined") {
-      window.ClipperLib = ClipperLib;
-    } else if (typeof self !== "undefined") {
-      self["ClipperLib"] = ClipperLib;
+    {
+      if (typeof window !== "undefined") {
+        window.ClipperLib = ClipperLib;
+      } else if (typeof self !== "undefined") {
+        self["ClipperLib"] = ClipperLib;
+      }
     }
-    //}
     var navigator_appName;
     if (!isNode) {
       var nav = navigator.userAgent.toString().toLowerCase();
