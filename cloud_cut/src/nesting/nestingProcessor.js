@@ -93,12 +93,12 @@ export class NestingProcessor {
         generations: 50,
         width: 1000 + 2 * PADDING,
         height: 2000 + 2 * PADDING,
-        // Add bin polygon (sheet boundary) for nesting, with padding
+        // Add bin polygon (sheet boundary) for nesting, with proper dimensions
         binPolygon: [
           {x: PADDING, y: PADDING},
-          {x: 1000 + PADDING, y: PADDING},
-          {x: 1000 + PADDING, y: 2000 + PADDING},
-          {x: PADDING, y: 2000 + PADDING},
+          {x: PADDING + SHEET_WIDTH, y: PADDING},
+          {x: PADDING + SHEET_WIDTH, y: PADDING + SHEET_HEIGHT},
+          {x: PADDING, y: PADDING + SHEET_HEIGHT},
           {x: PADDING, y: PADDING}
         ]
       };

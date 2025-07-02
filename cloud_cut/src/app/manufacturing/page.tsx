@@ -3105,65 +3105,143 @@ export default function Manufacturing() {
               </div>
               <div className="flex-1 overflow-auto p-4">
                 <div className="h-full">   
-                  <div className="overflow-x-auto rounded-lg border border-white/20 shadow-lg h-full">
-                    <div className="w-full h-full bg-white/90 rounded-xl shadow-lg p-8 flex flex-col items-center justify-center">
-                      <h2
-                        id="dialog-title"
-                        className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center tracking-tight"
-                      >
-                        {selectedFoamSheet ? (
-                          <div className="flex items-center justify-center">
-                            <span className="relative">
-                              <span className="font-semibold relative inline-block">{formatMediumSheetName(selectedFoamSheet)}
-                              </span>
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="relative inline-block">
-                            Select a Medium Sheet
-                          </span>
-                        )}
-                      </h2>
-                      <div className="w-full max-w-3xl bg-gray-50 rounded-lg shadow-inner p-8 mb-6 border border-gray-200 flex flex-col gap-6">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">Stock:</span>
-                          <span className="text-xl font-semibold text-gray-900">
-                            {selectedFoamSheet ? (finishedStockBySku[selectedFoamSheet] ?? '-') : '-'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">To Cut:</span>
-                          <span className="flex items-center gap-4">
-                            <span className="text-xl font-semibold text-gray-900">
-                              {selectedFoamSheet
-                                ? (() => {
-                                    const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
-                                    const needed = Math.max(0, selectedMediumSheetQuantity - stock);
-                                    let adjusted = needed;
-                                    if (needed > 0 && needed % 4 !== 0) {
-                                      adjusted = Math.ceil(needed / 4) * 4;
-                                    }
-                                    const numSheets = adjusted > 0 ? adjusted / 4 : 0;
-                                    return `${numSheets}`;
-                                  })()
-                                : ''}
-                            </span>
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xl font-medium text-gray-700">Total Medium Sheets:</span>
-                          <span className="text-xl font-semibold text-gray-900">
-                            {selectedMediumSheetQuantity || '-'}
-                          </span>
-                        </div>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200/20 shadow-2xl h-full bg-gradient-to-br from-slate-800 via-slate-600 to-slate-800">
+                    <div className="w-full h-full p-4 flex flex-col">
+                      {/* Header */}
+                      <div className="mb-4">
+                        <h2 className="text-xl font-bold text-white text-center tracking-tight">
+                          {selectedFoamSheet ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <div className={`w-4 h-4 rounded-full shadow-lg ${getSheetColorClass(formatMediumSheetName(selectedFoamSheet))}`}></div>
+                              <span className="text-lg">{formatMediumSheetName(selectedFoamSheet)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">Select a Medium Sheet</span>
+                          )}
+                        </h2>
                       </div>
-                      <button
-                        type="button"
-                        className="mt-2 px-6 py-2.5 rounded-lg text-white font-semibold bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-md hover:shadow-lg transition-all duration-200"
-                        onClick={handleConfirmMediumSheet}
-                      >
-                        Confirm Processing
-                      </button>
+
+                      {selectedFoamSheet ? (
+                        <>
+                          {/* Cards Grid */}
+                          <div className="grid grid-cols-2 gap-3 flex-1">
+                            {/* Current Stock */}
+                             <div className="bg-slate-800/50 backdrop-blur-sm border border-blue-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-blue-400/50 flex flex-col">
+                               <div className="flex items-center gap-2 mb-2">
+                                 <div className="p-1.5 bg-blue-500/20 rounded-md">
+                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                   </svg>
+                                 </div>
+                                 <h3 className="text-md font-semibold text-blue-300 uppercase tracking-wide">Current Stock Available</h3>
+                               </div>
+                               <div className="flex-1 flex items-center justify-center">
+                                 <div className="text-5xl font-bold text-white font-mono">
+                                   {finishedStockBySku[selectedFoamSheet] ?? 0}
+                                 </div>
+                               </div>
+                             </div>
+
+                              {/* Cutting Required */}
+                             <div className="bg-slate-800/50 backdrop-blur-sm border border-orange-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-orange-400/50 flex flex-col">
+                               <div className="flex items-center gap-2 mb-2">
+                                 <div className="p-1.5 bg-orange-500/20 rounded-md">
+                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" />
+                                   </svg>
+                                 </div>
+                                 <h3 className="text-md font-semibold text-orange-300 uppercase tracking-wide">2X1's To Cut</h3>
+                               </div>
+                               <div className="flex-1 flex items-center justify-center">
+                                 <div className="text-5xl font-bold text-white font-mono">
+                                   {(() => {
+                                     const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
+                                     const needed = Math.max(0, selectedMediumSheetQuantity - stock);
+                                     let adjusted = needed;
+                                     if (needed > 0 && needed % 4 !== 0) {
+                                       adjusted = Math.ceil(needed / 4) * 4;
+                                     }
+                                     const numSheets = adjusted > 0 ? adjusted / 4 : 0;
+                                     return numSheets;
+                                   })()}
+                                 </div>
+                               </div>
+                             </div>
+
+                              {/* Take to Packing */}
+                             <div className="bg-slate-800/50 backdrop-blur-sm border border-emerald-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-emerald-400/50 flex flex-col">
+                               <div className="flex items-center gap-2 mb-2">
+                                 <div className="p-1.5 bg-emerald-500/20 rounded-md">
+                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                   </svg>
+                                 </div>
+                                 <h3 className="text-md font-semibold text-emerald-300 uppercase tracking-wide">Take To Packing</h3>
+                               </div>
+                               <div className="flex-1 flex items-center justify-center">
+                                 <div className="text-5xl font-bold text-white font-mono">
+                                   {selectedMediumSheetQuantity || 0}
+                                 </div>
+                               </div>
+                             </div>
+
+                              {/* Stock After */}
+                             <div className="bg-slate-800/50 backdrop-blur-sm border border-violet-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-violet-400/50 flex flex-col">
+                               <div className="flex items-center gap-2 mb-2">
+                                 <div className="p-1.5 bg-violet-500/20 rounded-md">
+                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                   </svg>
+                                 </div>
+                                 <h3 className="text-md font-semibold text-violet-300 uppercase tracking-wide">New Stock Level</h3>
+                               </div>
+                               <div className="flex-1 flex items-center justify-center">
+                                 <div className="text-5xl font-bold text-white font-mono">
+                                   {(() => {
+                                     const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
+                                     const needed = Math.max(0, selectedMediumSheetQuantity - stock);
+                                     let adjusted = needed;
+                                     if (needed > 0 && needed % 4 !== 0) {
+                                       adjusted = Math.ceil(needed / 4) * 4;
+                                     }
+                                     const numSheets = adjusted > 0 ? adjusted / 4 : 0;
+                                     const newStockLevel = stock + (numSheets * 4) - selectedMediumSheetQuantity;
+                                     return newStockLevel;
+                                   })()}
+                                 </div>
+                               </div>
+                             </div>
+                          </div>
+
+                          {/* Action Button */}
+                          <div className="mt-4">
+                            <button
+                              type="button"
+                              className="w-full px-4 py-2.5 rounded-lg text-white font-semibold bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:from-emerald-500 hover:via-emerald-400 hover:to-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/50 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+                              onClick={handleConfirmMediumSheet}
+                            >
+                              <div className="flex items-center justify-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Confirm Processing
+                              </div>
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center">
+                          <div className="text-center text-slate-400">
+                            <div className="w-12 h-12 mx-auto mb-3 p-3 bg-slate-800/50 rounded-full">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </div>
+                            <p className="text-sm font-medium">No medium sheet selected</p>
+                            <p className="text-xs mt-1 text-slate-500">Select a sheet to view details</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -281,20 +281,94 @@ function PlacementWorker(binPolygon, paths, ids, rotations, config, nfpCache){
                         
                         var rectbounds = GeometryUtil.getPolygonBounds(allpoints);
                         
-                        // weigh width more, to help compress in direction of gravity
-                        area = rectbounds.width*2 + rectbounds.height;
+                        // use equal weight for width and height for better space distribution (box placement)
+                        area = rectbounds.width * rectbounds.height;
                         
-                        if(minarea === null || area < minarea || (GeometryUtil.almostEqual(minarea, area) && (minx === null || shiftvector.x < minx))){
+                        // Before accepting this position, perform an explicit overlap check
+                        var isOverlapping = false;
+                        
+                        // Create a test polygon at the proposed position
+                        var testPolygon = [];
+                        for(var m = 0; m < path.length; m++){
+                            testPolygon.push({
+                                x: path[m].x + shiftvector.x,
+                                y: path[m].y + shiftvector.y
+                            });
+                        }
+                        
+                        // Check for overlaps with all already placed parts
+                        for(var m = 0; m < placed.length; m++){
+                            var placedPolygon = [];
+                            for(var n = 0; n < placed[m].length; n++){
+                                placedPolygon.push({
+                                    x: placed[m][n].x + placements[m].x,
+                                    y: placed[m][n].y + placements[m].y
+                                });
+                            }
+                            
+                            // Use Clipper to detect actual polygon intersection
+                            var clipperTest = toClipperCoordinates(testPolygon);
+                            var clipperPlaced = toClipperCoordinates(placedPolygon);
+                            ClipperLib.JS.ScaleUpPath(clipperTest, self.config.clipperScale);
+                            ClipperLib.JS.ScaleUpPath(clipperPlaced, self.config.clipperScale);
+                            
+                            var clipSolution = new ClipperLib.Paths();
+                            var overlapClipper = new ClipperLib.Clipper();
+                            overlapClipper.AddPath(clipperTest, ClipperLib.PolyType.ptSubject, true);
+                            overlapClipper.AddPath(clipperPlaced, ClipperLib.PolyType.ptClip, true);
+                            
+                            if(overlapClipper.Execute(ClipperLib.ClipType.ctIntersection, clipSolution, 
+                               ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero)){
+                                // Check if there's actual overlap (intersection area > threshold)
+                                var totalOverlapArea = 0;
+                                for(var s = 0; s < clipSolution.length; s++){
+                                    var overlapArea = Math.abs(ClipperLib.Clipper.Area(clipSolution[s]));
+                                    totalOverlapArea += overlapArea;
+                                }
+                                
+                                // If overlap area is significant, reject this position
+                                var threshold = 0.1 * self.config.clipperScale * self.config.clipperScale;
+                                if(totalOverlapArea > threshold){
+                                    isOverlapping = true;
+                                    console.log(`[OVERLAP DEBUG] Rejecting position for ${path.id} due to overlap with ${placed[m].id}, overlap area: ${totalOverlapArea}`);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Check if the entire part fits within bin bounds (with 10mm padding)
+                        var fitsInBounds = true;
+                        var binMinX = 10, binMaxX = 990, binMinY = 10, binMaxY = 1990;
+                        
+                        for(var m = 0; m < testPolygon.length; m++){
+                            var px = testPolygon[m].x;
+                            var py = testPolygon[m].y;
+                            
+                            if(px < binMinX || px > binMaxX || py < binMinY || py > binMaxY){
+                                fitsInBounds = false;
+                                console.log(`[BOUNDS DEBUG] Part ${path.id} point ${m} at (${px.toFixed(2)}, ${py.toFixed(2)}) is outside bounds X(${binMinX}-${binMaxX}), Y(${binMinY}-${binMaxY})`);
+                                break;
+                            }
+                        }
+                        
+                        // Only accept this position if there's no overlap AND it fits within bounds
+                        if(!isOverlapping && fitsInBounds && (minarea === null || area < minarea || (GeometryUtil.almostEqual(minarea, area) && (minx === null || shiftvector.x < minx)))){
                             minarea = area;
                             minwidth = rectbounds.width;
                             position = shiftvector;
                             minx = shiftvector.x;
+                        } else if(!fitsInBounds) {
+                            console.log(`[BOUNDS DEBUG] Rejecting position for ${path.id} due to bounds violation`);
                         }
                     }
                 }
                 if(position){
+                    console.log(`[PLACEMENT DEBUG] Successfully placed ${path.id} at (${position.x.toFixed(2)}, ${position.y.toFixed(2)})`);
                     placed.push(path);
                     placements.push(position);
+                } else {
+                    console.log(`[PLACEMENT DEBUG] Could not find valid position for ${path.id} on current sheet`);
+                    // Part couldn't be placed on current sheet - it will remain in paths for next sheet
                 }
             }
             

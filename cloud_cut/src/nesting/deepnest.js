@@ -37,7 +37,7 @@ export class DeepNest {
             populationSize: 10,
             mutationRate: 0.1,
             threads: 4,
-            placementType: "gravity",
+            placementType: "box",
             mergeLines: true,
             timeRatio: 0.5,
             scale: 72,

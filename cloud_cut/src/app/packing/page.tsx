@@ -32,7 +32,7 @@ import { createPortal } from "react-dom";
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
 // Define Types used by Dropdown Component
-type SortField = 'retail_pack' | 'medium_sheets' | 'accessories' | 'all';
+type SortField = 'retail_pack' | 'medium_sheets' | 'all';
 type SortDirection = 'asc' | 'desc'; 
 
 // Custom Dropdown Component
@@ -135,8 +135,7 @@ const FilterDropdown = ({
                 onClick={async () => {toggleDropdown()}}
             >
                 {sortConfig.field === 'medium_sheets' ? 'Filter: Medium Sheets' :
-                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' : 
-                sortConfig.field === 'accessories' ? 'Filter: Accessories' : 'Filter: All'}
+                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' : 'Filter: All'}
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="ml-2 -mr-1 h-5 w-5 text-gray-400" aria-hidden="true">
                     <path d="M6 9l6 6 6-6"/>
                 </svg>
@@ -186,14 +185,6 @@ const FilterDropdown = ({
                             onClick={async () => {handleOptionClick('retail_pack')}}
                         >
                             Retail Pack
-                        </button>
-                        <button
-                            className={`${sortConfig.field === 'accessories' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full px-4 py-2 text-sm hover:bg-gray-100`}
-                            role="menuitem"
-                            tabIndex={-1}
-                            onClick={async () => {handleOptionClick('accessories')}}
-                        >
-                            Accessories
                         </button>
                     </div>
                 </div>,
@@ -275,17 +266,6 @@ export default function Packing() {
                 const items = allOrderItems[order.order_id] || [];
                 const retailPack = items.filter(item => item.item_name?.toLowerCase().includes('retail pack')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
                 return retailPack > 0;
-            });
-        } else if (sortConfig.field === 'accessories') {
-            result = result.filter(order => {
-                const items = allOrderItems[order.order_id] || [];
-                // Filter items that don't have SKUs starting with SFI, SFS, SFP, SFC
-                const accessories = items.filter(item => {
-                    if (!item.sku_id) return false;
-                    const sku = item.sku_id.toUpperCase();
-                    return !sku.startsWith('SFI') && !sku.startsWith('SFS') && !sku.startsWith('SFP') && !sku.startsWith('SFC');
-                });
-                return accessories.length > 0;
             });
         }
 
