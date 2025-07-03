@@ -7,6 +7,7 @@ interface AuthState {
         role: string;
         email: string;
     } | null;
+    selectedStation: string | null;
     loading: boolean;
     error: string | null;
 }
@@ -26,6 +27,7 @@ const getInitialState = (): AuthState => {
     return {
         user: null,
         userProfile: null,
+        selectedStation: null,
         loading: false,
         error: null
     };
@@ -51,6 +53,13 @@ export const authSlice = createSlice({
                 localStorage.setItem('authState', JSON.stringify(state));
             }
         },
+        setSelectedStation: (state, action: PayloadAction<string | null>) => {
+            state.selectedStation = action.payload;
+            // Save to localStorage
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('authState', JSON.stringify(state));
+            }
+        },
         setLoading: (state, action: PayloadAction<boolean>) => {
             state.loading = action.payload;
         },
@@ -60,6 +69,7 @@ export const authSlice = createSlice({
         clearAuth: (state) => {
             state.user = null;
             state.userProfile = null;
+            state.selectedStation = null;
             state.loading = false;
             state.error = null;
             // Clear from localStorage
@@ -70,6 +80,6 @@ export const authSlice = createSlice({
     }
 });
 
-export const { setUser, setUserProfile, setLoading, setError, clearAuth } = authSlice.actions;
+export const { setUser, setUserProfile, setSelectedStation, setLoading, setError, clearAuth } = authSlice.actions;
 
 export default authSlice.reducer; 

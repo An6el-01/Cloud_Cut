@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSelector } from 'react-redux';
 import { useEffect, useState } from 'react';
+import { getAccessPermissions, UserAccess } from '@/utils/accessControl';
 
 interface RootState {
   auth: {
@@ -12,6 +13,7 @@ interface RootState {
       role: string;
       email: string;
     } | null;
+    selectedStation: string | null;
   };
 }
 
@@ -19,6 +21,7 @@ const Navbar = () => {
   const pathname = usePathname();
   const router = useRouter();
   const userProfile = useSelector((state: RootState) => state.auth.userProfile);
+  const selectedStation = useSelector((state: RootState) => state.auth.selectedStation);
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -31,24 +34,58 @@ const Navbar = () => {
     return pathname.slice(1).charAt(0).toUpperCase() + pathname.slice(2);
   };
 
-  const isPackerRole = userProfile?.role === 'Packer';
-  const isOperatorRole = userProfile?.role === 'Operator';
+  // Get access permissions based on role and selected station
+  const userAccess: UserAccess = {
+    role: userProfile?.role || '',
+    selectedStation: selectedStation
+  };
+  
+  const accessPermissions = getAccessPermissions(userAccess);
 
-
-  // Redirect if a Packer tries to access unauthorized routes directly
+  // Redirect if user tries to access unauthorized routes
   useEffect(() => {
-    // Only redirect if we have a user profile and the user is actually a Packer
-    if (userProfile && isPackerRole && pathname && 
-        pathname !== '/packing' && 
-        pathname !== '/profile' && 
-        pathname !== '/' && 
-        pathname !== '/resetPassword' && 
-        pathname !== '/stock' &&
-        !pathname.startsWith('/api/')) {
-      console.log('NavBar - Redirecting Packer from unauthorized path:', pathname);
-      router.push('/packing');
+    if (userProfile && pathname && !pathname.startsWith('/api/')) {
+      const currentPage = pathname.slice(1); // Remove leading slash
+      
+      // Check if user can access the current page
+      const canAccess = (() => {
+        switch (currentPage) {
+          case 'manufacturing':
+            return accessPermissions.canAccessManufacturing;
+          case 'packing':
+            return accessPermissions.canAccessPacking;
+          case 'picking':
+            return accessPermissions.canAccessPicking;
+          case 'stock':
+            return accessPermissions.canAccessStock;
+          case 'team':
+            return accessPermissions.canAccessTeam;
+          case 'admin':
+            return accessPermissions.canAccessAdmin;
+          case 'analytics':
+            return accessPermissions.canAccessAnalytics;
+          case 'profile':
+          case 'resetPassword':
+          case '':
+            return true; // Always allow access to profile and home
+          default:
+            return false;
+        }
+      })();
+
+      if (!canAccess) {
+        console.log('NavBar - Redirecting user from unauthorized path:', pathname);
+        // Redirect to appropriate default page
+        if (accessPermissions.canAccessManufacturing) {
+          router.push('/manufacturing');
+        } else if (accessPermissions.canAccessPacking) {
+          router.push('/packing');
+        } else {
+          router.push('/profile');
+        }
+      }
     }
-  }, [userProfile, isPackerRole, pathname, router]);
+  }, [userProfile, accessPermissions, pathname, router]);
 
   return (
     <nav className="shadow-md fixed w-full p-5 z-50 bg-black">
@@ -56,7 +93,7 @@ const Navbar = () => {
         <div className="flex justify-between h-16 ">
           {/* Logo and Brand */}
           <div className="flex items-center">
-            <Link href={isPackerRole ? "/packing" : "/manufacturing"} className="flex items-center">
+            <Link href={accessPermissions.canAccessManufacturing ? "/manufacturing" : "/packing"} className="flex items-center">
               <Image
                 src="/sfLogo.png"
                 alt="Shadow Foam Logo"
@@ -74,8 +111,8 @@ const Navbar = () => {
           {/* Navigation Links */}
           <div className="flex items-center space-x-4">
 
-            {/* Only Allow Medium Sheet Role to have access to Medium Sheets Tab */}
-            {!isPackerRole && (
+            {/* Manufacturing link */}
+            {accessPermissions.canAccessManufacturing && (
               <Link
                 href="/manufacturing"
                 className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
@@ -84,22 +121,28 @@ const Navbar = () => {
               </Link>
             )}
 
-            {/* Packing link is available to all users */}
-            <Link
-              href="/packing"
-              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-            >
-              Packing
-            </Link>
-            {/**Retail Packer Role */}
-            <Link
-              href="/picking"
-              className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-            >
-              Picking
-            </Link>
+            {/* Packing link */}
+            {accessPermissions.canAccessPacking && (
+              <Link
+                href="/packing"
+                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+              >
+                Packing
+              </Link>
+            )}
 
-            {!isPackerRole && !isOperatorRole && (
+            {/* Picking link */}
+            {accessPermissions.canAccessPicking && (
+              <Link
+                href="/picking"
+                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+              >
+                Picking
+              </Link>
+            )}
+
+            {/* Team link */}
+            {accessPermissions.canAccessTeam && (
               <Link
                 href="/team"
                 className="text-white relative px-3 py-2 rounded-md text-md font-medium group"  
@@ -108,8 +151,8 @@ const Navbar = () => {
               </Link>
             )}
 
-            {/**medium Sheet role access */}
-            {!isPackerRole && (
+            {/* Stock link */}
+            {accessPermissions.canAccessStock && (
               <Link
                 href="/stock"
                 className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
@@ -118,7 +161,8 @@ const Navbar = () => {
               </Link>
             )}
 
-            {!isPackerRole && !isOperatorRole && (
+            {/* Admin link */}
+            {accessPermissions.canAccessAdmin && (
               <Link
                 href="/admin"
                 className="text-white relative px-3 py-2 rounded-md text-md font-medium group"

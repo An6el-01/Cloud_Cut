@@ -5,6 +5,7 @@ import ManuConfirm from "@/components/manuConfirm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
+import { getAccessPermissions, UserAccess } from '@/utils/accessControl';
 import { setSelectedOrderId, updateItemCompleted, updateOrderManufacturedStatus, setCurrentView } from "@/redux/slices/ordersSlice";
 import { fetchOrdersFromSupabase, syncOrders, exportPendingOrdersCSV } from "@/redux/thunks/ordersThunks";
 import {
@@ -22,6 +23,7 @@ import { getSupabaseClient } from "@/utils/supabase";
 import { NestingProcessor } from '@/nesting/nestingProcessor';
 import { fetchInventory, bookOutStock } from '@/utils/despatchCloud';
 import { getFoamSheetFromSKU } from '@/utils/skuParser';
+import RouteProtection from '@/components/RouteProtection';
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -33,6 +35,15 @@ export default function Manufacturing() {
   const totalOrders = useSelector(selectCurrentViewTotal); // Use view-specific total
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   const userProfile = useSelector((state: RootState) => state.auth.userProfile);   // Get user profile to check for role
+  const selectedStation = useSelector((state: RootState) => state.auth.selectedStation);
+  
+  // Get access permissions based on role and selected station
+  const userAccess: UserAccess = {
+    role: userProfile?.role || '',
+    selectedStation: selectedStation
+  };
+  
+  const accessPermissions = getAccessPermissions(userAccess);
   const isOperatorRole = userProfile?.role === 'Operator';
   const selectedItemsSelector = useMemo(() => selectOrderItemsById(selectedOrderId || ''), [selectedOrderId]);
   const selectedOrderItems = useSelector(selectedItemsSelector);
@@ -87,14 +98,30 @@ export default function Manufacturing() {
   // Add state for selected sheet in visualization
   const [selectedSheetIndex, setSelectedSheetIndex] = useState<number>(0);
 
-  // Improved function for tab changes that completely prevents changes for operators
+  // Improved function for tab changes that prevents changes based on access permissions
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
-    // Operators can ONLY have 'Orders Queue'
-    if (isOperatorRole) {
-      console.log('Operator role detected - restricting to Orders Queue tab only');
-      return; // Block all tab changes for operators
+    // Check access permissions for the requested tab
+    const canAccessTab = (() => {
+      switch (tab) {
+        case 'Nesting Queue':
+          return accessPermissions.canAccessNestingQueue;
+        case 'Completed Cuts':
+          return accessPermissions.canAccessCompletedCuts;
+        case 'Work In Progress':
+          return accessPermissions.canAccessWorkInProgress;
+        case 'Orders Queue':
+          return true; // Always allow access to Orders Queue
+        default:
+          return false;
+      }
+    })();
+
+    if (!canAccessTab) {
+      console.log(`Access denied to tab: ${tab}`);
+      return; // Block tab changes for unauthorized access
     }
-    // Allow tab changes for other roles
+    
+    // Allow tab changes for authorized users
     setFirstColTab(tab);
   };
 
@@ -135,14 +162,17 @@ export default function Manufacturing() {
   // State for finished_stock values by SKU
   const [finishedStockBySku, setFinishedStockBySku] = useState<Record<string, number>>({});
 
-  // Add this useEffect to enforce 'Orders Queue' for operators on component mount
-  // and whenever user role changes
+  // Add this useEffect to enforce appropriate tab based on access permissions
   useEffect(() => {
-    if (isOperatorRole) {
-      console.log('Enforcing Orders Queue tab for Operator role');
+    // If user doesn't have access to nesting queue, completed cuts, or work in progress,
+    // force them to stay on Orders Queue
+    if (!accessPermissions.canAccessNestingQueue && 
+        !accessPermissions.canAccessCompletedCuts && 
+        !accessPermissions.canAccessWorkInProgress) {
+      console.log('Enforcing Orders Queue tab due to access restrictions');
       setFirstColTab('Orders Queue');
     }
-  }, [isOperatorRole]);
+  }, [accessPermissions]);
 
   // Helper function to filter items by SKU
   const filterItemsBySku = (items: OrderItem[]) => {
@@ -1902,8 +1932,9 @@ export default function Manufacturing() {
 
   // Update the table in the first section to show nesting queue data
   return (
-    <div className="min-h-screen">
-      <Navbar />
+    <RouteProtection requiredPermission="canAccessManufacturing">
+      <div className="min-h-screen">
+        <Navbar />
 
       {/**Pill Section*/}
       <div className="container mx-auto pt-28 flex justify-center gap-8">
@@ -1933,37 +1964,43 @@ export default function Manufacturing() {
             </button>
 
             {/* Medium Sheets Tab */}
-            <button
-              onClick={async () => {
-                await Sentry.startSpan({
-                  name: 'setActiveTab-MediumSheets',
-                }, async () => {
-                  setActiveTab('medium');
-                  // If there's a selected foam sheet, refresh its orders
-                  if (selectedFoamSheet) {
-                    setLoadingMediumSheetOrders(true);
-                    // Clear cache to force refresh
-                    setOrdersWithMediumSheets(prev => {
-                      const newState = { ...prev };
-                      if (selectedFoamSheet in newState) {
-                        delete newState[selectedFoamSheet];
+            {(() => {
+              const isCNC = selectedStation === 'CNC';
+              return (
+                <button
+                  onClick={async () => {
+                    if (isCNC) return; // Prevent navigation for CNC
+                    await Sentry.startSpan({
+                      name: 'setActiveTab-MediumSheets',
+                    }, async () => {
+                      setActiveTab('medium');
+                      if (selectedFoamSheet) {
+                        setLoadingMediumSheetOrders(true);
+                        setOrdersWithMediumSheets(prev => {
+                          const newState = { ...prev };
+                          if (selectedFoamSheet in newState) {
+                            delete newState[selectedFoamSheet];
+                          }
+                          return newState;
+                        });
+                        findOrdersWithMediumSheet(selectedFoamSheet);
                       }
-                      return newState;
                     });
-                    // Trigger refresh by calling findOrdersWithMediumSheet
-                    findOrdersWithMediumSheet(selectedFoamSheet);
-                  }
-                });
-              }}
-              className="relative rounded-full font-medium transition-all duration-300 z-10 flex-1 py-2 px-3"
-            >
-              <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${activeTab === 'medium' ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Medium Sheets
-              </span>
-            </button>
+                  }}
+                  className={`relative rounded-full font-medium transition-all duration-300 z-10 flex-1 py-2 px-3 ${isCNC ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={isCNC || !accessPermissions.canAccessMediumSheets}
+                  aria-disabled={isCNC || !accessPermissions.canAccessMediumSheets}
+                  title={isCNC ? 'CNC station cannot access Medium Sheets' : undefined}
+                >
+                  <span className={`relative z-10 flex items-center justify-center gap-1.5 whitespace-nowrap ${activeTab === 'medium' ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Medium Sheets
+                  </span>
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -2067,29 +2104,29 @@ export default function Manufacturing() {
                       Orders Queue
                     </button>
                     <button
-                      className={`px-4 py-2 text-md font-bold ${firstColTab === 'Nesting Queue' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${isOperatorRole ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                      className={`px-4 py-2 text-md font-bold ${firstColTab === 'Nesting Queue' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${!accessPermissions.canAccessNestingQueue ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                       style={{ marginBottom: '-1px' }}
                       onClick={() => handleFirstColTabChange('Nesting Queue')}
-                      disabled={isOperatorRole}
-                      aria-disabled={isOperatorRole}
+                      disabled={!accessPermissions.canAccessNestingQueue}
+                      aria-disabled={!accessPermissions.canAccessNestingQueue}
                     >
                       Nesting Queue
                     </button>
                     <button
-                      className={`px-4 py-2 text-md font-medium ${firstColTab === 'Completed Cuts' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${isOperatorRole ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                      className={`px-4 py-2 text-md font-medium ${firstColTab === 'Completed Cuts' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${!accessPermissions.canAccessCompletedCuts ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                       style={{ marginBottom: '-1px' }}
                       onClick={() => handleFirstColTabChange('Completed Cuts')}
-                      disabled={isOperatorRole}
-                      aria-disabled={isOperatorRole}
+                      disabled={!accessPermissions.canAccessCompletedCuts}
+                      aria-disabled={!accessPermissions.canAccessCompletedCuts}
                     >
                       Completed Cuts
                     </button>
                     <button
-                      className={`px-4 py-2 text-md font-medium ${firstColTab === 'Work In Progress' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${isOperatorRole ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                      className={`px-4 py-2 text-md font-medium ${firstColTab === 'Work In Progress' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${!accessPermissions.canAccessWorkInProgress ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                       style={{ marginBottom: '-1px' }}
                       onClick={() => handleFirstColTabChange('Work In Progress')}
-                      disabled={isOperatorRole}
-                      aria-disabled={isOperatorRole}
+                      disabled={!accessPermissions.canAccessWorkInProgress}
+                      aria-disabled={!accessPermissions.canAccessWorkInProgress}
                     >
                       Work In Progress
                     </button>
@@ -3264,6 +3301,7 @@ export default function Manufacturing() {
           orderId={selectedOrderId}
         />
       )}
-    </div>
+      </div>
+    </RouteProtection>
   );
 }

@@ -32,7 +32,7 @@ import { createPortal } from "react-dom";
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
 // Define Types used by Dropdown Component
-type SortField = 'retail_pack' | 'medium_sheets' | 'all';
+type SortField = 'retail_pack' | 'medium_sheets' | 'all' | 'everything_else';
 type SortDirection = 'asc' | 'desc'; 
 
 // Custom Dropdown Component
@@ -135,7 +135,8 @@ const FilterDropdown = ({
                 onClick={async () => {toggleDropdown()}}
             >
                 {sortConfig.field === 'medium_sheets' ? 'Filter: Medium Sheets' :
-                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' : 'Filter: All'}
+                sortConfig.field === 'retail_pack' ? 'Filter: Retail Pack' :
+                sortConfig.field === 'everything_else' ? 'Filter: Everything Else' : 'Filter: All'}
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="ml-2 -mr-1 h-5 w-5 text-gray-400" aria-hidden="true">
                     <path d="M6 9l6 6 6-6"/>
                 </svg>
@@ -185,6 +186,15 @@ const FilterDropdown = ({
                             onClick={async () => {handleOptionClick('retail_pack')}}
                         >
                             Retail Pack
+                        </button>
+                        <button
+                            className={`${sortConfig.field === 'everything_else' ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} flex justify-between items-center w-full
+                            px-4 py-2 text-sm hover:bg-gray-100`}
+                            role="menuitem"
+                            tabIndex={-1}
+                            onClick={async () => {handleOptionClick('everything_else')}}
+                        >
+                            Everything Else
                         </button>
                     </div>
                 </div>,
@@ -254,18 +264,34 @@ export default function Packing() {
             );
         }
 
-        // Apply filter for medium sheets or retail packs
+        // Apply filter for medium sheets or retail packs (exclusive)
         if (sortConfig.field === 'medium_sheets') {
             result = result.filter(order => {
                 const items = allOrderItems[order.order_id] || [];
-                const mediumSheets = items.filter(item => item.item_name?.toLowerCase().includes('medium sheet')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
-                return mediumSheets > 0;
+                return (
+                    items.length > 0 &&
+                    items.every(item => item.item_name?.toLowerCase().includes('medium sheet'))
+                );
             });
         } else if (sortConfig.field === 'retail_pack') {
             result = result.filter(order => {
                 const items = allOrderItems[order.order_id] || [];
-                const retailPack = items.filter(item => item.item_name?.toLowerCase().includes('retail pack')).reduce((sum: number, item: OrderItem) => sum + item.quantity, 0);
-                return retailPack > 0;
+                return (
+                    items.length > 0 &&
+                    items.every(item => item.item_name?.toLowerCase().includes('retail pack'))
+                );
+            });
+        } else if (sortConfig.field === 'everything_else') {
+            result = result.filter(order => {
+                const items = allOrderItems[order.order_id] || [];
+                // Exclude orders that have any medium sheet or retail pack items
+                return (
+                    items.length > 0 &&
+                    items.every(item =>
+                        !item.item_name?.toLowerCase().includes('medium sheet') &&
+                        !item.item_name?.toLowerCase().includes('retail pack')
+                    )
+                );
             });
         }
 
@@ -550,32 +576,19 @@ export default function Packing() {
             return ordersWithRetailPacks[retailPack];
         }
         
-        // Find all order IDs that have this retail pack
+        // Find all order IDs that have ONLY this retail pack
         const orderIdsWithRetailPack = new Set<string>();
         
         // Debug log for all order items
         console.log('Searching for orders with retail pack:', retailPack);
         console.log('All order items available:', allOrderItems);
         
-        // Check each order's items for the retail pack name
+        // Check each order's items for exclusive retail pack
         Object.entries(allOrderItems).forEach(([orderId, items]) => {
-            const matchingItems = items.filter(item => item.item_name === retailPack);
-            console.log(`Checking order ${orderId} for ${retailPack}:`, {
-                allItems: items,
-                matchingItems: matchingItems,
-                completedItems: matchingItems.filter(item => item.completed),
-                uncompletedItems: matchingItems.filter(item => !item.completed)
-            });
-            
-            if (matchingItems.length > 0) {
-                console.log('Found matching items in order:', {
-                    orderId,
-                    items: matchingItems.map(item => ({
-                        itemName: item.item_name,
-                        quantity: item.quantity,
-                        completed: item.completed
-                    }))
-                });
+            if (
+                items.length > 0 &&
+                items.every(item => item.item_name === retailPack)
+            ) {
                 orderIdsWithRetailPack.add(orderId);
             }
         });
