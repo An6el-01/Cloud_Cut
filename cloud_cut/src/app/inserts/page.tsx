@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import Navbar from '@/components/Navbar';
 import Image from 'next/image';
 import { AppDispatch, RootState } from '@/redux/store';
@@ -22,21 +22,14 @@ interface FormData {
     dxf: File[];
 }
 
-export default function Inserts() {
+function InsertsInner() {
     const dispatch = useDispatch<AppDispatch>();
     const { loading, error } = useSelector((state: RootState) => state.stock);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importMessage, setImportMessage] = useState('');
     const searchParams = useSearchParams();
-    const [selectedBrand, setSelectedBrand] = useState<string | null>(() => {
-        // Initialize from URL if available
-        if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            return params.get('brand');
-        }
-        return null;
-    });
+    const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
     const [inserts, setInserts] = useState<Insert[]>([]);
     const [isLoadingInserts, setIsLoadingInserts] = useState(false);
     const selectedBrandRef = useRef<HTMLDivElement>(null);
@@ -67,12 +60,8 @@ export default function Inserts() {
 
     // Effect to handle URL parameter
     useEffect(() => {
-        if (searchParams) {
-            const brandFromUrl = searchParams.get('brand');
-            if (brandFromUrl) {
-                setSelectedBrand(brandFromUrl);
-            }
-        }
+        const brandFromUrl = searchParams!.get('brand');
+        setSelectedBrand(brandFromUrl);
     }, [searchParams]);
 
     // Effect to scroll selected brand into view
@@ -1436,4 +1425,12 @@ export default function Inserts() {
             )}
         </div>
     )
+}
+
+export default function Inserts() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <InsertsInner />
+        </Suspense>
+    );
 }
