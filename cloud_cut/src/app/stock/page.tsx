@@ -51,7 +51,7 @@ export default function Stock() {
     const [editingItem, setEditingItem] = useState<StockItem | null>(null);
     const [editValue, setEditValue] = useState<number>(0);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
-    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes'>('2 X 1 Sheets');
+    const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes' | 'Retail Packs'>('2 X 1 Sheets');
     const [showSheetBookingOut, setShowSheetBookingOut] = useState(false);
     const [damageTrackingTab, setDamageTrackingTab] = useState<'Aesthetic' | 'Dimensional'>('Aesthetic');
     const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets' | 'Accessories' | 'Inserts'>('2 X 1 Sheets');
@@ -97,18 +97,31 @@ export default function Stock() {
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.stock.toString().includes(searchQuery)
         );
+
+    const retailPackItems = items
+        .filter(item => {
+            const matches = item.item_name.toLowerCase().includes('retail pack');
+            console.log('Checking item:', item.item_name, 'matches retail pack:', matches);
+            return matches;
+        })
+        .filter(item => 
+            item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.stock.toString().includes(searchQuery)
+        );
         
     
     // Calculate pagination
     const totalPages = Math.ceil(mediumSheetItems.length / itemsPerPage);
     const totalTwoByOnePages = Math.ceil(twoByOneItems.length / itemsPerPage);
     const totalPackingBoxPages = Math.ceil(packingBoxItems.length / itemsPerPage);
+    const totalRetailPackPages = Math.ceil(retailPackItems.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
     const currentMediumSheetItems = mediumSheetItems.slice(startIndex, endIndex);
     const currentTwoByOneItems = twoByOneItems.slice(startIndex, endIndex);
     const currentPackingBoxItems = packingBoxItems.slice(startIndex, endIndex);
-
+    const currentRetailPackItems = retailPackItems.slice(startIndex, endIndex);
 
     useEffect(() => {
         dispatch(fetchFinishedStockFromSupabase({
@@ -282,7 +295,7 @@ export default function Stock() {
         setDeleteConfirmItem(null);
     }
 
-    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes') => {
+    const handleTableTabChange = (tab: 'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes' | 'Retail Packs') => {
         setTableTab(tab);
         setCurrentPage(1);  // Reset to page 1 when switching tabs
     };
@@ -376,7 +389,7 @@ export default function Stock() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                             <h1 className="text-white text-3xl font-semibold">
-                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : tableTab === '2 X 1 Sheets' ? '2 X 1 Stock' : 'Packing Boxes Stock'}
+                                {tableTab === 'Medium Sheets' ? 'Medium Sheet Stock' : tableTab === '2 X 1 Sheets' ? '2 X 1 Stock' : tableTab === 'Packing Boxes' ? 'Packing Boxes Stock' : 'Retail Packs Stock'}
                             </h1>
 
                             <div className="flex flex-wrap items-center gap-3">
@@ -449,6 +462,14 @@ export default function Stock() {
                                     onClick={() => handleTableTabChange('Packing Boxes')}
                                 >
                                     Packing Boxes
+                                </button>
+                                <button
+                                    className={`px-4 py-2 text-md font-medium ${tableTab === 'Retail Packs' ? 'text-white border-b-2 border-white' :
+                                        'text-gray-500 border-border-transparent'} bg-transparent focus:outline-none`}
+                                        style={{ marginBottom: '-1px' }}
+                                        onClick={() => handleTableTabChange('Retail Packs')}
+                                >
+                                    Retail Packs
                                 </button>
                                
                             </div>
@@ -754,6 +775,156 @@ export default function Stock() {
                                     </button>
                                 </div>
                             </div>
+                        ) : tableTab === 'Retail Packs' ? (
+                            <div className="flex-1 flex flex-col">
+                                <div className="flex-1 overflow-y-auto">
+                                    <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto">
+                                        <thead className="bg-gray-100/90 sticky top-0">
+                                            <tr>
+                                                <th className="px-4 py-4 text-left text-black text-md">Retail Pack</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">SKU</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Edit</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {currentRetailPackItems.length > 0 ? (
+                                                currentRetailPackItems.map((item: StockItem) => (
+                                                    <tr
+                                                        key={item.id}
+                                                        className="transition-all duration-200 text-center h-16"
+                                                    >
+                                                        <td className="px-4 py-2 text-left">
+                                                            <div className="flex items-center">
+                                                                {/** Color pill using item_name for color matching */}
+                                                                <span className={`w-8 h-4 rounded-full mr-3 ${getSheetColorClass(item.item_name)}`}></span>
+                                                                <span className="text-black text-lg">
+                                                                    {item.item_name}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center">
+                                                            <span className="text-black text-lg">
+                                                                {item.sku}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            {editingItem?.id === item.id ? (
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        value={editValue}
+                                                                        onChange={(e) => setEditValue(Number(e.target.value))}
+                                                                        className="w-20 px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                        min="0"
+                                                                    />
+                                                                    <button
+                                                                        onClick={handleSave}
+                                                                        className="p-1 text-green-600 hover:text-green-700"
+                                                                        aria-label="Save changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={handleCancel}
+                                                                        className='p-1 text-red-600 hover:text-red-700'
+                                                                        aria-label="Cancel changes"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+                                                                {item.stock}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-black">
+                                                        <button
+                                                            className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEdit(item);
+                                                            }}
+                                                            aria-label="Edit an item"
+                                                            disabled={editingItem !== null}
+                                                        >
+                                                            <Image
+                                                                src="/editPencil.png"
+                                                                alt=""
+                                                                width={15}
+                                                                height={15}
+                                                            />
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-4 py-2 text-black">
+                                                        <button
+                                                            className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDelete(item);
+                                                            }}
+                                                            aria-label="Delete an item"
+                                                            disabled={editingItem !== null}
+                                                        >
+                                                            <Image
+                                                                src="/binClosed.png"
+                                                                alt=""
+                                                                width={15}
+                                                                height={15}
+                                                            />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                                                    No retail pack items found
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                                </div>
+                                {/* Retail Packs Pagination Controls */}
+                                <div className="sticky bottom-0 flex justify-center items-center gap-4 py-4 bg-white border-t border-gray-200">
+                                    <button
+                                        onClick={() => handlePageChange(currentPage - 1)}
+                                        disabled={currentPage === 1}
+                                        className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {Array.from({ length: totalRetailPackPages }, (_, i) => i + 1).map((pageNum) => (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => handlePageChange(pageNum)}
+                                                className={`w-8 h-8 rounded-md ${
+                                                    currentPage === pageNum
+                                                        ? 'bg-red-600 text-white'
+                                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                } transition-colors`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => handlePageChange(currentPage + 1)}
+                                        disabled={currentPage === totalRetailPackPages}
+                                        className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div> 
                         ) : loading ? (
                             <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
                                 <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>

@@ -137,9 +137,11 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
         console.log('Raw data from Supabase:', typedItems);
         console.log(`Fetched ${typedItems.length} items from Supabase`);
         
-        // Filter for medium sheets, 2 X 1 items, and packing boxes
+        // Filter for medium sheets, 2 X 1 items, packing boxes, and retail packs
         const filteredItems = typedItems.filter(item => {
             const sku = item.sku?.toUpperCase() || '';
+            const itemName = item.item_name?.toUpperCase() || '';
+            
             // Check for medium sheet patterns
             const mediumSheetPatterns = ['SFS-100/50/30', 'SFS-100/50/50', 'SFS-100/50/70'];
             const isMediumSheet = mediumSheetPatterns.some(pattern => sku.includes(pattern));
@@ -150,7 +152,10 @@ export const fetchFinishedStockFromSupabase = createAsyncThunk<StockItem[], { pa
             // Check for packing box pattern (SHA)
             const isPackingBox = sku.startsWith('SHA');
             
-            return isMediumSheet || isTwoByOne || isPackingBox;
+            // Check for retail pack pattern (item_name contains 'retail pack')
+            const isRetailPack = itemName.includes('RETAIL PACK');
+            
+            return isMediumSheet || isTwoByOne || isPackingBox || isRetailPack;
         });
 
         // Define color order for sorting
