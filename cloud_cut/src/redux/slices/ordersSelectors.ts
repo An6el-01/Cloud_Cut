@@ -7,7 +7,7 @@
 
 import { createSelector } from '@reduxjs/toolkit';
 import { RootState } from '../store';
-import { OrderItem } from '@/types/redux';
+import { OrderItem, Order } from '@/types/redux';
 import { supabase } from '@/utils/supabase';
 
 // Basic selectors
@@ -143,5 +143,52 @@ export const selectArchivedOrders = createSelector(
       orders: archivedOrders || [],
       orderItems
     };
+  }
+);
+
+// New selector specifically for admin pending orders - avoids duplicates
+export const selectAdminPendingOrders = createSelector(
+  [selectOrdersState],
+  state => {
+    // For admin page, we only need one array since both manufacturingOrders and packingOrders 
+    // contain the same pending orders. Use manufacturingOrders as the source.
+    return state.manufacturingOrders;
+  }
+);
+
+export const selectActiveOrders = createSelector(
+  [selectManufacturingOrders, selectPackingOrders],
+  (manufacturingOrders, packingOrders) => {
+    // Only create a new array if the inputs have actually changed
+    if (manufacturingOrders.length === 0 && packingOrders.length === 0) {
+      return [];
+    }
+    
+    // For admin page, both arrays contain the same orders, so just return one to avoid duplicates
+    if (manufacturingOrders.length > 0 && packingOrders.length > 0) {
+      // Check if they're the same orders (for admin page)
+      const manufacturingIds = new Set(manufacturingOrders.map(o => o.order_id));
+      const packingIds = new Set(packingOrders.map(o => o.order_id));
+      
+      // If they have the same order IDs, they're duplicates, so return just one array
+      if (manufacturingIds.size === packingIds.size && 
+          [...manufacturingIds].every(id => packingIds.has(id))) {
+        return manufacturingOrders;
+      }
+    }
+    
+    // For other pages where they might be different, combine them
+    return [...manufacturingOrders, ...packingOrders];
+  }
+);
+
+export const selectOrderItemsByOrderIds = createSelector(
+  [selectOrdersState, selectActiveOrders],
+  (ordersState, activeOrders) => {
+    const result: Record<string, OrderItem[]> = {};
+    activeOrders.forEach((order) => {
+      result[order.order_id] = ordersState.orderItems[order.order_id] || [];
+    });
+    return result;
   }
 ); 

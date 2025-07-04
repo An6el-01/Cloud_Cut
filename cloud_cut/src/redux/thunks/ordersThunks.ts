@@ -647,6 +647,8 @@ export const syncOrders = createAsyncThunk(
   }
 );
 
+
+
 export const fetchOrdersFromSupabase = createAsyncThunk(
   'orders/fetchOrdersFromSupabase',
   async ({ 
@@ -662,7 +664,7 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
     manufactured?: boolean;
     packed?: boolean;
     status?: string;
-    view?: 'manufacturing' | 'packing' | 'archived';
+    view?: 'manufacturing' | 'packing' | 'archived' | 'all';
   }) => {
     console.log(`Fetching ${view} orders from Supabase, page: ${page}, perPage: ${perPage}, status: ${status}, manufactured: ${manufactured}, packed: ${packed}`);
     
@@ -757,6 +759,9 @@ export const fetchOrdersFromSupabase = createAsyncThunk(
         return hasManufacturingItems;
       });
       console.log(`Filtered out ${allOrders.length - filteredOrders.length} orders with no manufacturing items`);
+    } else if (view === 'all') {
+      // For 'all' view, don't filter orders - show all pending orders
+      console.log('Showing all pending orders without filtering');
     }
 
     // Calculate priority for each order based on its items and sort ALL orders
@@ -961,6 +966,189 @@ export const fetchArchivedOrders = createAsyncThunk(
     return {
       orders: archivedOrders as unknown as Order[],
       orderItems
+    };
+  }
+);
+
+// New thunks for admin page functionality
+export const fetchPendingOrdersForAdmin = createAsyncThunk(
+  'orders/fetchPendingOrdersForAdmin',
+  async ({ 
+    page, 
+    perPage
+  }: { 
+    page: number; 
+    perPage: number;
+  }) => {
+    console.log(`Fetching pending orders for admin, page: ${page}, perPage: ${perPage}`);
+    
+    // Fetch all orders with status != 'Completed' from orders table
+    const { data: pendingOrders, error: ordersError } = await supabase
+      .from('orders')
+      .select('*')
+      .neq('status', 'Completed')
+      .order('order_date', { ascending: false });
+
+    if (ordersError) throw new Error(`Fetch pending orders failed: ${ordersError.message}`);
+    console.log(`Fetched ${pendingOrders?.length || 0} pending orders from orders table`);
+
+    // Fetch order items for all pending orders from both tables
+    const pendingOrderIds = pendingOrders?.map(o => o.order_id) || [];
+
+    // Get active items
+    const { data: activeItems, error: activeItemsError } = await supabase
+      .from('order_items')
+      .select('*')
+      .in('order_id', pendingOrderIds);
+
+    if (activeItemsError) throw new Error(`Fetch active items failed: ${activeItemsError.message}`);
+    console.log(`Fetched ${activeItems?.length || 0} active items for pending orders`);
+
+    // Get archived items if any
+    const { data: archivedItems, error: archivedItemsError } = await supabase
+      .from('archived_order_items')
+      .select('*')
+      .in('order_id', pendingOrderIds);
+
+    if (archivedItemsError) throw new Error(`Fetch archived items failed: ${archivedItemsError.message}`);
+    console.log(`Fetched ${archivedItems?.length || 0} archived items for pending orders`);
+
+    // Combine active and archived items
+    const allOrderItems = [...(activeItems || []), ...(archivedItems || [])];
+
+    // Create a map of all order items
+    const allOrderItemsMap = allOrderItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
+      const typedItem = item as SupabaseOrderItem;
+      const orderID = typedItem.order_id;
+      if (!acc[orderID]) acc[orderID] = [];
+      acc[orderID].push({
+        ...typedItem,
+        completed: Boolean(typedItem.completed)
+      } as unknown as OrderItem);
+      return acc;
+    }, {});
+
+    // Calculate priority for each order based on its items and sort ALL orders
+    const ordersWithPriority = (pendingOrders || []).map(order => {
+      const typedOrder = order as SupabaseOrderItem;
+      const items = allOrderItemsMap[typedOrder.order_id] || [];
+      const priority = items.length > 0 
+        ? Math.min(...items.map(item => item.priority ?? 10)) 
+        : 10;
+      return { ...typedOrder, calculatedPriority: priority } as unknown as OrderWithPriority;
+    });
+
+    // Sort ALL orders by priority in ascending order (highest priority first)
+    const sortedOrders = ordersWithPriority.sort((a, b) => 
+      a.calculatedPriority - b.calculatedPriority
+    );
+
+    // Calculate pagination info for the UI
+    const startIndex = (page - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
+
+    console.log(`Calculated pagination info: showing orders ${startIndex+1} to ${Math.min(endIndex, sortedOrders.length)} of ${sortedOrders.length} for UI display`);
+
+    return { 
+      orders: sortedOrders, // Return ALL orders
+      paginatedOrders, // Also include paginated orders for the UI
+      orderItems: allOrderItemsMap,
+      total: sortedOrders.length, 
+      page
+    };
+  }
+);
+
+export const fetchCompletedOrdersForAdmin = createAsyncThunk(
+  'orders/fetchCompletedOrdersForAdmin',
+  async ({ 
+    page, 
+    perPage
+  }: { 
+    page: number; 
+    perPage: number;
+  }) => {
+    console.log(`Fetching completed orders for admin, page: ${page}, perPage: ${perPage}`);
+    
+    // Fetch completed orders from both orders and archived_orders tables
+    const { data: activeCompletedOrders, error: activeOrdersError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('status', 'Completed')
+      .order('order_date', { ascending: false });
+
+    if (activeOrdersError) throw new Error(`Fetch active completed orders failed: ${activeOrdersError.message}`);
+    console.log(`Fetched ${activeCompletedOrders?.length || 0} completed orders from orders table`);
+
+    const { data: archivedCompletedOrders, error: archivedOrdersError } = await supabase
+      .from('archived_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (archivedOrdersError) throw new Error(`Fetch archived completed orders failed: ${archivedOrdersError.message}`);
+    console.log(`Fetched ${archivedCompletedOrders?.length || 0} completed orders from archived_orders table`);
+
+    // Combine all completed orders
+    const allCompletedOrders = [...(activeCompletedOrders || []), ...(archivedCompletedOrders || [])];
+    console.log(`Total completed orders: ${allCompletedOrders.length}`);
+
+    // Fetch order items for all completed orders from both tables
+    const completedOrderIds = allCompletedOrders.map(o => o.order_id);
+
+    // Get active items
+    const { data: activeItems, error: activeItemsError } = await supabase
+      .from('order_items')
+      .select('*')
+      .in('order_id', completedOrderIds);
+
+    if (activeItemsError) throw new Error(`Fetch active items failed: ${activeItemsError.message}`);
+    console.log(`Fetched ${activeItems?.length || 0} active items for completed orders`);
+
+    // Get archived items
+    const { data: archivedItems, error: archivedItemsError } = await supabase
+      .from('archived_order_items')
+      .select('*')
+      .in('order_id', completedOrderIds);
+
+    if (archivedItemsError) throw new Error(`Fetch archived items failed: ${archivedItemsError.message}`);
+    console.log(`Fetched ${archivedItems?.length || 0} archived items for completed orders`);
+
+    // Combine active and archived items
+    const allOrderItems = [...(activeItems || []), ...(archivedItems || [])];
+
+    // Create a map of all order items
+    const allOrderItemsMap = allOrderItems.reduce<Record<string, OrderItem[]>>((acc, item) => {
+      const typedItem = item as SupabaseOrderItem;
+      const orderID = typedItem.order_id;
+      if (!acc[orderID]) acc[orderID] = [];
+      acc[orderID].push({
+        ...typedItem,
+        completed: Boolean(typedItem.completed)
+      } as unknown as OrderItem);
+      return acc;
+    }, {});
+
+    // Sort completed orders by date (newest first)
+    const sortedOrders = allCompletedOrders.sort((a, b) => {
+      const dateA = new Date((a.order_date as string) || (a.created_at as string) || new Date(0));
+      const dateB = new Date((b.order_date as string) || (b.created_at as string) || new Date(0));
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    // Calculate pagination info for the UI
+    const startIndex = (page - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginatedOrders = sortedOrders.slice(startIndex, endIndex);
+
+    console.log(`Calculated pagination info: showing orders ${startIndex+1} to ${Math.min(endIndex, sortedOrders.length)} of ${sortedOrders.length} for UI display`);
+
+    return { 
+      orders: sortedOrders, // Return ALL orders
+      paginatedOrders, // Also include paginated orders for the UI
+      orderItems: allOrderItemsMap,
+      total: sortedOrders.length, 
+      page
     };
   }
 );

@@ -77,8 +77,8 @@ export default function Manufacturing() {
   const [selectedMediumSheetQuantity, setSelectedMediumSheetQuantity] = useState<number>(0);
   const [selectedMediumSheet, setSelectedMediumSheet] = useState<string>();
   const [selectedNestingRow, setSelectedNestingRow] = useState<string | null>(null);
-  const [firstColTab, setFirstColTab] = useState<'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue'>(
-    'Orders Queue'
+  const [firstColTab, setFirstColTab] = useState<'Nesting Queue' | 'Completed Cuts' | 'Work In Progress'>(
+    'Nesting Queue'
   );
   const [nestingQueueData, setNestingQueueData] = useState<Record<string, ProcessedNestingData>>({});
   const [nestingLoading, setNestingLoading] = useState(false);
@@ -99,18 +99,16 @@ export default function Manufacturing() {
   const [selectedSheetIndex, setSelectedSheetIndex] = useState<number>(0);
 
   // Improved function for tab changes that prevents changes based on access permissions
-  const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress' | 'Orders Queue') => {
+  const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress') => {
     // Check access permissions for the requested tab
     const canAccessTab = (() => {
       switch (tab) {
         case 'Nesting Queue':
-          return accessPermissions.canAccessNestingQueue;
+          return true;
         case 'Completed Cuts':
-          return accessPermissions.canAccessCompletedCuts;
+          return true;
         case 'Work In Progress':
-          return accessPermissions.canAccessWorkInProgress;
-        case 'Orders Queue':
-          return true; // Always allow access to Orders Queue
+          return true;
         default:
           return false;
       }
@@ -169,8 +167,8 @@ export default function Manufacturing() {
     if (!accessPermissions.canAccessNestingQueue && 
         !accessPermissions.canAccessCompletedCuts && 
         !accessPermissions.canAccessWorkInProgress) {
-      console.log('Enforcing Orders Queue tab due to access restrictions');
-      setFirstColTab('Orders Queue');
+      console.log('Enforcing Nesting Queue tab due to access restrictions');
+      setFirstColTab('Nesting Queue');
     }
   }, [accessPermissions]);
 
@@ -2015,7 +2013,6 @@ export default function Manufacturing() {
               <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <h1 className="text-2xl font-bold text-white">
-                    {firstColTab === 'Orders Queue' && 'Orders Queue'}
                     {firstColTab === 'Nesting Queue' && 'Nesting Queue'}
                     {firstColTab === 'Completed Cuts' && 'Completed Cuts'}
                     {firstColTab === 'Work In Progress' && 'Work In Progress'}
@@ -2097,13 +2094,6 @@ export default function Manufacturing() {
                 <div className="mt-4 mb-2">
                   <div className="">
                     <button
-                      className={`px-4 py-2 text-md font-medium ${firstColTab === 'Orders Queue' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none`}
-                      style={{ marginBottom: '-1px' }}
-                      onClick={() => handleFirstColTabChange('Orders Queue')}
-                    >
-                      Orders Queue
-                    </button>
-                    <button
                       className={`px-4 py-2 text-md font-bold ${firstColTab === 'Nesting Queue' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none ${!accessPermissions.canAccessNestingQueue ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                       style={{ marginBottom: '-1px' }}
                       onClick={() => handleFirstColTabChange('Nesting Queue')}
@@ -2134,25 +2124,7 @@ export default function Manufacturing() {
                 </div>
               </div>
               <div className="overflow-x-auto bg-white h-[calc(93vh-300px)] flex flex-col">
-                {firstColTab == 'Nesting Queue' ? (
-                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-2">
-                    <table className="w-full bg-white/90 backdrop-blur-sm table-auto h-full">
-                    <thead className="bg-gray-100/90 sticky top-0">
-                        <tr>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Foam Sheet</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Nesting ID</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Pieces</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Lock</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {renderNestingQueueTable()}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : firstColTab == "Completed Cuts" ? (
+                {firstColTab == "Completed Cuts" ? (
                   <div className= "flex-1 flex flex-col items-center justify-center bg-gray-50 p-2">
                     <table className="w-full bg-white/90 backdrop-blur-sm table-auto h-full">
                       <thead className="bg-gray-100/90 sticky top-0">
@@ -2233,131 +2205,28 @@ export default function Manufacturing() {
                     <p className="text-sm text-gray-400 mt-1">Try refreshing the page</p>
                   </div>
                 ) : (
-                  <>
-                    <div className="flex-1 overflow-y-auto">
-                      <table className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full">
-                        <thead className="bg-gray-100/90 sticky top-0">
-                          <tr>
-                            <th className="px-4 py-4 text-center text-black text-md">Order ID</th>
-                            <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">
-                              Customer Name
-                            </th>
-                            <th className="px-4 py-2 text-center text-black text-md">Priority</th>
-                            <th className="px-4 py-2 text-center text-black text-md whitespace-nowrap">
-                              Order Date
-                            </th>
-                            <th className="px-4 py-2 text-center text-black text-md">Progress</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {isRefreshing ? (
-                            // Skeleton loading rows while refreshing
-                            [...Array(5)].map((_, index) => (
-                              <tr key={`skeleton-${index}`} className="animate-pulse">
-                                <td className="px-4 py-5">
-                                  <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
-                                </td>
-                                <td className="px-4 py-5">
-                                  <div className="h-4 bg-gray-200 rounded w-28 mx-auto"></div>
-                                </td>
-                                <td className="px-4 py-5">
-                                  <div className="h-4 bg-gray-200 rounded w-8 mx-auto"></div>
-                                </td>
-                                <td className="px-4 py-5">
-                                  <div className="h-4 bg-gray-200 rounded w-24 mx-auto"></div>
-                                </td>
-                                <td className="px-4 py-5">
-                                  <div className="h-4 bg-gray-200 rounded w-12 mx-auto"></div>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            orders.map((order) => {
-                              return (
-                                <tr
-                                  key={order.order_id}
-                                  ref={order.order_id === selectedOrderId ? selectedRowRef : null}
-                                  className={`transition-all duration-200 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${order.order_id === selectedOrderId
-                                      ? "bg-blue-200/90 border-l-4 border-blue-500 shadow-md"
-                                      : "hover:bg-gray-100/90 hover:border-l-4 hover:border-gray-300"
-                                    }`}
-                                  onClick={async () => {
-                                    await Sentry.startSpan({
-                                      name: 'handleRowOrderClick-Manufacturing',
-                                    }, async () => {
-                                      handleOrderClick(order.order_id);
-                                    })
-                                  }}
-                                >
-                                  <td className="px-4 py-2 text-black">{order.order_id}</td>
-                                  <td className="px-4 py-2 text-black">{order.customer_name}</td>
-                                  <td className="px-4 py-2 text-black">
-                                    {(() => {
-                                      const items = orderItemsById[order.order_id] || [];
-                                      const filteredItems = filterItemsBySku(items);
-
-                                      if (filteredItems.length === 0) return 'N/A';
-
-                                      return 'calculatedPriority' in order
-                                        ? (order as OrderWithPriority).calculatedPriority
-                                        : Math.max(...filteredItems.map(item => item.priority || 0));
-                                    })()}
-                                  </td>
-                                  <td className="px-4 py-2 text-black">
-                                    {new Date(order.order_date).toLocaleDateString("en-GB")}
-                                  </td>
-                                  <td className="px-4 py-2 text-black">{filteredOrderProgress[order.order_id]}</td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="flex justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600">
-                        Showing {(currentPage - 1) * ordersPerPage + 1} to{" "}
-                        {Math.min(currentPage * ordersPerPage, totalOrders)} of {totalOrders}{" "}
-                        pending orders
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={async () => {
-                            await Sentry.startSpan({
-                              name: 'manufacturingPageChange-Previous',
-                            }, async () => {
-                              handlePageChange(currentPage - 1);
-                            })
-                          }}
-                          disabled={currentPage === 1}
-                          className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Previous
-                        </button>
-                        <span className="px-3 py-1 text-gray-600">
-                          Page {currentPage} of {totalPages}
-                        </span>
-                        <button
-                          onClick={async () => {
-                            await Sentry.startSpan({
-                              name: 'manufacturingPageChange-Next',
-                            }, async () => {
-                              handlePageChange(currentPage + 1);
-                            })
-                          }}
-                          disabled={currentPage === totalPages}
-                          className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
-                  </>
+                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-2">
+                    <table className="w-full bg-white/90 backdrop-blur-sm table-auto h-full">
+                    <thead className="bg-gray-100/90 sticky top-0">
+                        <tr>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Foam Sheet</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Nesting ID</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Pieces</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
+                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Lock</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {renderNestingQueueTable()}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </div>
             {/* Nesting Visualization Section */}
-            {firstColTab !== 'Orders Queue' && firstColTab !== 'Work In Progress' && (
+            {firstColTab !== 'Work In Progress' && (
               <div className="flex-1 min-w-0 max-w-96 flex flex-col bg-black/70 rounded-xl shadow-xl p-3">
                 {/** Nesting Visualization Title */}
                 <div className="rounded-t-lg">
@@ -2628,7 +2497,6 @@ export default function Manufacturing() {
             <div className="flex-[1.2] min-w-0 max-w-[700px] flex flex-col bg-black/70 rounded-xl shadow-xl">
               <div className="bg-black/70 rounded-t-lg">
                 <h1 className="text-2xl font-bold text-white p-4 flex justify-center">
-                  {firstColTab === 'Orders Queue' && 'Order Details'}
                   {firstColTab === 'Nesting Queue' && 'Cut Details'}
                   {firstColTab === 'Completed Cuts' && 'Cut Details'}
                   {firstColTab === 'Work In Progress' && 'Order Details'}
@@ -2768,173 +2636,9 @@ export default function Manufacturing() {
                       </tbody>
                     </table>
                   </div>
-                ) : firstColTab !== 'Orders Queue' ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-white text-lg">No data</p>
-                  </div>
-                ) : selectedOrder ? (
-                  <div className="space-y-6 text-white">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-400 underline">Order Date:</p>
-                        <p className="font-medium">
-                          {new Date(selectedOrder.order_date).toLocaleDateString("en-GB")}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-400 underline">Status:</p>
-                        <p className="font-medium">{selectedOrder.status}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-400 underline">Despatch Cloud:</p>
-                        <a
-                          href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${selectedOrder.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-blue-400 hover:text-blue-300 transition-colors"
-                        >
-                          View in Despatch Cloud
-                        </a>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-400 underline">Customer Name:</p>
-                        <p className="font-medium">{selectedOrder.customer_name}</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between items-center mb-4">
-                        <h2 className="font-semibold text-lg">Items:</h2>
-
-                        {/* Progress indicator */}
-                        {filterItemsBySku(selectedOrderItems).length > 0 && (
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-300">
-                                {filterItemsBySku(selectedOrderItems).filter(item => item.completed).length}/{filterItemsBySku(selectedOrderItems).length}
-                              </span>
-                              <div className="w-24 bg-gray-700 rounded-full h-2">
-                                <div
-                                  className="bg-green-500 h-2 rounded-full transition-all duration-500 ease-out"
-                                  style={{
-                                    width: `${filterItemsBySku(selectedOrderItems).length > 0
-                                      ? (filterItemsBySku(selectedOrderItems).filter(item => item.completed).length / filterItemsBySku(selectedOrderItems).length) * 100
-                                      : 0}%`
-                                  }}
-                                  aria-hidden="true"
-                                ></div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Warning message when not all items are completed */}
-                      {showWarning && (
-                        <div
-                          className="mb-4 px-4 py-2 bg-amber-600/40 border border-amber-400 rounded-md text-amber-200 text-sm flex items-center gap-2 animate-fade-in"
-                          role="alert"
-                          aria-live="polite"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-300 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                          <p>All items must be completed before the order can be marked as manufactured.</p>
-                        </div>
-                      )}
-
-                      {/* Add loading indicator for order items */}
-                      {selectedOrderId && selectedOrderItems.length === 0 && !loading ? (
-                        <div className="flex flex-col items-center justify-center p-8 bg-gray-900/30 rounded-lg border border-gray-700 animate-pulse">
-                          <div className="w-10 h-10 border-4 border-gray-600 border-t-blue-400 rounded-full animate-spin mb-4"></div>
-                          <p className="text-blue-300 font-medium">Loading order items...</p>
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto bg-gray-900/30 rounded-lg border border-gray-700">
-                          <table className="w-full text-white">
-                            <thead className="bg-gray-800/50">
-                              <tr>
-                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Name</th>
-                                <th className="px-6 py-3 text-center text-sm font-medium text-gray-300 whitespace-nowrap">Foam Sheet</th>
-                                <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Quantity</th>
-                                <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Priority</th>
-                                <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Complete</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-700/50">
-                              {filterItemsBySku(selectedOrderItems).map((item) => (
-                                <tr key={item.id} className="hover:bg-gray-800/30 transition-colors">
-                                  <td className="px-4 py-3 text-left">{item.item_name}</td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-center">{item.foamsheet}</td>
-                                  <td className="px-4 py-3 text-center">{item.quantity}</td>
-                                  <td className="px-4 py-3 text-center">{item.priority}</td>
-                                  <td className="px-4 py-3 text-center">
-                                    <div className="flex justify-center">
-                                      <label className="relative inline-flex items-center cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={item.completed}
-                                          onChange={async (e) => {
-                                            await Sentry.startSpan({
-                                              name: 'ToggleItemCompletion-OrderDetails-Manufacturing',
-                                              op: 'ui.interaction.checkbox'
-                                            }, async () => {
-                                              handleToggleCompleted(
-                                                selectedOrder?.order_id || '',
-                                                item.id,
-                                                e.target.checked
-                                              );
-                                            });
-                                          }}
-                                          className="sr-only peer"
-                                          aria-label={`Mark ${item.item_name} as ${item.completed ? 'incomplete' : 'complete'}`}
-                                        />
-                                        <div className="w-5 h-5 border-2 border-gray-400 rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                          {item.completed && (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                                              <path d="m9 12 2 2 4-4" />
-                                            </svg>
-                                          )}
-                                        </div>
-                                      </label>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-
-                              {/* No relevant items message */}
-                              {selectedOrderItems.length > 0 &&
-                                filterItemsBySku(selectedOrderItems).length === 0 && (
-                                  <tr>
-                                    <td colSpan={5} className="px-4 py-8 text-center">
-                                      <div className="flex flex-col items-center justify-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-300 mb-2" viewBox="0 0 20 20" fill="currentColor">
-                                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                        </svg>
-                                        <p className="text-yellow-300 font-medium">No items with SKUs starting with SFI or SFC found in this order.</p>
-                                        <p className="text-gray-400 text-sm mt-1">Only items with specific SKUs can be manufactured.</p>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-
-                      {/* No order selected state */}
-                      {!selectedOrderId && (
-                        <div className="flex items-center justify-center h-full">
-                          <p className="text-white text-lg">No order selected. Please choose an order.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-white text-lg">No order selected. Please choose an order.</p>
-                  </div>
+                ): (
+                  <>
+                  </>
                 )}
               </div>
             </div>

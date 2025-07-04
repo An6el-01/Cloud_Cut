@@ -306,7 +306,7 @@ export const {
 } = ordersSlice.actions;
 
 // Import thunks after we've created the slice to avoid circular dependencies
-import { syncOrders, fetchOrdersFromSupabase, exportPendingOrdersCSV } from '@/redux/thunks/ordersThunks';
+import { syncOrders, fetchOrdersFromSupabase, exportPendingOrdersCSV, fetchPendingOrdersForAdmin, fetchCompletedOrdersForAdmin } from '@/redux/thunks/ordersThunks';
 
 // Get the base reducer
 const ordersReducer = ordersSlice.reducer;
@@ -369,11 +369,15 @@ const enhancedOrdersReducer = (state: OrdersState | undefined = initialState, ac
         totalPackingOrders: total,
       };
     } else {
-      // Default or 'all' view
+      // Default or 'all' view - populate both manufacturing and packing orders
       newState = {
         ...newState,
         allOrders: typedOrders,
+        manufacturingOrders: typedOrders, // For 'all' view, populate both arrays
+        packingOrders: typedOrders,       // so selectActiveOrders can find them
         totalOrders: total,
+        totalManufacturingOrders: total,
+        totalPackingOrders: total,
       };
     }
     
@@ -389,6 +393,61 @@ const enhancedOrdersReducer = (state: OrdersState | undefined = initialState, ac
       ...newState,
       loading: false,
       error: action.error.message || 'Failed to fetch orders',
+    };
+  } else if (fetchPendingOrdersForAdmin.pending.match(action)) {
+    newState = {
+      ...newState,
+      loading: true,
+      error: null,
+    };
+  } else if (fetchPendingOrdersForAdmin.fulfilled.match(action)) {
+    const { orders: rawOrders, paginatedOrders: rawPaginatedOrders, orderItems: rawItems, total, page } = action.payload;
+    const typedOrders = rawOrders as unknown as Order[];
+    const typedPaginatedOrders = rawPaginatedOrders as unknown as Order[];
+    const typedItems = rawItems as unknown as Record<string, OrderItem[]>;
+    
+    newState = {
+      ...newState,
+      allOrders: typedOrders,
+      manufacturingOrders: typedOrders, // For admin pending orders, populate both arrays
+      packingOrders: typedOrders,       // so selectActiveOrders can find them
+      orderItems: typedItems,
+      totalOrders: total,
+      totalManufacturingOrders: total,
+      totalPackingOrders: total,
+      currentPage: page,
+      loading: false,
+    };
+  } else if (fetchPendingOrdersForAdmin.rejected.match(action)) {
+    newState = {
+      ...newState,
+      loading: false,
+      error: action.error.message || 'Failed to fetch pending orders',
+    };
+  } else if (fetchCompletedOrdersForAdmin.pending.match(action)) {
+    newState = {
+      ...newState,
+      archivedOrdersLoading: true,
+      archivedOrdersError: null,
+    };
+  } else if (fetchCompletedOrdersForAdmin.fulfilled.match(action)) {
+    const { orders: rawOrders, paginatedOrders: rawPaginatedOrders, orderItems: rawItems, total, page } = action.payload;
+    const typedOrders = rawOrders as unknown as Order[];
+    const typedPaginatedOrders = rawPaginatedOrders as unknown as Order[];
+    const typedItems = rawItems as unknown as Record<string, OrderItem[]>;
+    
+    newState = {
+      ...newState,
+      archivedOrders: typedOrders,
+      archivedOrderItems: typedItems,
+      totalArchivedOrders: total,
+      archivedOrdersLoading: false,
+    };
+  } else if (fetchCompletedOrdersForAdmin.rejected.match(action)) {
+    newState = {
+      ...newState,
+      archivedOrdersLoading: false,
+      archivedOrdersError: action.error.message || 'Failed to fetch completed orders',
     };
   } else if (exportPendingOrdersCSV.pending.match(action)) {
     newState = {
