@@ -344,6 +344,9 @@ export default function StartPacking({
     };
 
     const handleConfirmClick = () => {
+        // Open Despatch Cloud link in new tab
+        window.open(`https://shadowfoam.myhelm.app/shipments/create?order_id=${selectedOrder.id}`, '_blank');
+        // Then proceed with normal flow
         setShowDespatch(true);
     };
 
@@ -593,7 +596,7 @@ export default function StartPacking({
             aria-labelledby="dialog-title"
         >
             <div
-                className="bg-white p-8 rounded-xl shadow-2xl max-w-4xl w-full min-h-[700px] border border-gray-200 transform transition-all duration-300 scale-100 relative"
+                className="bg-white p-8 rounded-xl shadow-2xl max-w-7xl w-full min-h-[900px] border border-gray-200 transform transition-all duration-300 scale-100 relative"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Close button (X) in the top right */}
@@ -623,50 +626,82 @@ export default function StartPacking({
                         </svg>
                     </button>
                 )}
-
-                <div className="border-b border-gray-200 pb-4 mb-5">
-                    <h2
-                        id="dialog-title"
-                        className="text-2xl font-bold text-gray-800 mb-1"
-                    >
-                        {showDespatch ? "Despatch Order" : `Order: #${selectedOrder.id}`}
-                    </h2>
-                    <p className="text-gray-500">{showDespatch ? "" : "Picking in progress"}</p>
+                <div className="border-b border-gray-200 pb-4 mb-5 mr-12">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <h2
+                                id="dialog-title"
+                                className="text-2xl font-bold text-gray-800 mb-1"
+                            >
+                                {showDespatch ? "Despatch Order" : `Order: #${selectedOrder.id}`}
+                            </h2>
+                            <p className="text-gray-500">{showDespatch ? "" : "Picking in progress"}</p>
+                        </div>
+                        {!showDespatch && (
+                            <div className="flex flex-col sm:flex-row gap-4 text-base">
+                                <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 shadow-sm">
+                                    <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <div className="flex flex-col">
+                                        <span className="text-lg font-semibold text-gray-700 leading-tight underline">Order Date:</span>
+                                        <span className="text-lg font-bold text-gray-900 leading-tight">{new Date(selectedOrder.order_date).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 shadow-sm">
+                                    <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    <div className="flex flex-col">
+                                        <span className="text-lg font-semibold text-gray-700 leading-tight underline">Customer:</span>
+                                        <span className="text-lg font-bold text-gray-900 leading-tight" title={selectedOrder.customer_name}>{selectedOrder.customer_name}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {showDespatch ? (
-                    <div className="mb-6 text-gray-700 space-y-3">
-                        <p>
-                            Please despatch the order using the link below:
-                        </p>
-                        <a
-                            href={despatchUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-center"
-                        >
-                            Despatch Order
-                        </a>
-                        <p className="mt-4">
-                            Once you have completed the despatch process, click the button below to mark the order as complete.
-                        </p>
+                    <div className="flex flex-1 items-center justify-center w-full min-h-[60vh]">
+                        <div className="w-full max-w-2xl bg-white border border-blue-100 shadow-lg rounded-xl p-8 flex flex-col items-center">
+                            <div className="flex items-center gap-3 mb-4">
+                                <svg className="h-7 w-7 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" />
+                                </svg>
+                                <span className="text-xl font-semibold text-gray-800">Despatch Confirmation</span>
+                            </div>
+                            <p className="text-gray-700 text-base text-center mb-2">
+                                Have you completed the despatch process for this order on <span className="font-semibold text-blue-700">Despatch Cloud</span>?
+                            </p>
+                            <p className="text-gray-800 text-center mb-4">
+                                <span className="font-semibold text-green-700 bg-green-50 px-2 py-1 rounded">Please ensure the order is <u>fully despatched</u> before pressing <span className="text-green-800">Complete Order</span> below.</span>
+                            </p>
+                            <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-2 mb-4 w-full justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                <a
+                                    href={`https://shadowfoam.despatchcloud.net/orders/edit?id=${selectedOrder.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-700 hover:text-blue-900 hover:underline font-medium text-base"
+                                >
+                                    Open in Despatch Cloud
+                                </a>
+                            </div>
+                            <p className="text-gray-500 text-center text-sm mt-2">
+                                Once you have completed the despatch process, click the button below to mark the order as complete.
+                            </p>
+                        </div>
                     </div>
                 ) : (
                     <>
-                        <div className="grid grid-cols-3 gap-5 mb-6">
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <p className="text-sm text-gray-500 mb-1 underline">Order Date:</p>
-                                <p className="font-medium text-gray-800">{new Date(selectedOrder.order_date).toLocaleDateString()}</p>
-                            </div>
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <p className="text-sm text-gray-500 mb-1 underline">Customer:</p>
-                                <p className="font-medium text-gray-800" title={selectedOrder.customer_name}>{selectedOrder.customer_name}</p>
-                            </div>
-                        </div>
+
                         {/* Side-by-side tables for Items and Packing Boxes */}
-                        <div className="flex flex-col md:flex-row gap-6 mb-6">
+                        <div className="flex flex-col md:flex-row gap-6 mb-6 h-[490px] md:h-[607px]">
                             {/* Items Table */}
-                            <div className="md:w-1/2 w-full">
+                            <div className="md:w-2/3 w-full h-full flex flex-col">
                                 <div className="flex justify-between items-center mb-3">
                                     <h3 className="font-semibold text-lg text-gray-800">Items:</h3>
                                     {/* Progress Indicator */}
@@ -689,14 +724,14 @@ export default function StartPacking({
                                         </div>
                                     )}
                                 </div>
-                                {selectedOrder.id && selectedOrderItems.length === 0 && !loading ? (
-                                    <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-lg border border-gray-200 animate-pulse">
-                                        <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-                                        <p className="text-gray-600 font-medium">Loading order items...</p>
-                                    </div>
-                                ) : (
-                                    <div className="overflow-hidden rounded-lg border border-gray-200">
-                                        <div className="max-h-[300px] overflow-y-auto">
+                                <div className="flex-1 overflow-y-auto min-h-0">
+                                    {selectedOrder.id && selectedOrderItems.length === 0 && !loading ? (
+                                        <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-lg border border-gray-200 animate-pulse">
+                                            <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                                            <p className="text-gray-600 font-medium">Loading order items...</p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-hidden rounded-lg border border-gray-200 h-full">
                                             <table className="w-full">
                                                 <thead className="bg-gray-50 border-b border-gray-200">
                                                     <tr>
@@ -734,7 +769,7 @@ export default function StartPacking({
                                                             .map((item) => (
                                                                 <tr key={item.sku_id} className="hover:bg-gray-50 transition-colors">
                                                                     <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.item_name}</td>
-                                                                    <td className="px-4 py-3 text-sm text-gray-600">{item.foamsheet}</td>
+                                                                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap text-center">{item.foamsheet}</td>
                                                                     <td className="px-4 py-3 text-sm text-center text-gray-600">{item.quantity}</td>
                                                                     <td className="px-4 py-3 text-center">
                                                                         <div className="flex justify-center">
@@ -785,22 +820,20 @@ export default function StartPacking({
                                                 </tbody>
                                             </table>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
                             {/* Packing Boxes Table */}
-                            <div className="md:w-1/2 w-full">
+                            <div className="md:w-1/3 w-full h-full flex flex-col">
                                 <div className="flex justify-between items-center mb-3">
                                     <h3 className="font-semibold text-lg text-gray-800">Packing Boxes:</h3>
                                 </div>
-                                
-                                
-                                <div className="rounded-lg border border-gray-200">
+                                <div className="flex-1 overflow-y-auto min-h-0 mb-3">
+                                    <div className="rounded-lg border border-gray-200 h-full">
                                         <table className="w-full">
                                             <thead className="bg-gray-50 border-b border-gray-200">
                                                 <tr>
                                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Packing Box</th>
-                                                    {/* <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th> */}
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Delete</th>
                                                 </tr>
@@ -808,102 +841,105 @@ export default function StartPacking({
                                             <tbody className="divide-y divide-gray-200 bg-white">
                                                 {packingBoxes.map((box) => {
                                                     const currentStock = getCurrentStock(box.boxType);
-                                                    
                                                     return (
                                                         <tr key={box.id} className="hover:bg-gray-50 transition-colors">
-                                                        <td className="px-4 py-3">
-                                                            <div className="relative custom-dropdown">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => toggleDropdown(box.id)}
-                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-left flex justify-between items-center"
-                                                                    style={{ minWidth: '120px' }}
-                                                                >
-                                                                    <span className={box.boxType ? 'text-gray-900' : 'text-gray-500'}>
-                                                                        {box.boxType || 'Select Box'}
-                                                                    </span>
-                                                                    <svg 
-                                                                        className={`h-4 w-4 text-gray-400 transition-transform ${openDropdownId === box.id ? 'rotate-180' : ''}`} 
-                                                                        fill="none" 
-                                                                        stroke="currentColor" 
-                                                                        viewBox="0 0 24 24"
+                                                            <td className="px-4 py-3">
+                                                                <div className="relative custom-dropdown">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => toggleDropdown(box.id)}
+                                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-left flex justify-between items-center"
+                                                                        style={{ minWidth: '120px' }}
                                                                     >
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                        <span className={box.boxType ? 'text-gray-900' : 'text-gray-500'}>
+                                                                            {box.boxType || 'Select Box'}
+                                                                        </span>
+                                                                        <svg 
+                                                                            className={`h-4 w-4 text-gray-400 transition-transform ${openDropdownId === box.id ? 'rotate-180' : ''}`} 
+                                                                            fill="none" 
+                                                                            stroke="currentColor" 
+                                                                            viewBox="0 0 24 24"
+                                                                        >
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    {openDropdownId === box.id && (
+                                                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                                                            <div className="py-1">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => selectOption(box.id, '')}
+                                                                                    className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                                                                                >
+                                                                                    Select Box
+                                                                                </button>
+                                                                        {packingBoxTypes.map((type) => {
+                                                                            return (
+                                                                                <button
+                                                                                    key={type}
+                                                                                    type="button"
+                                                                                    onClick={() => selectOption(box.id, type)}
+                                                                                    className="w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex justify-between items-center"
+                                                                                >
+                                                                            <span>{type}</span>
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    max={currentStock}
+                                                                    value={box.quantity}
+                                                                    onChange={(e) => handleQuantityChange(box.id, parseInt(e.target.value) || 1)}
+                                                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-center`}
+                                                                />
+                                                            </td>
+                                                            <td className="px-4 py-3 text-center">
+                                                                <button
+                                                                    onClick={() => removePackingBoxRow(box.id)}
+                                                                    disabled={packingBoxes.length === 1}
+                                                                    className="text-red-500 hover:text-red-700 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors duration-200 p-1 rounded-full hover:bg-red-50"
+                                                                    aria-label="Delete packing box row"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                                                                     </svg>
                                                                 </button>
-                                                                
-                                                                {openDropdownId === box.id && (
-                                                                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
-                                                                        <div className="py-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => selectOption(box.id, '')}
-                                                                                className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
-                                                                            >
-                                                                                Select Box
-                                                                            </button>
-                                                                    {packingBoxTypes.map((type) => {
-                                                                        return (
-                                                                            <button
-                                                                                key={type}
-                                                                                type="button"
-                                                                                onClick={() => selectOption(box.id, type)}
-                                                                                className="w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex justify-between items-center"
-                                                                            >
-                                                                        <span>{type}</span>
-                                                                            </button>
-                                                                        );
-                                                                    })}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <input
-                                                                type="number"
-                                                                min="1"
-                                                                max={currentStock}
-                                                                value={box.quantity}
-                                                                onChange={(e) => handleQuantityChange(box.id, parseInt(e.target.value) || 1)}
-                                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-center`}
-                                                            />
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center">
-                                                            <button
-                                                                onClick={() => removePackingBoxRow(box.id)}
-                                                                disabled={packingBoxes.length === 1}
-                                                                className="text-red-500 hover:text-red-700 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors duration-200 p-1 rounded-full hover:bg-red-50"
-                                                                aria-label="Delete packing box row"
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
+                                                            </td>
+                                                        </tr>
                                                     );
                                                 })}
                                             </tbody>
                                         </table>
-                                    {/* Add Row Button */}
-                                    <div className="mt-3 p-3">
-                                        <button
-                                            onClick={addPackingBoxRow}
-                                            className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200 text-sm font-medium"
-                                        >
-                                            + Add a Row
-                                        </button>
                                     </div>
                                 </div>
+                                {/* Add Row Button - Now outside scrollable area */}
+                                <button
+                                    onClick={addPackingBoxRow}
+                                    className="w-full px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 text-sm font-medium border border-blue-200 flex items-center justify-center gap-2"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Packing Box
+                                </button>
                             </div>
                         </div>
                     </>
                 )}
 
-                {/**Confirm Button */}
-                <div className="flex justify-center gap-3 mt-6">
-                    
+                {/* Modal Content (add extra padding at the bottom for button) */}
+                <div className="pb-28">
+                </div>
+
+                {/* Confirm Button Floated to Bottom */}
+                <div className="absolute left-0 right-0 bottom-0 flex justify-center gap-3 p-8 bg-white rounded-b-xl border-t border-gray-200 z-10">
                     {showDespatch ? (
                         <button
                             type="button"

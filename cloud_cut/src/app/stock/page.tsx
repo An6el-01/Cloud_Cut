@@ -486,6 +486,7 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-left text-black text-md">2 X 1</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Quick Adjust</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
@@ -544,6 +545,56 @@ export default function Stock() {
                                                                 {item.stock}
                                                             </span>
                                                             )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <button
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        // Handle minus click - decrease stock by 1
+                                                                        const newValue = Math.max(0, item.stock - 1);
+                                                                        setEditValue(newValue);
+                                                                        setEditingItem(item);
+                                                                    }}
+                                                                    aria-label="Decrease stock"
+                                                                    disabled={editingItem !== null}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                                                    </svg>
+                                                                </button>
+                                                                <input
+                                                                    type="number"
+                                                                    value={editingItem?.id === item.id ? editValue : 0}
+                                                                    onChange={(e) => {
+                                                                        const value = Math.max(0, Number(e.target.value));
+                                                                        setEditValue(value);
+                                                                        if (editingItem?.id !== item.id) {
+                                                                            setEditingItem(item);
+                                                                        }
+                                                                    }}
+                                                                    className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                                    min="0"
+                                                                    disabled={editingItem !== null && editingItem.id !== item.id}
+                                                                />
+                                                                <button
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        // Handle plus click - increase stock by 1
+                                                                        const newValue = item.stock + 1;
+                                                                        setEditValue(newValue);
+                                                                        setEditingItem(item);
+                                                                    }}
+                                                                    aria-label="Increase stock"
+                                                                    disabled={editingItem !== null}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="px-4 py-2 text-black">
                                                             <button
@@ -636,6 +687,7 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-left text-black text-md">Packing Box</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Quick Adjust</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
@@ -693,6 +745,56 @@ export default function Stock() {
                                                                     {item.stock}
                                                                 </span>
                                                             )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                        <div className="flex items-center justify-center gap-2">
+                                                                <button
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        // Handle minus click - decrease stock by 1
+                                                                        const newValue = Math.max(0, item.stock - 1);
+                                                                        setEditValue(newValue);
+                                                                        setEditingItem(item);
+                                                                    }}
+                                                                    aria-label="Decrease stock"
+                                                                    disabled={editingItem !== null}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                                                    </svg>
+                                                                </button>
+                                                                <input
+                                                                    type="number"
+                                                                    value={editingItem?.id === item.id ? editValue : 0}
+                                                                    onChange={(e) => {
+                                                                        const value = Math.max(0, Number(e.target.value));
+                                                                        setEditValue(value);
+                                                                        if (editingItem?.id !== item.id) {
+                                                                            setEditingItem(item);
+                                                                        }
+                                                                    }}
+                                                                    className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                                    min="0"
+                                                                    disabled={editingItem !== null && editingItem.id !== item.id}
+                                                                />
+                                                                <button
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        // Handle plus click - increase stock by 1
+                                                                        const newValue = item.stock + 1;
+                                                                        setEditValue(newValue);
+                                                                        setEditingItem(item);
+                                                                    }}
+                                                                    aria-label="Increase stock"
+                                                                    disabled={editingItem !== null}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="px-4 py-2 text-black">
                                                             <button
@@ -784,6 +886,7 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-left text-black text-md">Retail Pack</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Quick Adjust</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
@@ -843,6 +946,56 @@ export default function Stock() {
                                                                 {item.stock}
                                                             </span>
                                                         )}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-black">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                            <button
+                                                                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    // Handle minus click - decrease stock by 1
+                                                                    const newValue = Math.max(0, item.stock - 1);
+                                                                    setEditValue(newValue);
+                                                                    setEditingItem(item);
+                                                                }}
+                                                                aria-label="Decrease stock"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                                                </svg>
+                                                            </button>
+                                                            <input
+                                                                type="number"
+                                                                value={editingItem?.id === item.id ? editValue : item.stock}
+                                                                onChange={(e) => {
+                                                                    const value = Math.max(0, Number(e.target.value));
+                                                                    setEditValue(value);
+                                                                    if (editingItem?.id !== item.id) {
+                                                                        setEditingItem(item);
+                                                                    }
+                                                                }}
+                                                                className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                                min="0"
+                                                                disabled={editingItem !== null && editingItem.id !== item.id}
+                                                            />
+                                                            <button
+                                                                className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    // Handle plus click - increase stock by 1
+                                                                    const newValue = item.stock + 1;
+                                                                    setEditValue(newValue);
+                                                                    setEditingItem(item);
+                                                                }}
+                                                                aria-label="Increase stock"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                     <td className="px-4 py-2 text-black">
                                                         <button
@@ -944,6 +1097,7 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-left text-black text-md">Medium Sheet</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
+                                                <th className="px-4 py-4 text-center text-black text-md">Quick Adjust</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr> 
@@ -1003,6 +1157,56 @@ export default function Stock() {
                                                                     {item.stock}
                                                                 </span>
                                                             )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-black">
+                                                            <div className="flex items-center justify-center gap-2">
+                                                              <button
+                                                                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    // Handle minus click - decrease stock by 1
+                                                                    const newValue = Math.max(0, item.stock - 1);
+                                                                    setEditValue(newValue);
+                                                                    setEditingItem(item);
+                                                                }}
+                                                                aria-label="Decrease stock"
+                                                                disabled={editingItem !== null}
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                                                </svg>
+                                                            </button>
+                                                            <input
+                                                                type="number"
+                                                                value={editingItem?.id === item.id ? editValue : 0}
+                                                                onChange={(e) => {
+                                                                    const value = Math.max(0, Number(e.target.value));
+                                                                    setEditValue(value);
+                                                                    if (editingItem?.id !== item.id) {
+                                                                        setEditingItem(item);
+                                                                    }
+                                                                }}
+                                                                className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                                                min="0"
+                                                                disabled={editingItem !== null && editingItem.id !== item.id}
+                                                            />
+                                                                <button
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        // Handle plus click - increase stock by 1
+                                                                        const newValue = item.stock + 1;
+                                                                        setEditValue(newValue);
+                                                                        setEditingItem(item);
+                                                                    }}
+                                                                    aria-label="Increase stock"
+                                                                    disabled={editingItem !== null}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="px-4 py-2 text-black">
                                                             <button 
