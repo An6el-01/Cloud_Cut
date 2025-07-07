@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from '@/redux/store';
 import { fetchFinishedStockFromSupabase } from '@/redux/thunks/stockThunk';
 import { getSupabaseClient } from '@/utils/supabase';
-import { bookOutStock, updateStockItem } from "@/utils/despatchCloud";
+import { reduceStock } from "@/utils/despatchCloud";
 
 // // Define the type for stock items
 // interface StockItem {
@@ -69,7 +69,7 @@ export default function SheetBookingOut() {
             // Optionally: update DespatchCloud here if needed
             try{
                 if (typeof match.id === 'number') {
-                    await bookOutStock(match.id, quantity)
+                    await reduceStock(match.id, quantity)
                     console.log('Successfully updated DespatchCloud inventory');
                 } else {
                     console.warn('Could not find inventory id for DespatchCloud update');
@@ -90,8 +90,6 @@ export default function SheetBookingOut() {
             setLoading(false);
         }
     };
-
-
 
     return (
         <div className="min-h-screen flex items-center justify-center">

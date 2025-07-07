@@ -21,7 +21,7 @@ import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
 import { getSupabaseClient } from "@/utils/supabase";
 import { NestingProcessor } from '@/nesting/nestingProcessor';
-import { fetchInventory, bookOutStock } from '@/utils/despatchCloud';
+import { fetchInventory, reduceStock } from '@/utils/despatchCloud';
 import { getFoamSheetFromSKU } from '@/utils/skuParser';
 import RouteProtection from '@/components/RouteProtection';
 
@@ -1627,7 +1627,7 @@ export default function Manufacturing() {
                     if (matchingInventoryItem) {
                       console.log(`[DEBUG] Found matching inventory item in DespatchCloud: ${matchingInventoryItem.sku} (ID: ${matchingInventoryItem.id})`);
                       
-                      const bookOutResult = await bookOutStock(matchingInventoryItem.id, numSheets);
+                      const bookOutResult = await reduceStock(matchingInventoryItem.id, numSheets);
                       console.log(`[DEBUG] Successfully booked out ${numSheets} sheets from 2X1 sheet '${matching2X1Sheet.sku}'`, bookOutResult);
 
                       // Update the stock in Supabase for the 2X1 sheet
@@ -1734,7 +1734,7 @@ export default function Manufacturing() {
     }
   }
 
-  // Helper function to generate DXF content
+  // Helper function to generate DXF content for AutoCAD R12
   const generateDXF = (placements: NestingPlacement[], foamSheetName: string): string => {
     const PADDING = 10; // 10mm padding
     const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
@@ -1742,7 +1742,7 @@ export default function Manufacturing() {
     
     let dxfLines: string[] = [];
     
-    // DXF Header
+    // DXF Header for AutoCAD R12
     dxfLines.push('0');
     dxfLines.push('SECTION');
     dxfLines.push('2');
@@ -1750,7 +1750,7 @@ export default function Manufacturing() {
     dxfLines.push('9');
     dxfLines.push('$ACADVER');
     dxfLines.push('1');
-    dxfLines.push('AC1014');
+    dxfLines.push('AC1009');
     dxfLines.push('9');
     dxfLines.push('$DWGCODEPAGE');
     dxfLines.push('3');
@@ -1779,20 +1779,80 @@ export default function Manufacturing() {
     dxfLines.push(VIEWBOX_HEIGHT.toString());
     dxfLines.push('30');
     dxfLines.push('0.0');
+    dxfLines.push('9');
+    dxfLines.push('$LIMMIN');
+    dxfLines.push('10');
+    dxfLines.push('0.0');
+    dxfLines.push('20');
+    dxfLines.push('0.0');
+    dxfLines.push('9');
+    dxfLines.push('$LIMMAX');
+    dxfLines.push('10');
+    dxfLines.push(VIEWBOX_WIDTH.toString());
+    dxfLines.push('20');
+    dxfLines.push(VIEWBOX_HEIGHT.toString());
+    dxfLines.push('9');
+    dxfLines.push('$ORTHOMODE');
+    dxfLines.push('70');
+    dxfLines.push('0');
+    dxfLines.push('9');
+    dxfLines.push('$LTSCALE');
+    dxfLines.push('40');
+    dxfLines.push('1.0');
+    dxfLines.push('9');
+    dxfLines.push('$ATTMODE');
+    dxfLines.push('70');
+    dxfLines.push('1');
+    dxfLines.push('9');
+    dxfLines.push('$TEXTSIZE');
+    dxfLines.push('40');
+    dxfLines.push('2.5');
+    dxfLines.push('9');
+    dxfLines.push('$TRACEWID');
+    dxfLines.push('40');
+    dxfLines.push('0.05');
+    dxfLines.push('9');
+    dxfLines.push('$TEXTSTYLE');
+    dxfLines.push('7');
+    dxfLines.push('STANDARD');
+    dxfLines.push('9');
+    dxfLines.push('$CLAYER');
+    dxfLines.push('8');
+    dxfLines.push('0');
+    dxfLines.push('9');
+    dxfLines.push('$DIMASZ');
+    dxfLines.push('40');
+    dxfLines.push('2.5');
+    dxfLines.push('9');
+    dxfLines.push('$DIMLFAC');
+    dxfLines.push('40');
+    dxfLines.push('1.0');
+    dxfLines.push('9');
+    dxfLines.push('$DIMSCALE');
+    dxfLines.push('40');
+    dxfLines.push('1.0');
+    dxfLines.push('9');
+    dxfLines.push('$DIMTXT');
+    dxfLines.push('40');
+    dxfLines.push('2.5');
     dxfLines.push('0');
     dxfLines.push('ENDSEC');
     
-    // DXF Tables
+    // DXF Tables for AutoCAD R12
     dxfLines.push('0');
     dxfLines.push('SECTION');
     dxfLines.push('2');
     dxfLines.push('TABLES');
+    
+    // Layer table
     dxfLines.push('0');
     dxfLines.push('TABLE');
     dxfLines.push('2');
     dxfLines.push('LAYER');
     dxfLines.push('70');
-    dxfLines.push('1');
+    dxfLines.push('3');
+    
+    // Default layer
     dxfLines.push('0');
     dxfLines.push('LAYER');
     dxfLines.push('2');
@@ -1803,6 +1863,8 @@ export default function Manufacturing() {
     dxfLines.push('7');
     dxfLines.push('6');
     dxfLines.push('CONTINUOUS');
+    
+    // PARTS layer
     dxfLines.push('0');
     dxfLines.push('LAYER');
     dxfLines.push('2');
@@ -1813,6 +1875,8 @@ export default function Manufacturing() {
     dxfLines.push('1');
     dxfLines.push('6');
     dxfLines.push('CONTINUOUS');
+    
+    // BIN layer
     dxfLines.push('0');
     dxfLines.push('LAYER');
     dxfLines.push('2');
@@ -1823,8 +1887,61 @@ export default function Manufacturing() {
     dxfLines.push('2');
     dxfLines.push('6');
     dxfLines.push('CONTINUOUS');
+    
     dxfLines.push('0');
     dxfLines.push('ENDTAB');
+    
+    // Linetype table
+    dxfLines.push('0');
+    dxfLines.push('TABLE');
+    dxfLines.push('2');
+    dxfLines.push('LTYPE');
+    dxfLines.push('70');
+    dxfLines.push('1');
+    dxfLines.push('0');
+    dxfLines.push('LTYPE');
+    dxfLines.push('2');
+    dxfLines.push('CONTINUOUS');
+    dxfLines.push('70');
+    dxfLines.push('0');
+    dxfLines.push('3');
+    dxfLines.push('Solid line');
+    dxfLines.push('72');
+    dxfLines.push('65');
+    dxfLines.push('73');
+    dxfLines.push('0');
+    dxfLines.push('ENDTAB');
+    
+    // Style table
+    dxfLines.push('0');
+    dxfLines.push('TABLE');
+    dxfLines.push('2');
+    dxfLines.push('STYLE');
+    dxfLines.push('70');
+    dxfLines.push('1');
+    dxfLines.push('0');
+    dxfLines.push('STYLE');
+    dxfLines.push('2');
+    dxfLines.push('STANDARD');
+    dxfLines.push('70');
+    dxfLines.push('0');
+    dxfLines.push('40');
+    dxfLines.push('0.0');
+    dxfLines.push('41');
+    dxfLines.push('1.0');
+    dxfLines.push('50');
+    dxfLines.push('0.0');
+    dxfLines.push('71');
+    dxfLines.push('0');
+    dxfLines.push('42');
+    dxfLines.push('2.5');
+    dxfLines.push('3');
+    dxfLines.push('');
+    dxfLines.push('4');
+    dxfLines.push('');
+    dxfLines.push('0');
+    dxfLines.push('ENDTAB');
+    
     dxfLines.push('0');
     dxfLines.push('ENDSEC');
     
@@ -1834,7 +1951,7 @@ export default function Manufacturing() {
     dxfLines.push('2');
     dxfLines.push('ENTITIES');
     
-    // Add bin boundary (green background from visualization)
+    // Add bin boundary as POLYLINE
     const binPolygon = [
       { x: PADDING, y: PADDING },
       { x: 1000 + PADDING, y: PADDING },
@@ -1843,7 +1960,6 @@ export default function Manufacturing() {
       { x: PADDING, y: PADDING }
     ];
     
-    // Add bin boundary as POLYLINE
     dxfLines.push('0');
     dxfLines.push('POLYLINE');
     dxfLines.push('8');

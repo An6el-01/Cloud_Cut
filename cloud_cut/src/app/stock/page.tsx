@@ -9,7 +9,8 @@ import Image from "next/image";
 import { fetchFinishedStockFromSupabase, syncFinishedStock } from "@/redux/thunks/stockThunk";
 import { getSupabaseClient } from "@/utils/supabase";
 import SheetBookingOut from "@/components/sheetBookingOut";
-import { updateStockItem } from '@/utils/despatchCloud';
+import { increaseStock, reduceStock, updateStockItem } from '@/utils/despatchCloud';
+import { table } from "console";
 
 // Define the type for stock items
 interface StockItem {
@@ -50,6 +51,8 @@ export default function Stock() {
     const [searchQuery, setSearchQuery] = useState('');
     const [editingItem, setEditingItem] = useState<StockItem | null>(null);
     const [editValue, setEditValue] = useState<number>(0);
+    const [quickAdjustEditValue, setQuickAdjustEditValue] = useState<number>(0);
+    const [quickAdjustItem, setQuickAdjustItem] = useState<StockItem | null>(null);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
     const [tableTab, setTableTab] = useState<'Medium Sheets' | '2 X 1 Sheets' | 'Packing Boxes' | 'Retail Packs'>('2 X 1 Sheets');
     const [showSheetBookingOut, setShowSheetBookingOut] = useState(false);
@@ -57,6 +60,7 @@ export default function Stock() {
     const [damageTitleTab, setDamageTitleTab] = useState<'2 X 1 Sheets' | 'Medium Sheets' | 'Accessories' | 'Inserts'>('2 X 1 Sheets');
     const [selectedDepth, setSelectedDepth] = useState<'30mm' | '50mm' | '70mm'>('30mm');
     const [selectedTimeRange, setSelectedTimeRange] = useState<'1 Month' | '6 Months' | '1 Year'>('1 Month');
+    const [quickAdjustError, setQuickAdjustError] = useState<string | null>(null);
 
 
     // Check if user has restricted role
@@ -101,7 +105,6 @@ export default function Stock() {
     const retailPackItems = items
         .filter(item => {
             const matches = item.item_name.toLowerCase().includes('retail pack');
-            console.log('Checking item:', item.item_name, 'matches retail pack:', matches);
             return matches;
         })
         .filter(item => 
@@ -160,6 +163,9 @@ export default function Stock() {
             // Set the item being edited and its current stock value
             setEditingItem(item);
             setEditValue(item.stock);
+            // Clear quick adjust state to prevent conflicts
+            setQuickAdjustEditValue(0);
+            setQuickAdjustItem(null);
             
         } catch (error) {
             console.error("Error in handleEdit:", error);
@@ -218,6 +224,8 @@ export default function Stock() {
             // Clear editing state first
             setEditingItem(null);
             setEditValue(0);
+            setQuickAdjustEditValue(0);
+            setQuickAdjustItem(null);
 
             // Then refresh the stock data
             await dispatch(fetchFinishedStockFromSupabase({
@@ -234,6 +242,8 @@ export default function Stock() {
     const handleCancel = () => {
         setEditingItem(null);
         setEditValue(0);
+        setQuickAdjustEditValue(0);
+        setQuickAdjustItem(null);
     }
 
     const handleDelete = async (item: StockItem) => {
@@ -307,8 +317,6 @@ export default function Stock() {
     const handleDamageTrackingTabChange = (tab: 'Aesthetic' | 'Dimensional') => {
         setDamageTrackingTab(tab);
     }
-
-
     // Mock data for the bar graph - replace with real data from your backend
     const getBarGraphData = () => {
         const colors = ['Blue', 'Green', 'Black', 'Orange', 'Red', 'Teal', 'Yellow', 'Pink', 'Purple', 'Grey'];
@@ -323,6 +331,113 @@ export default function Stock() {
             value: mockData[selectedDepth][index] || 0
         }));
     };
+
+    const handleQuickAdjustAdd = async (item: StockItem, quantity: number) => {
+        try{
+            // Validate the quantity
+            if (quantity <= 0) {
+                setQuickAdjustError('Quantity must be greater than 0');
+                return;
+            }
+
+            const supabase = getSupabaseClient();
+
+            //Update the stock in Supabase
+            const { error: updateError } = await supabase
+                .from('finished_stock')
+                .update({
+                    stock: item.stock + quantity,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('sku', item.sku);
+            if(updateError){
+                setQuickAdjustError('Failed to update stock in supabase: ' + updateError.message);
+                return;
+            }
+
+            //Update the stock in DespatchCloud
+            try{
+                if(tableTab === '2 X 1 Sheets'){
+                    await increaseStock(item.id, quantity);
+                    console.log('Successfully updated DespatchCloud inventory');
+                } else {
+                    console.warn('Could not find inventory id for DespatchCloud update');
+                } 
+            } catch (despatchError) {
+                console.error("Error updating DespatchCloud inventory:", despatchError);
+            }
+
+            // Refresh the stock data to reflect changes immediately
+            await dispatch(fetchFinishedStockFromSupabase({
+                page: currentPage,
+                perPage: itemsPerPage
+            }));
+
+            // Clear any previous errors on success
+            setQuickAdjustError(null);
+
+        } catch (err: any) {
+            setQuickAdjustError('Error on quick adjust add: ' + (err.message || err.toString()));
+        }
+        setQuickAdjustItem(null);
+        setQuickAdjustEditValue(0);
+    };
+
+    const handleQuickAdjustSubtract = async (item: StockItem, quantity: number) => {
+        try{
+            // Validate the quantity
+            if (quantity <= 0) {
+                setQuickAdjustError('Quantity must be greater than 0');
+                return;
+            }
+            
+            if (quantity > item.stock) {
+                setQuickAdjustError('Cannot subtract more than current stock');
+                return;
+            }
+
+            const supabase = getSupabaseClient();
+
+            //Update the stock in Supabase
+            const { error: updateError } = await supabase
+                .from('finished_stock')
+                .update({
+                    stock: item.stock - quantity,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('sku', item.sku);
+            if(updateError){
+                setQuickAdjustError('Failed to update stock in supabase: ' + updateError.message);
+                return;
+            }
+
+            //Update the stock in DespatchCloud
+            try{
+                if(tableTab === '2 X 1 Sheets'){
+                    await reduceStock(item.id, quantity);
+                    console.log('Successfully updated DespatchCloud inventory');
+                } else {
+                    console.warn('Could not find inventory id for DespatchCloud update');
+                }
+            } catch (despatchError) {
+                console.error("Error updating DespatchCloud inventory:", despatchError);
+            }
+
+            // Refresh the stock data to reflect changes immediately
+            await dispatch(fetchFinishedStockFromSupabase({
+                page: currentPage,
+                perPage: itemsPerPage
+            }));
+
+            // Clear any previous errors on success
+            setQuickAdjustError(null);
+
+        } catch (err: any) {
+            setQuickAdjustError('Error on quick adjust subtract: ' + (err.message || err.toString()));
+        }
+        setQuickAdjustItem(null);
+        setQuickAdjustEditValue(0);
+    }
 
     return (
         <div className="min-h-screen">
@@ -439,6 +554,19 @@ export default function Stock() {
                             </div>
                         </div>
 
+                        {/* Quick Adjust Error Display */}
+                        {quickAdjustError && (
+                            <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg flex items-center justify-between">
+                                <span>{quickAdjustError}</span>
+                                <button
+                                    onClick={() => setQuickAdjustError(null)}
+                                    className="text-red-500 hover:text-red-700 font-bold text-xl"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        )}
+
                         {/**Navigation Tools */}
                         <div className="mt-4 mb-2">
                             <div>
@@ -552,10 +680,10 @@ export default function Stock() {
                                                                     className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        // Handle minus click - decrease stock by 1
-                                                                        const newValue = Math.max(0, item.stock - 1);
-                                                                        setEditValue(newValue);
-                                                                        setEditingItem(item);
+                                                                        // Handle minus click - use the value from the input field
+                                                                        const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                        setQuickAdjustItem(item);
+                                                                        handleQuickAdjustSubtract(item, inputValue);
                                                                     }}
                                                                     aria-label="Decrease stock"
                                                                     disabled={editingItem !== null}
@@ -566,26 +694,26 @@ export default function Stock() {
                                                                 </button>
                                                                 <input
                                                                     type="number"
-                                                                    value={editingItem?.id === item.id ? editValue : 0}
+                                                                    value={quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0}
                                                                     onChange={(e) => {
                                                                         const value = Math.max(0, Number(e.target.value));
-                                                                        setEditValue(value);
-                                                                        if (editingItem?.id !== item.id) {
-                                                                            setEditingItem(item);
+                                                                        setQuickAdjustEditValue(value);
+                                                                        if (quickAdjustItem?.id !== item.id) {
+                                                                            setQuickAdjustItem(item);
                                                                         }
                                                                     }}
                                                                     className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                                                     min="0"
-                                                                    disabled={editingItem !== null && editingItem.id !== item.id}
+                                                                    disabled={editingItem !== null}
                                                                 />
                                                                 <button
                                                                     className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        // Handle plus click - increase stock by 1
-                                                                        const newValue = item.stock + 1;
-                                                                        setEditValue(newValue);
-                                                                        setEditingItem(item);
+                                                                        // Handle plus click - use the value from the input field
+                                                                        const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                        setQuickAdjustItem(item);
+                                                                        handleQuickAdjustAdd(item, inputValue);
                                                                     }}
                                                                     aria-label="Increase stock"
                                                                     disabled={editingItem !== null}
@@ -752,10 +880,10 @@ export default function Stock() {
                                                                     className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        // Handle minus click - decrease stock by 1
-                                                                        const newValue = Math.max(0, item.stock - 1);
-                                                                        setEditValue(newValue);
-                                                                        setEditingItem(item);
+                                                                        // Handle minus click - use the value from the input field
+                                                                        const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                        setQuickAdjustItem(item);
+                                                                        handleQuickAdjustSubtract(item, inputValue);
                                                                     }}
                                                                     aria-label="Decrease stock"
                                                                     disabled={editingItem !== null}
@@ -766,26 +894,26 @@ export default function Stock() {
                                                                 </button>
                                                                 <input
                                                                     type="number"
-                                                                    value={editingItem?.id === item.id ? editValue : 0}
+                                                                    value={quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0}
                                                                     onChange={(e) => {
                                                                         const value = Math.max(0, Number(e.target.value));
-                                                                        setEditValue(value);
-                                                                        if (editingItem?.id !== item.id) {
-                                                                            setEditingItem(item);
+                                                                        setQuickAdjustEditValue(value);
+                                                                        if (quickAdjustItem?.id !== item.id) {
+                                                                            setQuickAdjustItem(item);
                                                                         }
                                                                     }}
                                                                     className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                                                     min="0"
-                                                                    disabled={editingItem !== null && editingItem.id !== item.id}
+                                                                    disabled={editingItem !== null}
                                                                 />
                                                                 <button
                                                                     className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        // Handle plus click - increase stock by 1
-                                                                        const newValue = item.stock + 1;
-                                                                        setEditValue(newValue);
-                                                                        setEditingItem(item);
+                                                                        // Handle plus click - use the value from the input field
+                                                                        const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                        setQuickAdjustItem(item);
+                                                                        handleQuickAdjustAdd(item, inputValue);
                                                                     }}
                                                                     aria-label="Increase stock"
                                                                     disabled={editingItem !== null}
@@ -953,10 +1081,10 @@ export default function Stock() {
                                                                 className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    // Handle minus click - decrease stock by 1
-                                                                    const newValue = Math.max(0, item.stock - 1);
-                                                                    setEditValue(newValue);
-                                                                    setEditingItem(item);
+                                                                    // Handle minus click - use the value from the input field
+                                                                    const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                    setQuickAdjustItem(item);
+                                                                    handleQuickAdjustSubtract(item, inputValue);
                                                                 }}
                                                                 aria-label="Decrease stock"
                                                                 disabled={editingItem !== null}
@@ -967,26 +1095,26 @@ export default function Stock() {
                                                             </button>
                                                             <input
                                                                 type="number"
-                                                                value={editingItem?.id === item.id ? editValue : item.stock}
+                                                                value={quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0}
                                                                 onChange={(e) => {
                                                                     const value = Math.max(0, Number(e.target.value));
-                                                                    setEditValue(value);
-                                                                    if (editingItem?.id !== item.id) {
-                                                                        setEditingItem(item);
+                                                                    setQuickAdjustEditValue(value);
+                                                                    if (quickAdjustItem?.id !== item.id) {
+                                                                        setQuickAdjustItem(item);
                                                                     }
                                                                 }}
                                                                 className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                                                 min="0"
-                                                                disabled={editingItem !== null && editingItem.id !== item.id}
+                                                                disabled={editingItem !== null}
                                                             />
                                                             <button
                                                                 className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    // Handle plus click - increase stock by 1
-                                                                    const newValue = item.stock + 1;
-                                                                    setEditValue(newValue);
-                                                                    setEditingItem(item);
+                                                                    // Handle plus click - use the value from the input field
+                                                                    const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                    setQuickAdjustItem(item);
+                                                                    handleQuickAdjustAdd(item, inputValue);
                                                                 }}
                                                                 aria-label="Increase stock"
                                                                 disabled={editingItem !== null}
@@ -1164,10 +1292,10 @@ export default function Stock() {
                                                                 className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    // Handle minus click - decrease stock by 1
-                                                                    const newValue = Math.max(0, item.stock - 1);
-                                                                    setEditValue(newValue);
-                                                                    setEditingItem(item);
+                                                                    // Handle minus click - use the value from the input field
+                                                                    const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                    setQuickAdjustItem(item);
+                                                                    handleQuickAdjustSubtract(item, inputValue);
                                                                 }}
                                                                 aria-label="Decrease stock"
                                                                 disabled={editingItem !== null}
@@ -1178,26 +1306,26 @@ export default function Stock() {
                                                             </button>
                                                             <input
                                                                 type="number"
-                                                                value={editingItem?.id === item.id ? editValue : 0}
+                                                                value={quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0}
                                                                 onChange={(e) => {
                                                                     const value = Math.max(0, Number(e.target.value));
-                                                                    setEditValue(value);
-                                                                    if (editingItem?.id !== item.id) {
-                                                                        setEditingItem(item);
+                                                                    setQuickAdjustEditValue(value);
+                                                                    if (quickAdjustItem?.id !== item.id) {
+                                                                        setQuickAdjustItem(item);
                                                                     }
                                                                 }}
                                                                 className="w-16 px-2 py-1 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                                                 min="0"
-                                                                disabled={editingItem !== null && editingItem.id !== item.id}
+                                                                disabled={editingItem !== null}
                                                             />
                                                                 <button
                                                                     className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-300"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        // Handle plus click - increase stock by 1
-                                                                        const newValue = item.stock + 1;
-                                                                        setEditValue(newValue);
-                                                                        setEditingItem(item);
+                                                                        // Handle plus click - use the value from the input field
+                                                                        const inputValue = quickAdjustItem?.id === item.id ? quickAdjustEditValue : 0;
+                                                                        setQuickAdjustItem(item);
+                                                                        handleQuickAdjustAdd(item, inputValue);
                                                                     }}
                                                                     aria-label="Increase stock"
                                                                     disabled={editingItem !== null}

@@ -339,7 +339,7 @@ export async function fetchInventory(
   }
 }
 
-export async function bookOutStock(
+export async function reduceStock(
   inventoryId: number,
   quantity: number,
 ): Promise<any> {
@@ -365,6 +365,47 @@ export async function bookOutStock(
         },
         body: JSON.stringify({
           operator: 'decrease',
+          location_id: 1,
+          quantity: quantity,
+          note: 'API TEST',
+          auto_allocate: 1
+        }),
+      });
+      console.log('Stock update response:', response);
+
+      return response;
+  } catch (error) {
+    console.error('Error updating inventory item stock:', error);
+    throw error;
+  }
+};
+
+export async function increaseStock(
+  inventoryId: number,
+  quantity: number,
+): Promise<any> {
+  // Fetch the inventory item to verify existence (optional, can be skipped if you trust the ID)
+  const fetchUrl = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryId}`;
+  console.log('Fetching inventory item:', fetchUrl);
+
+  try {
+    const inventoryItem = await fetchWithAuth<any>(fetchUrl);
+    console.log('Fetched inventory item:', inventoryItem);
+
+    if (!inventoryItem || !inventoryItem.id) {
+      throw new Error('Could not fetch inventory item details');
+    }
+      const url = `${BASE_URL}/api/despatchCloud/proxy?path=inventory/${inventoryItem.id}/adjust_location_stock`;
+      console.log('Updating inventory item stock:', url);
+
+      const response = await fetchWithAuth<any>(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          operator: 'increase',
           location_id: 1,
           quantity: quantity,
           note: 'API TEST',

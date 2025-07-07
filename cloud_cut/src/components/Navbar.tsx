@@ -64,6 +64,8 @@ const Navbar = () => {
             return accessPermissions.canAccessAdmin;
           case 'analytics':
             return accessPermissions.canAccessAnalytics;
+          case 'inserts':
+            return accessPermissions.canAccessAdmin; // Anyone with admin access can access inserts
           case 'profile':
           case 'resetPassword':
           case '':
