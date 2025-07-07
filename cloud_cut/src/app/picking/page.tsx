@@ -4,7 +4,6 @@ import NavBar from "@/components/Navbar";
 import { useEffect, useState } from "react";
 import { useDispatch , useSelector } from "react-redux";
 import { AppDispatch, RootState, store } from "@/redux/store";
-import { subscribeToOrderItems, subscribeToOrders, getCurrentUser } from "@/utils/supabase";
 import { OrderItem, Order } from "@/types/redux";
 import { supabase } from "@/utils/supabase";
 import RetailPackConfirm from "@/components/retailPackConfirm";

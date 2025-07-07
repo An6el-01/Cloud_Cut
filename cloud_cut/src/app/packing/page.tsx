@@ -35,6 +35,70 @@ type OrderWithPriority = Order & { calculatedPriority: number };
 type SortField = 'retail_pack' | 'medium_sheets' | 'all' | 'everything_else';
 type SortDirection = 'asc' | 'desc'; 
 
+// Valid retail pack SKUs
+const VALID_RETAIL_PACK_SKUS = ['SFP30E', 'SFP50E', 'SFP30P', 'SFP50P', 'SFP30T', 'SFP50T'];
+
+// Helper function to check if an order has invalid retail pack items
+const hasInvalidRetailPackItems = (orderId: string, allOrderItems: Record<string, OrderItem[]>): boolean => {
+    const items = allOrderItems[orderId] || [];
+    return items.some(item => {
+        // Check if it's a retail pack item (contains 'retail pack' in name)
+        const isRetailPack = item.item_name.toLowerCase().includes('retail pack');
+        if (!isRetailPack) return false;
+        
+        // Check if the SKU is not in the valid list
+        return !VALID_RETAIL_PACK_SKUS.includes(item.sku_id);
+    });
+};
+
+// Helper function to check if an order has invalid retail pack items that are still unpicked
+const hasInvalidRetailPackItemsUnpicked = (orderId: string, allOrderItems: Record<string, OrderItem[]>): boolean => {
+    const items = allOrderItems[orderId] || [];
+    return items.some(item => {
+        // Check if it's a retail pack item (contains 'retail pack' in name)
+        const isRetailPack = item.item_name.toLowerCase().includes('retail pack');
+        if (!isRetailPack) return false;
+        
+        // Check if the SKU is not in the valid list AND it's not picked
+        return !VALID_RETAIL_PACK_SKUS.includes(item.sku_id) && !item.picked;
+    });
+};
+
+// Helper function to get invalid retail pack items for an order
+const getInvalidRetailPackItems = (orderId: string, allOrderItems: Record<string, OrderItem[]>): OrderItem[] => {
+    const items = allOrderItems[orderId] || [];
+    return items.filter(item => {
+        const isRetailPack = item.item_name.toLowerCase().includes('retail pack');
+        if (!isRetailPack) return false;
+        
+        return !VALID_RETAIL_PACK_SKUS.includes(item.sku_id);
+    });
+};
+
+// Helper function to check if an order has retail pack items that need picking
+const hasRetailPackItemsNeedingPicking = (orderId: string, allOrderItems: Record<string, OrderItem[]>): boolean => {
+    const items = allOrderItems[orderId] || [];
+    return items.some(item => {
+        const isRetailPack = item.item_name.toLowerCase().includes('retail pack');
+        if (!isRetailPack) return false;
+        
+        // Check if it's not picked yet
+        return !item.picked;
+    });
+};
+
+// Helper function to check if an order has invalid retail pack items that need picking
+const hasInvalidRetailPackItemsNeedingPicking = (orderId: string, allOrderItems: Record<string, OrderItem[]>): boolean => {
+    const items = allOrderItems[orderId] || [];
+    return items.some(item => {
+        const isRetailPack = item.item_name.toLowerCase().includes('retail pack');
+        if (!isRetailPack) return false;
+        
+        // Check if the SKU is not in the valid list AND it's not picked
+        return !VALID_RETAIL_PACK_SKUS.includes(item.sku_id) && !item.picked;
+    });
+};
+
 // Custom Dropdown Component
 const FilterDropdown = ({
     sortConfig,
@@ -231,6 +295,17 @@ export default function Packing() {
     const [pendingOrderToSelect, setPendingOrderToSelect] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
+    const [tooltipState, setTooltipState] = useState<{
+        show: boolean;
+        message: string;
+        x: number;
+        y: number;
+    }>({
+        show: false,
+        message: '',
+        x: 0,
+        y: 0
+    });
     
     // Sorting functionality
     const [sortConfig, setSortConfig] = useState<{field: SortField, direction: SortDirection}>({
@@ -693,6 +768,33 @@ export default function Packing() {
         });
     }
 
+    // Tooltip handlers
+    const handleRowMouseEnter = (e: React.MouseEvent, item: OrderItem) => {
+        if (item.item_name.toLowerCase().includes('retail pack') && !item.picked) {
+            const isInvalidRetailPack = !VALID_RETAIL_PACK_SKUS.includes(item.sku_id);
+            setTooltipState({
+                show: true,
+                message: isInvalidRetailPack ? 'Invalid retail pack needs to be picked' : 'Retail Pack needs to be picked',
+                x: e.clientX + 1,
+                y: e.clientY - 10
+            });
+        }
+    };
+
+    const handleRowMouseMove = (e: React.MouseEvent, item: OrderItem) => {
+        if (item.item_name.toLowerCase().includes('retail pack') && !item.picked) {
+            setTooltipState(prev => ({
+                ...prev,
+                x: e.clientX + 5,
+                y: e.clientY - 10
+            }));
+        }
+    };
+
+    const handleRowMouseLeave = () => {
+        setTooltipState(prev => ({ ...prev, show: false }));
+    };
+
 
     return (
         <div className="min-h-screen">
@@ -840,7 +942,23 @@ export default function Packing() {
                                                             }`}
                                                             onClick={() => handleOrderClick(order.order_id)}
                                                         >
-                                                            <td className="px-4 py-2 text-black">{order.order_id}</td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    {hasInvalidRetailPackItemsUnpicked(order.order_id, allOrderItems) && (
+                                                                        <div title="Invalid retail pack SKU detected - needs picking">
+                                                                            <svg 
+                                                                                xmlns="http://www.w3.org/2000/svg" 
+                                                                                className="h-5 w-5 text-red-500 flex-shrink-0" 
+                                                                                viewBox="0 0 20 20" 
+                                                                                fill="currentColor"
+                                                                            >
+                                                                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                        </div>
+                                                                    )}
+                                                                    {order.order_id}
+                                                                </div>
+                                                            </td>
                                                             <td className="px-4 py-2 text-black">{order.customer_name}</td>
                                                             <td className="px-4 py-2 text-black">
                                                                 {(() => {
@@ -958,17 +1076,34 @@ export default function Packing() {
                                                         className={`group px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5
                                                             ${selectedOrder?.picking 
                                                             ? 'bg-gradient-to-br from-gray-400 to-gray-500 text-gray-100 opacity-75 cursor-not-allowed' 
-                                                            : 'bg-gradient-to-br from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500'
+                                                            : hasInvalidRetailPackItemsNeedingPicking(selectedOrder?.order_id || '', allOrderItems)
+                                                              ? 'bg-gradient-to-br from-red-400 to-red-500 text-white opacity-75 cursor-not-allowed'
+                                                              : 'bg-gradient-to-br from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500'
                                                             }`}
-                                                        aria-label={selectedOrder?.picking ? "Order is already being picked" : "Start picking this order"}
-                                                        disabled={selectedOrderItems.length === 0 || selectedOrder?.picking}
-                                                        title={selectedOrder?.picking ? `Currently being picked by ${selectedOrder.user_picking}` : "Start picking this order"}
+                                                        aria-label={selectedOrder?.picking 
+                                                            ? "Order is already being picked" 
+                                                            : hasInvalidRetailPackItemsNeedingPicking(selectedOrder?.order_id || '', allOrderItems)
+                                                              ? "Invalid retail pack items need to be picked first"
+                                                              : "Start picking this order"
+                                                        }
+                                                        disabled={selectedOrderItems.length === 0 || selectedOrder?.picking || hasInvalidRetailPackItemsNeedingPicking(selectedOrder?.order_id || '', allOrderItems)}
+                                                        title={selectedOrder?.picking 
+                                                            ? `Currently being picked by ${selectedOrder.user_picking}` 
+                                                            : hasInvalidRetailPackItemsNeedingPicking(selectedOrder?.order_id || '', allOrderItems)
+                                                              ? "Invalid retail pack items need to be picked first"
+                                                              : "Start picking this order"
+                                                        }
                                                     >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                             <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
                                                             <path d="m9 12 2 2 4-4"/>
                                                         </svg>
-                                                        {selectedOrder?.picking ? `Being picked by ${selectedOrder.user_picking}` : "Start Picking"}
+                                                        {selectedOrder?.picking 
+                                                            ? `Being picked by ${selectedOrder.user_picking}` 
+                                                            : hasInvalidRetailPackItemsNeedingPicking(selectedOrder?.order_id || '', allOrderItems)
+                                                              ? "Can't Start Picking"
+                                                              : "Start Picking"
+                                                        }
                                                     </button>
                                                 </div>
                                             )}
@@ -1021,12 +1156,44 @@ export default function Packing() {
                                                             // Convert grouped items to array and sort them
                                                             return Object.values(groupedItems)
                                                                 .sort((a, b) => a.item_name.localeCompare(b.item_name))
-                                                                .map((item) => (
-                                                                    <tr key={item.sku_id} className="hover:bg-gray-800/40 transition-colors duration-150">
-                                                                        <td className="px-6 py-4 text-left text-gray-200 font-medium">{item.item_name}</td>
-                                                                        <td className="px-6 py-4 text-center text-gray-300">{item.quantity}</td>
-                                                                    </tr>
-                                                                ));
+                                                                .map((item) => {
+                                                                    // Check if this is an invalid retail pack item that hasn't been picked
+                                                                    const isInvalidRetailPack = item.item_name.toLowerCase().includes('retail pack') && 
+                                                                        !VALID_RETAIL_PACK_SKUS.includes(item.sku_id) && 
+                                                                        !item.picked;
+                                                                    
+                                                                    return (
+                                                                        <tr 
+                                                                            key={item.sku_id} 
+                                                                            className={`hover:bg-gray-800/40 transition-colors duration-150 ${
+                                                                                isInvalidRetailPack ? 'bg-red-900/50 border-l-4 border-red-500' : ''
+                                                                            }`}
+                                                                            style={{
+                                                                                cursor: 'default'
+                                                                            }}
+                                                                            onMouseEnter={(e) => handleRowMouseEnter(e, item)}
+                                                                            onMouseMove={(e) => handleRowMouseMove(e, item)}
+                                                                            onMouseLeave={handleRowMouseLeave}
+                                                                        >
+                                                                            <td className="px-6 py-4 text-left text-gray-200 font-medium">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    {isInvalidRetailPack && (
+                                                                                        <svg 
+                                                                                            xmlns="http://www.w3.org/2000/svg" 
+                                                                                            className="h-4 w-4 text-red-400 flex-shrink-0" 
+                                                                                            viewBox="0 0 20 20" 
+                                                                                            fill="currentColor"
+                                                                                        >
+                                                                                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                                                        </svg>
+                                                                                    )}
+                                                                                    {item.item_name}
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-6 py-4 text-center text-gray-300">{item.quantity}</td>
+                                                                        </tr>
+                                                                    );
+                                                                });
                                                         })()}
                                                     </tbody>
                                                 </table>
@@ -1064,6 +1231,21 @@ export default function Packing() {
                     selectedOrderItems={selectedOrderItems}
                     id={String(selectedOrder.id)}
                 />
+            )}
+
+            {/* Custom Tooltip */}
+            {tooltipState.show && (
+                <div
+                    className="fixed z-50 px-3 py-2 text-sm text-white bg-gray-900 rounded-lg shadow-lg pointer-events-none"
+                    style={{
+                        left: tooltipState.x,
+                        top: tooltipState.y,
+                        transform: 'translateY(-100%)'
+                    }}
+                >
+                    {tooltipState.message}
+                    <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                </div>
             )}
         </div>
     )
