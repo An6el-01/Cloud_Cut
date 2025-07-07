@@ -5,9 +5,10 @@
 import { DeepNest } from './deepnest';
 import { SvgParser } from './svgparser';
 import { GeometryUtil } from './util/geometryutil';
-import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus } from './skuMapping';
+import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus, getCompositeSkuSkus, getTotalSubPartQuantity, isSkuInMapping, getCompositeSkuForSubPart, getSubPartQuantity } from './skuMapping';
 import { createClient } from '@supabase/supabase-js';
 import { validateSvgDimensions, generateCorrectedSvg, EXPECTED_DIMENSIONS } from '../utils/svgDimensionValidator';
+import { parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions } from '../utils/skuParser';
 
 const PADDING = 10; // 10mm padding
 const SHEET_WIDTH = 980; // 1000 - 2*PADDING to ensure 10-990 range
@@ -261,6 +262,8 @@ export class NestingProcessor {
         quantity: adjustedQuantity,
         packType: packType
       };
+
+
       
       // Check if this is a composite SKU that maps to multiple sub-parts
       const compositeMapping = getCompositeSkuMapping(adjustedItem.sku);
@@ -315,6 +318,18 @@ export class NestingProcessor {
         const regularParts = await this.processSingleItem(adjustedItem);
         console.log(`Generated ${regularParts.length} parts for regular SKU ${adjustedItem.sku}`);
         parts.push(...regularParts);
+      } else if (adjustedItem.sku.startsWith('SFC')) {
+        // Handle SFC items that don't have SVG URLs but need custom processing
+        console.log(`Processing SFC SKU ${adjustedItem.sku} with custom dimensions`);
+        const sfcParts = await this.processSingleItem(adjustedItem);
+        console.log(`Generated ${sfcParts.length} parts for SFC SKU ${adjustedItem.sku}`);
+        parts.push(...sfcParts);
+      } else if (adjustedItem.sku.startsWith('SFP')) {
+        // Handle retail pack items that don't have SVG URLs but need custom processing
+        console.log(`Processing retail pack SKU ${adjustedItem.sku} with custom dimensions`);
+        const retailPackParts = await this.processSingleItem(adjustedItem);
+        console.log(`Generated ${retailPackParts.length} parts for retail pack SKU ${adjustedItem.sku}`);
+        parts.push(...retailPackParts);
       } else {
         // Try to generate SVG URL for regular SKU that doesn't have one
         console.log(`Attempting to generate SVG URL for SKU ${adjustedItem.sku}`);
@@ -357,6 +372,134 @@ export class NestingProcessor {
     
     console.log(`\n--- processSingleItem called for SKU: ${item.sku} ---`);
     console.log('Item with SVG URLs:', item);
+    
+    // Handle SFC items with custom dimensions
+    if (item.sku.startsWith('SFC') || (item.svgUrl && item.svgUrl[0] === 'custom')) {
+      console.log(`Processing SFC item with custom dimensions: ${item.sku}`);
+      
+      // Parse dimensions from item name
+      const dimensions = parseSfcDimensions(item.itemName);
+      if (!dimensions) {
+        console.warn(`Could not parse dimensions for SFC item: ${item.sku} - ${item.itemName}`);
+        return parts;
+      }
+
+      // Get foam sheet info from SKU
+      const foamSheetInfo = getSfcFoamSheetInfo(item.sku);
+      if (!foamSheetInfo) {
+        console.warn(`Could not parse foam sheet info for SFC item: ${item.sku}`);
+        return parts;
+      }
+
+      console.log(`SFC item dimensions: ${dimensions.width}mm x ${dimensions.height}mm`);
+      console.log(`SFC foam sheet: ${foamSheetInfo.color} ${foamSheetInfo.thickness}mm`);
+
+      // Create rectangular polygon for the SFC item
+      const width = dimensions.width;
+      const height = dimensions.height;
+      
+      // Create a simple rectangular polygon
+      const polygon = [
+        { x: 0, y: 0 },
+        { x: width, y: 0 },
+        { x: width, y: height },
+        { x: 0, y: height },
+        { x: 0, y: 0 }
+      ];
+
+      // Create parts for this SFC item
+      for (let i = 0; i < item.quantity; i++) {
+        const part = {
+          id: `${item.sku}_${i}`,
+          source: {
+            sku: item.sku,
+            itemName: item.itemName,
+            orderId: item.orderId,
+            customerName: item.customerName,
+            priority: item.priority || 10,
+            packType: item.packType,
+            foamSheet: `${foamSheetInfo.color} ${foamSheetInfo.thickness}mm`,
+            dimensions: dimensions
+          },
+          polygons: [polygon],
+          x: 0,
+          y: 0,
+          rotation: 0,
+          width: width,
+          height: height,
+          area: width * height
+        };
+        
+        parts.push(part);
+        console.log(`Created SFC part: ${part.id} (${width}mm x ${height}mm)`);
+      }
+      
+      return parts;
+    }
+
+    // Handle retail pack items with custom dimensions
+    if (item.sku.startsWith('SFP') || (item.svgUrl && item.svgUrl[0] === 'retail')) {
+      console.log(`Processing retail pack item with custom dimensions: ${item.sku}`);
+      
+      // Get retail pack info from SKU
+      const retailPackInfo = getRetailPackInfo(item.sku);
+      if (!retailPackInfo) {
+        console.warn(`Could not parse retail pack info for item: ${item.sku}`);
+        return parts;
+      }
+
+      // Get retail pack dimensions (always 600mm x 420mm)
+      const dimensions = getRetailPackDimensions();
+
+      console.log(`Retail pack dimensions: ${dimensions.width}mm x ${dimensions.height}mm`);
+      console.log(`Retail pack foam sheet: ${retailPackInfo.color} ${retailPackInfo.thickness}mm`);
+      console.log(`Retail pack quantity per item: ${retailPackInfo.quantity}`);
+
+      // Create rectangular polygon for the retail pack item
+      const width = dimensions.width;
+      const height = dimensions.height;
+      
+      // Create a simple rectangular polygon
+      const polygon = [
+        { x: 0, y: 0 },
+        { x: width, y: 0 },
+        { x: width, y: height },
+        { x: 0, y: height },
+        { x: 0, y: 0 }
+      ];
+
+      // Create parts for this retail pack item
+      // Each order item quantity is multiplied by the retail pack quantity
+      const totalParts = item.quantity * retailPackInfo.quantity;
+      for (let i = 0; i < totalParts; i++) {
+        const part = {
+          id: `${item.sku}_${i}`,
+          source: {
+            sku: item.sku,
+            itemName: item.itemName,
+            orderId: item.orderId,
+            customerName: item.customerName,
+            priority: item.priority || 10,
+            packType: item.packType,
+            foamSheet: `${retailPackInfo.color} ${retailPackInfo.thickness}mm`,
+            dimensions: dimensions,
+            retailPackQuantity: retailPackInfo.quantity
+          },
+          polygons: [polygon],
+          x: 0,
+          y: 0,
+          rotation: 0,
+          width: width,
+          height: height,
+          area: width * height
+        };
+        
+        parts.push(part);
+        console.log(`Created retail pack part: ${part.id} (${width}mm x ${height}mm)`);
+      }
+      
+      return parts;
+    }
     
     for (const svgUrl of item.svgUrl) {
       console.log(`\n--- Processing SVG URL: ${svgUrl} ---`);

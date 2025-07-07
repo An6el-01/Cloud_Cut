@@ -22,7 +22,7 @@ import * as Sentry from "@sentry/nextjs";
 import { getSupabaseClient } from "@/utils/supabase";
 import { NestingProcessor } from '@/nesting/nestingProcessor';
 import { fetchInventory, reduceStock } from '@/utils/despatchCloud';
-import { getFoamSheetFromSKU } from '@/utils/skuParser';
+import { getFoamSheetFromSKU, parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions } from '@/utils/skuParser';
 import RouteProtection from '@/components/RouteProtection';
 
 // Define OrderWithPriority type
@@ -185,10 +185,10 @@ export default function Manufacturing() {
       const isRetailPack = validRetailPackSkus.includes(sku);
 
       // Include items that are either:
-      // 1. SFI or SFC items (manufacturing items)
+      // 1. SFI, SFC, or SFP items (manufacturing items)
       // 2. Medium sheets with our specific patterns
       // 3. Specific retail pack SKUs
-      return sku.startsWith('SFI') || sku.startsWith('SFC') || isMediumSheet || isRetailPack;
+      return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFP') || isMediumSheet || isRetailPack;
     });
   };
 
@@ -919,7 +919,7 @@ export default function Manufacturing() {
       // Get all orders with manufacturing items
       const manufacturingOrders = orders.filter((order: Order) => {
         const items = orderItemsById[order.order_id] || [];
-        return items.some(item => item.sku_id.startsWith('SFI') && !item.completed);
+        return items.some(item => (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP')) && !item.completed);
       });
 
       // Create a map to store items by foam sheet
@@ -929,9 +929,9 @@ export default function Manufacturing() {
       manufacturingOrders.forEach((order: Order) => {
         const items = orderItemsById[order.order_id] || [];
         
-        // Filter for SFI items that aren't completed
+        // Filter for SFI, SFC, and SFP items that aren't completed
         const manufacturingItems = items.filter(item => 
-          item.sku_id.startsWith('SFI') && !item.completed
+          (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP')) && !item.completed
         );
 
         // Group items by foam sheet
@@ -939,7 +939,25 @@ export default function Manufacturing() {
           // Use foamsheet if it exists, otherwise derive from SKU
           let foamSheet = item.foamsheet;
           if (!foamSheet || foamSheet === 'null' || foamSheet === 'undefined') {
-            foamSheet = getFoamSheetFromSKU(item.sku_id);
+            if (item.sku_id.startsWith('SFC')) {
+              // For SFC items, get foam sheet info from SKU
+              const foamSheetInfo = getSfcFoamSheetInfo(item.sku_id);
+              if (foamSheetInfo) {
+                foamSheet = `${foamSheetInfo.color} ${foamSheetInfo.thickness}mm`;
+              } else {
+                foamSheet = 'Unknown';
+              }
+            } else if (item.sku_id.startsWith('SFP')) {
+              // For retail pack items, get foam sheet info from SKU
+              const retailPackInfo = getRetailPackInfo(item.sku_id);
+              if (retailPackInfo) {
+                foamSheet = `${retailPackInfo.color} ${retailPackInfo.thickness}mm`;
+              } else {
+                foamSheet = 'Unknown';
+              }
+            } else {
+              foamSheet = getFoamSheetFromSKU(item.sku_id);
+            }
             // If still no foam sheet found, use 'Unknown'
             if (!foamSheet || foamSheet === 'N/A') {
               foamSheet = 'Unknown';
@@ -1034,6 +1052,22 @@ export default function Manufacturing() {
 
       // Process each item in itemsByFoamSheet
       const itemsWithSvg = itemsByFoamSheet.map(item => {
+        // Handle SFC items differently - they don't have SVG files
+        if (item.sku.startsWith('SFC')) {
+          return {
+            ...item,
+            svgUrl: ['custom'] // Mark as custom for SFC items
+          };
+        }
+
+        // Handle retail pack items differently - they don't have SVG files
+        if (item.sku.startsWith('SFP')) {
+          return {
+            ...item,
+            svgUrl: ['retail'] // Mark as retail for retail pack items
+          };
+        }
+
         const skuOriginal = String(item.sku);
         const sku = skuOriginal.toLowerCase().trim();
         // Remove last three characters from SKU for matching and convert to uppercase
@@ -2292,28 +2326,6 @@ export default function Manufacturing() {
                         </td>
                       </tbody>
                     </table>
-                  </div>
-                ) : loading ? (
-                  <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
-                    <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-blue-600 animate-spin mb-4"></div>
-                    <p className="text-gray-700 font-medium">Loading orders...</p>
-                    <p className="text-gray-500 text-sm mt-1">Retrieving data from database</p>
-                  </div>
-                ) : error ? (
-                  <div className="text-center py-4">
-                    <p className="text-red-500">{error}</p>
-                    <button
-                      onClick={async () => {
-                        await Sentry.startSpan({
-                          name: 'handleRefresh-Orders2',
-                        }, async () => {
-                          handleRefresh();
-                        })
-                      }}
-                      className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                    >
-                      Retry
-                    </button>
                   </div>
                 ) : orders.length === 0 ? (
                   <div className="text-center py-4">
