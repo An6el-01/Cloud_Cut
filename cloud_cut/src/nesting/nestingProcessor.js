@@ -8,7 +8,7 @@ import { GeometryUtil } from './util/geometryutil';
 import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus, getCompositeSkuSkus, getTotalSubPartQuantity, isSkuInMapping, getCompositeSkuForSubPart, getSubPartQuantity } from './skuMapping';
 import { createClient } from '@supabase/supabase-js';
 import { validateSvgDimensions, generateCorrectedSvg, EXPECTED_DIMENSIONS } from '../utils/svgDimensionValidator';
-import { parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions } from '../utils/skuParser';
+import { parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions, getStarterKitInfo, getStarterKitDimensions, getMixedPackInfo } from '../utils/skuParser';
 
 const PADDING = 10; // 10mm padding
 const SHEET_WIDTH = 980; // 1000 - 2*PADDING to ensure 10-990 range
@@ -284,7 +284,7 @@ export class NestingProcessor {
             const subPartItem = {
               ...adjustedItem,
               sku: subPartSku,
-              quantity: subPartQuantity, // Use the quantity from the mapping
+              quantity: subPart.quantity * adjustedItem.quantity, // Use the quantity from the mapping
               originalSku: adjustedItem.sku, // Keep track of the original composite SKU
               isSubPart: true,
               subPartIndex: compositeMapping.indexOf(subPart)
@@ -330,6 +330,34 @@ export class NestingProcessor {
         const retailPackParts = await this.processSingleItem(adjustedItem);
         console.log(`Generated ${retailPackParts.length} parts for retail pack SKU ${adjustedItem.sku}`);
         parts.push(...retailPackParts);
+      } else if (adjustedItem.sku.startsWith('SFSK')) {
+        // Handle starter kit items that don't have SVG URLs but need custom processing
+        console.log(`Processing starter kit SKU ${adjustedItem.sku} with custom dimensions`);
+        const starterKitParts = await this.processSingleItem(adjustedItem);
+        console.log(`Generated ${starterKitParts.length} parts for starter kit SKU ${adjustedItem.sku}`);
+        parts.push(...starterKitParts);
+      } else if (adjustedItem.sku.startsWith('SFSKMP')) {
+        // Handle mixed pack items
+        const mixedPackInfo = getMixedPackInfo(adjustedItem.sku);
+        if (!mixedPackInfo) {
+          console.warn(`Could not parse mixed pack info for SKU: ${adjustedItem.sku}`);
+          continue;
+        }
+        for (const depth of mixedPackInfo.depths) {
+          const foamSheet = `${mixedPackInfo.color} ${depth}mm`;
+          const partItem = {
+            ...adjustedItem,
+            foamSheet,
+            quantity: adjustedItem.quantity, // N per depth
+            dimensions: mixedPackInfo.dimensions,
+            depth,
+            color: mixedPackInfo.color,
+            isMixedPack: true,
+            svgUrl: ['mixedPack']
+          };
+          const mixedPackParts = await this.processSingleItem(partItem);
+          parts.push(...mixedPackParts);
+        }
       } else {
         // Try to generate SVG URL for regular SKU that doesn't have one
         console.log(`Attempting to generate SVG URL for SKU ${adjustedItem.sku}`);
@@ -373,6 +401,48 @@ export class NestingProcessor {
     console.log(`\n--- processSingleItem called for SKU: ${item.sku} ---`);
     console.log('Item with SVG URLs:', item);
     
+    // Handle mixed pack items with custom dimensions
+    if (item.svgUrl && item.svgUrl[0] === 'mixedPack') {
+      console.log(`Processing mixed pack item: ${item.sku} (${item.foamSheet}, ${item.depth}mm)`);
+      const width = item.dimensions?.width || 320;
+      const height = item.dimensions?.height || 400;
+      // Create a simple rectangular polygon
+      const polygon = [
+        { x: 0, y: 0 },
+        { x: width, y: 0 },
+        { x: width, y: height },
+        { x: 0, y: height },
+        { x: 0, y: 0 }
+      ];
+      for (let i = 0; i < item.quantity; i++) {
+        const part = {
+          id: `${item.sku}_${item.foamSheet}_${i}`,
+          source: {
+            sku: item.sku,
+            itemName: item.itemName,
+            orderId: item.orderId,
+            customerName: item.customerName,
+            priority: item.priority || 10,
+            foamSheet: item.foamSheet,
+            depth: item.depth,
+            color: item.color,
+            dimensions: { width, height },
+            isMixedPack: true
+          },
+          polygons: [polygon],
+          x: 0,
+          y: 0,
+          rotation: 0,
+          width: width,
+          height: height,
+          area: width * height
+        };
+        parts.push(part);
+        console.log(`Created mixed pack part: ${part.id} (${width}mm x ${height}mm, ${item.foamSheet})`);
+      }
+      return parts;
+    }
+
     // Handle SFC items with custom dimensions
     if (item.sku.startsWith('SFC') || (item.svgUrl && item.svgUrl[0] === 'custom')) {
       console.log(`Processing SFC item with custom dimensions: ${item.sku}`);
@@ -496,6 +566,70 @@ export class NestingProcessor {
         
         parts.push(part);
         console.log(`Created retail pack part: ${part.id} (${width}mm x ${height}mm)`);
+      }
+      
+      return parts;
+    }
+
+    // Handle starter kit items with custom dimensions
+    if (item.sku.startsWith('SFSK') || (item.svgUrl && item.svgUrl[0] === 'starter')) {
+      console.log(`Processing starter kit item with custom dimensions: ${item.sku}`);
+      
+      // Get starter kit info from SKU
+      const starterKitInfo = getStarterKitInfo(item.sku);
+      if (!starterKitInfo) {
+        console.warn(`Could not parse starter kit info for item: ${item.sku}`);
+        return parts;
+      }
+
+      // Get starter kit dimensions (always 420mm x 600mm)
+      const dimensions = getStarterKitDimensions();
+
+      console.log(`Starter kit dimensions: ${dimensions.width}mm x ${dimensions.height}mm`);
+      console.log(`Starter kit foam sheet: ${starterKitInfo.color} ${starterKitInfo.thickness}mm`);
+      console.log(`Starter kit quantity per item: ${starterKitInfo.quantity}`);
+
+      // Create rectangular polygon for the starter kit item
+      const width = dimensions.width;
+      const height = dimensions.height;
+      
+      // Create a simple rectangular polygon
+      const polygon = [
+        { x: 0, y: 0 },
+        { x: width, y: 0 },
+        { x: width, y: height },
+        { x: 0, y: height },
+        { x: 0, y: 0 }
+      ];
+
+      // Create parts for this starter kit item
+      // Each order item quantity is multiplied by the starter kit quantity (always 3)
+      const totalParts = item.quantity * starterKitInfo.quantity;
+      for (let i = 0; i < totalParts; i++) {
+        const part = {
+          id: `${item.sku}_${i}`,
+          source: {
+            sku: item.sku,
+            itemName: item.itemName,
+            orderId: item.orderId,
+            customerName: item.customerName,
+            priority: item.priority || 10,
+            packType: item.packType,
+            foamSheet: `${starterKitInfo.color} ${starterKitInfo.thickness}mm`,
+            dimensions: dimensions,
+            starterKitQuantity: starterKitInfo.quantity
+          },
+          polygons: [polygon],
+          x: 0,
+          y: 0,
+          rotation: 0,
+          width: width,
+          height: height,
+          area: width * height
+        };
+        
+        parts.push(part);
+        console.log(`Created starter kit part: ${part.id} (${width}mm x ${height}mm)`);
       }
       
       return parts;

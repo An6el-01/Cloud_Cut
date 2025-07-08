@@ -22,7 +22,7 @@ import * as Sentry from "@sentry/nextjs";
 import { getSupabaseClient } from "@/utils/supabase";
 import { NestingProcessor } from '@/nesting/nestingProcessor';
 import { fetchInventory, reduceStock } from '@/utils/despatchCloud';
-import { getFoamSheetFromSKU, parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions } from '@/utils/skuParser';
+import { getFoamSheetFromSKU, parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions, getStarterKitInfo, getStarterKitDimensions, getMixedPackInfo } from '@/utils/skuParser';
 import RouteProtection from '@/components/RouteProtection';
 
 // Define OrderWithPriority type
@@ -185,10 +185,10 @@ export default function Manufacturing() {
       const isRetailPack = validRetailPackSkus.includes(sku);
 
       // Include items that are either:
-      // 1. SFI, SFC, or SFP items (manufacturing items)
+      // 1. SFI, SFC, SFP, or SFSK items (manufacturing items)
       // 2. Medium sheets with our specific patterns
       // 3. Specific retail pack SKUs
-      return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFP') || isMediumSheet || isRetailPack;
+      return sku.startsWith('SFI') || sku.startsWith('SFC') || sku.startsWith('SFP') || sku.startsWith('SFSK') || isMediumSheet || isRetailPack;
     });
   };
 
@@ -250,17 +250,8 @@ export default function Manufacturing() {
 
       // Map color codes to color names
       const colorMap: Record<string, string> = {
-        'K': 'BLACK',
-        'B': 'BLUE',
-        'G': 'GREEN',
-        'O': 'ORANGE',
-        'PK': 'PINK',
-        'M': 'MAUVE',
-        'P': 'PURPLE',
-        'R': 'RED',
-        'T': 'TAN',
-        'Y': 'YELLOW',
-        'E': 'GREY'
+        'K': 'Black', 'B': 'Blue', 'G': 'Green', 'O': 'Orange', 'P': 'Purple',
+        'R': 'Red', 'T': 'Teal', 'Y': 'Yellow', 'E': 'Grey'
       };
 
       const color = colorMap[colorCode] || colorCode;
@@ -919,7 +910,7 @@ export default function Manufacturing() {
       // Get all orders with manufacturing items
       const manufacturingOrders = orders.filter((order: Order) => {
         const items = orderItemsById[order.order_id] || [];
-        return items.some(item => (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP')) && !item.completed);
+        return items.some(item => (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP') || item.sku_id.startsWith('SFSK')) && !item.completed);
       });
 
       // Create a map to store items by foam sheet
@@ -929,46 +920,45 @@ export default function Manufacturing() {
       manufacturingOrders.forEach((order: Order) => {
         const items = orderItemsById[order.order_id] || [];
         
-        // Filter for SFI, SFC, and SFP items that aren't completed
+        // Filter for SFI, SFC, SFP, and SFSK items that aren't completed
         const manufacturingItems = items.filter(item => 
-          (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP')) && !item.completed
+          (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP') || item.sku_id.startsWith('SFSK')) && !item.completed
         );
 
         // Group items by foam sheet
         manufacturingItems.forEach(item => {
-          // Use foamsheet if it exists, otherwise derive from SKU
-          let foamSheet = item.foamsheet;
-          if (!foamSheet || foamSheet === 'null' || foamSheet === 'undefined') {
-            if (item.sku_id.startsWith('SFC')) {
-              // For SFC items, get foam sheet info from SKU
-              const foamSheetInfo = getSfcFoamSheetInfo(item.sku_id);
-              if (foamSheetInfo) {
-                foamSheet = `${foamSheetInfo.color} ${foamSheetInfo.thickness}mm`;
-              } else {
-                foamSheet = 'Unknown';
-              }
-            } else if (item.sku_id.startsWith('SFP')) {
-              // For retail pack items, get foam sheet info from SKU
-              const retailPackInfo = getRetailPackInfo(item.sku_id);
-              if (retailPackInfo) {
-                foamSheet = `${retailPackInfo.color} ${retailPackInfo.thickness}mm`;
-              } else {
-                foamSheet = 'Unknown';
-              }
-            } else {
-              foamSheet = getFoamSheetFromSKU(item.sku_id);
-            }
-            // If still no foam sheet found, use 'Unknown'
-            if (!foamSheet || foamSheet === 'N/A') {
-              foamSheet = 'Unknown';
+          // Expand mixed packs into one item per depth
+          if (item.sku_id.startsWith('SFSKMP')) {
+            const mixedPackInfo = getMixedPackInfo(item.sku_id);
+            if (mixedPackInfo) {
+              mixedPackInfo.depths.forEach(depth => {
+                const foamSheet = `${mixedPackInfo.color} ${depth}mm`;
+                const expandedItem = {
+                  sku: item.sku_id,
+                  itemName: item.item_name,
+                  quantity: item.quantity,
+                  orderId: order.order_id,
+                  customerName: order.customer_name,
+                  priority: item.priority,
+                  foamSheet,
+                  depth,
+                  dimensions: mixedPackInfo.dimensions,
+                  isMixedPack: true,
+                  svgUrl: ['noMatch']
+                };
+                if (!itemsByFoamSheet[foamSheet]) itemsByFoamSheet[foamSheet] = [];
+                itemsByFoamSheet[foamSheet].push(expandedItem);
+              });
+              return; // Skip the rest of the loop for this item
             }
           }
-
-          if (!itemsByFoamSheet[foamSheet]) {
-            itemsByFoamSheet[foamSheet] = [];
+          // For all other items, use the previous logic
+          let foamSheet = (typeof item === 'object' && 'foamSheet' in item && item.foamSheet) ? item.foamSheet : item.foamsheet;
+          const foamSheetKey = String(foamSheet);
+          if (!itemsByFoamSheet[foamSheetKey]) {
+            itemsByFoamSheet[foamSheetKey] = [];
           }
-
-          itemsByFoamSheet[foamSheet].push({
+          itemsByFoamSheet[foamSheetKey].push({
             sku: item.sku_id,
             itemName: item.item_name,
             quantity: item.quantity,
@@ -1068,6 +1058,22 @@ export default function Manufacturing() {
           };
         }
 
+        // Handle mixed pack items differently - they don't have SVG files
+        if (item.sku.startsWith('SFSKMP')) {
+          return {
+            ...item,
+            svgUrl: ['mixedPack'] // Mark as mixed pack for mixed pack items
+          };
+        }
+
+        // Handle starter kit items differently - they don't have SVG files
+        if (item.sku.startsWith('SFSK')) {
+          return {
+            ...item,
+            svgUrl: ['starter'] // Mark as starter for starter kit items
+          };
+        }
+
         const skuOriginal = String(item.sku);
         const sku = skuOriginal.toLowerCase().trim();
         // Remove last three characters from SKU for matching and convert to uppercase
@@ -1154,16 +1160,44 @@ export default function Manufacturing() {
     const allRows: JSX.Element[] = [];
     let globalIndex = 0;
 
-    Object.entries(nestingQueueData).map(([foamSheet, data]) => {
+    // Calculate yield for each foam sheet
+    const foamSheetYields = Object.entries(nestingQueueData).map(([foamSheet, data]) => {
       const nestingResult = data.nestingResult;
       const sheets = nestingResult?.placements || [];
+      // Use the first sheet's yield as representative (or 0 if none)
+      let yieldPercent = 0;
+      if (sheets.length > 0) {
+        const binPolygon = [
+          { x: 0, y: 0 },
+          { x: 1000, y: 0 },
+          { x: 1000, y: 2000 },
+          { x: 0, y: 2000 },
+          { x: 0, y: 0 }
+        ];
+        const binArea = polygonArea(binPolygon);
+        const placements = sheets[0].parts || [];
+        const totalPartsArea = placements.reduce((sum, part) => {
+          if (part.polygons && part.polygons[0]) {
+            return sum + polygonArea(part.polygons[0]);
+          }
+          return sum;
+        }, 0);
+        yieldPercent = binArea > 0 ? (totalPartsArea / binArea) * 100 : 0;
+      }
+      return { foamSheet, data, yieldPercent };
+    });
 
+    // Sort by yield descending
+    foamSheetYields.sort((a, b) => b.yieldPercent - a.yieldPercent);
+
+    foamSheetYields.forEach(({ foamSheet, data }) => {
+      const nestingResult = data.nestingResult;
+      const sheets = nestingResult?.placements || [];
+      globalIndex++;
+      const nestingId = `NST-${globalIndex}`;
+      const isLocked = !!nestLocks[`${foamSheet}-0`];
       if (sheets.length === 0) {
         // No sheets case - show a single row with no nesting data
-        globalIndex++;
-        const nestingId = `NST-${globalIndex}`;
-        const isLocked = !!nestLocks[`${foamSheet}-0`];
-
         allRows.push(
           <tr
             key={`${foamSheet}-no-sheets`}
@@ -1432,7 +1466,7 @@ export default function Manufacturing() {
               <div className="flex items-center justify-center">
                 <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(foamSheet))}`}></div>
                 <span className="text-black text-lg">
-                  {sheetDisplayName}
+                  {formatMediumSheetName(foamSheet)}
                 </span>
               </div>
             </td>
