@@ -46,13 +46,13 @@ export async function POST(req: Request) {
       console.log(`SVG uploaded to temporary storage: ${svgPublicUrl}`);
 
       // 2. Call the Cloud Run SVG to DXF converter service
-      const converterResponse = await fetch(`${SVG_CONVERTER_SERVICE_URL}/convert-svg-to-dxf`, {
+      const converterResponse = await fetch(`${SVG_CONVERTER_SERVICE_URL}/convert`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           //Add auth headers here if I secure the cloud run service
         },
-        body: JSON.stringify({ svgUrl: svgPublicUrl, fileName: svgFileName }),
+        body: JSON.stringify({ svg_url: svgPublicUrl }),
       });
 
       if (!converterResponse.ok) {
@@ -62,14 +62,22 @@ export async function POST(req: Request) {
       }
 
       const converterResult = await converterResponse.json();
-      const dxfPublicUrl = converterResult.dxfUrl;
       
-      console.log(`DXF conversion successful. DXF URL: ${dxfPublicUrl}`);
+      if (converterResult.status === 'success') {
+        // The Python service returns the DXF path, we need to construct the public URL
+        const dxfPath = converterResult.converted_dxf_path;
+        const dxfPublicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${dxfPath}`;
+        
+        console.log(`DXF conversion successful. DXF URL: ${dxfPublicUrl}`);
 
-      //3. Add DXF URL to Supabase Database?
-      //Allows to track conversions and provide download links later
+        //3. Add DXF URL to Supabase Database?
+        //Allows to track conversions and provide download links later
 
-      return NextResponse.json({ dxfUrl: dxfPublicUrl }, { status: 200 });
+        return NextResponse.json({ dxfUrl: dxfPublicUrl }, { status: 200 });
+      } else {
+        console.error('Cloud Run conversion failed:', converterResult.error);
+        return NextResponse.json({ message: 'SVG to DXF conversion failed', details: converterResult.error }, { status: 500 });
+      }
   }catch (error) {
     console.error('API Route error:', error);
     return NextResponse.json({ message: 'Internal server error', error: (error as Error).message }, { status: 500 });

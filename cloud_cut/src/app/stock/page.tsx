@@ -9,6 +9,7 @@ import Image from "next/image";
 import { fetchFinishedStockFromSupabase, syncFinishedStock } from "@/redux/thunks/stockThunk";
 import { getSupabaseClient } from "@/utils/supabase";
 import SheetBookingOut from "@/components/sheetBookingOut";
+import EditStockComponent from "@/components/editStockComponent";
 import { increaseStock, reduceStock, updateStockItem } from '@/utils/despatchCloud';
 
 // Define the type for stock items
@@ -48,8 +49,6 @@ export default function Stock() {
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 15;
     const [searchQuery, setSearchQuery] = useState('');
-    const [editingItem, setEditingItem] = useState<StockItem | null>(null);
-    const [editValue, setEditValue] = useState<number>(0);
     const [quickAdjustEditValue, setQuickAdjustEditValue] = useState<number>(0);
     const [quickAdjustItem, setQuickAdjustItem] = useState<StockItem | null>(null);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<StockItem | null>(null);
@@ -60,6 +59,8 @@ export default function Stock() {
     const [selectedDepth, setSelectedDepth] = useState<'30mm' | '50mm' | '70mm'>('30mm');
     const [selectedTimeRange, setSelectedTimeRange] = useState<'1 Month' | '6 Months' | '1 Year'>('1 Month');
     const [quickAdjustError, setQuickAdjustError] = useState<string | null>(null);
+    const [showEditStock, setShowEditStock] = useState(false);
+    const [itemToEdit, setItemToEdit] = useState<StockItem | null>(null);
 
 
     // Check if user has restricted role
@@ -148,9 +149,6 @@ export default function Stock() {
                 return;
             }
 
-            //Find the item with matching sku from the session
-            const currentItem = items.find(i => i.sku === item.sku);
-
             const allowedRoles = ['GlobalAdmin', 'SiteAdmin', 'Manager'];
             
             if (!userProfile || !allowedRoles.includes(userProfile.role)) {
@@ -158,12 +156,9 @@ export default function Stock() {
                 return;
             }
 
-            // Set the item being edited and its current stock value
-            setEditingItem(item);
-            setEditValue(item.stock);
-            // Clear quick adjust state to prevent conflicts
-            setQuickAdjustEditValue(0);
-            setQuickAdjustItem(null);
+            // Set the item to edit and show the edit component
+            setItemToEdit(item);
+            setShowEditStock(true);
             
         } catch (error) {
             console.error("Error in handleEdit:", error);
@@ -572,7 +567,6 @@ export default function Stock() {
                                                                         handleQuickAdjustSubtract(item, 1);
                                                                     }}
                                                                     aria-label="Decrease stock"
-                                                                    disabled={editingItem !== null}
                                                                     >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -589,8 +583,7 @@ export default function Stock() {
                                                                         handleQuickAdjustAdd(item, 1);
                                                                     }}
                                                                     aria-label="Increase stock"
-                                                                    disabled={editingItem !== null}
-                                                                >
+                                                                    >
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                                                 </svg>
@@ -605,8 +598,7 @@ export default function Stock() {
                                                                     handleEdit(item);
                                                                 }}
                                                                 aria-label="Edit an item"
-                                                                disabled={editingItem !== null}
-                                                            >
+                                                                >
                                                                 <Image
                                                                     src="/editPencil.png"
                                                                     alt=""
@@ -623,8 +615,7 @@ export default function Stock() {
                                                                     handleDelete(item);
                                                                 }}
                                                                 aria-label="Delete an item"
-                                                                disabled={editingItem !== null}
-                                                            >
+                                                                >
                                                                 <Image
                                                                     src="/binClosed.png"
                                                                     alt=""
@@ -721,7 +712,6 @@ export default function Stock() {
                                                                         handleQuickAdjustSubtract(item, 1);
                                                                     }}
                                                                     aria-label="Decrease stock"
-                                                                    disabled={editingItem !== null}
                                                                     >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -738,8 +728,7 @@ export default function Stock() {
                                                                         handleQuickAdjustAdd(item, 1);
                                                                     }}
                                                                     aria-label="Increase stock"
-                                                                    disabled={editingItem !== null}
-                                                                >
+                                                                    >
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                                                 </svg>
@@ -754,8 +743,7 @@ export default function Stock() {
                                                                     handleEdit(item);
                                                                 }}
                                                                 aria-label="Edit an item"
-                                                                disabled={editingItem !== null}
-                                                            >
+                                                                >
                                                                 <Image
                                                                     src="/editPencil.png"
                                                                     alt=""
@@ -772,8 +760,7 @@ export default function Stock() {
                                                                     handleDelete(item);
                                                                 }}
                                                                 aria-label="Delete an item"
-                                                                disabled={editingItem !== null}
-                                                            >
+                                                                >
                                                                 <Image
                                                                     src="/binClosed.png"
                                                                     alt=""
@@ -871,7 +858,6 @@ export default function Stock() {
                                                                         handleQuickAdjustSubtract(item, 1);
                                                                     }}
                                                                     aria-label="Decrease stock"
-                                                                    disabled={editingItem !== null}
                                                                     >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -888,8 +874,7 @@ export default function Stock() {
                                                                         handleQuickAdjustAdd(item, 1);
                                                                     }}
                                                                     aria-label="Increase stock"
-                                                                    disabled={editingItem !== null}
-                                                                >
+                                                                    >
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                                                 </svg>
@@ -904,8 +889,7 @@ export default function Stock() {
                                                                 handleEdit(item);
                                                             }}
                                                             aria-label="Edit an item"
-                                                            disabled={editingItem !== null}
-                                                        >
+                                                            >
                                                             <Image
                                                                 src="/editPencil.png"
                                                                 alt=""
@@ -922,8 +906,7 @@ export default function Stock() {
                                                                 handleDelete(item);
                                                             }}
                                                             aria-label="Delete an item"
-                                                            disabled={editingItem !== null}
-                                                        >
+                                                            >
                                                             <Image
                                                                 src="/binClosed.png"
                                                                 alt=""
@@ -1031,7 +1014,6 @@ export default function Stock() {
                                                                         handleQuickAdjustSubtract(item, 1);
                                                                     }}
                                                                     aria-label="Decrease stock"
-                                                                    disabled={editingItem !== null}
                                                                     >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -1050,8 +1032,7 @@ export default function Stock() {
                                                                         handleQuickAdjustAdd(item, 1);
                                                                     }}
                                                                     aria-label="Increase stock"
-                                                                    disabled={editingItem !== null}
-                                                                >
+                                                                    >
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                                                 </svg>
@@ -1066,8 +1047,7 @@ export default function Stock() {
                                                                     handleEdit(item);
                                                                 }}
                                                                 aria-label="Edit an item"
-                                                                disabled={editingItem !== null}
-                                                            >
+                                                                >
                                                                 <Image
                                                                     src="/editPencil.png"
                                                                     alt=""
@@ -1084,8 +1064,7 @@ export default function Stock() {
                                                                     handleDelete(item);
                                                                 }}
                                                                 aria-label="Delete an item"
-                                                                disabled={editingItem !== null}
-                                                            >
+                                                                >
                                                                 <Image
                                                                     src="/binClosed.png"
                                                                     alt=""
@@ -1435,6 +1414,18 @@ export default function Stock() {
                         <SheetBookingOut />
                     </div>
                 </div>
+            )}
+
+            {/* EditStockComponent Modal/Section */}
+            {showEditStock && itemToEdit && (
+                <EditStockComponent
+                    activeTab={tableTab}
+                    onClose={() => {
+                        setShowEditStock(false);
+                        setItemToEdit(null);
+                    }}
+                    itemToEdit={itemToEdit}
+                />
             )}
         </div>
     )
