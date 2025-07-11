@@ -110,16 +110,16 @@ export default function SheetBookingOut() {
                             required
                         >
                             <option value="" disabled>Select Colour...</option>
+                            <option>Black</option>
                             <option>Blue</option>
                             <option>Green</option>
-                            <option>Black</option>
+                            <option>Grey</option>
                             <option>Orange</option>
+                            <option>Pink</option>
+                            <option>Purple</option>
                             <option>Red</option>
                             <option>Teal</option>
                             <option>Yellow</option>
-                            <option>Pink</option>
-                            <option>Purple</option>
-                            <option>Grey</option>
                         </select>
                     </div>
                     <div>

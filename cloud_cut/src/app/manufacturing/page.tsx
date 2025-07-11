@@ -2,6 +2,7 @@
 
 import Navbar from "@/components/Navbar";
 import ManuConfirm from "@/components/manuConfirm";
+import DxfConverterButton from "@/components/DxfConverterButton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -1761,355 +1762,709 @@ export default function Manufacturing() {
     setSelectedFoamSheet(null);
   }
 
-  const handleExportNestingVisualization = () => {
-    // Export the nesting visualization as a DXF file
-    if (!selectedNestingRow || !nestingQueueData[selectedNestingRow]) {
-      console.warn('No nesting row selected for export');
-      return;
-    }
+  // const handleExportNestingVisualization = () => {
+  //   // Export the nesting visualization as an SVG file
+  //   if (!selectedNestingRow || !nestingQueueData[selectedNestingRow]) {
+  //     console.warn('No nesting row selected for export');
+  //     return;
+  //   }
 
-    try {
-      // Get the nesting data for the selected row and sheet
-      const nestingData = nestingQueueData[selectedNestingRow];
-      const placements = nestingData.nestingResult?.placements || [];
+  //   try {
+  //     // Get the nesting data for the selected row and sheet
+  //     const nestingData = nestingQueueData[selectedNestingRow];
+  //     const placements = nestingData.nestingResult?.placements || [];
       
-      if (placements.length === 0 || selectedSheetIndex >= placements.length) {
-        console.warn('No placement data available for export');
-        return;
-      }
+  //     if (placements.length === 0 || selectedSheetIndex >= placements.length) {
+  //       console.warn('No placement data available for export');
+  //       return;
+  //     }
 
-      const selectedSheet = placements[selectedSheetIndex];
-      const sheetsToExport = [selectedSheet]; // Export only the selected sheet
+  //     const selectedSheet = placements[selectedSheetIndex];
+  //     const sheetsToExport = [selectedSheet]; // Export only the selected sheet
 
-      // Generate DXF content
-      const dxfContent = generateDXF(sheetsToExport, selectedNestingRow);
+  //     // Generate SVG content
+  //     const svgContent = generateSVG(sheetsToExport, selectedNestingRow);
       
-      // Create and download the file
-      const blob = new Blob([dxfContent], { type: 'application/dxf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const sheetSuffix = placements.length > 1 ? `_sheet${selectedSheetIndex + 1}` : '';
-      link.download = `nesting_${selectedNestingRow}${sheetSuffix}_${new Date().toISOString().split('T')[0]}.dxf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+  //     // Create and download the file
+  //     const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+  //     const url = URL.createObjectURL(blob);
+  //     const link = document.createElement('a');
+  //     link.href = url;
+  //     const sheetSuffix = placements.length > 1 ? `_sheet${selectedSheetIndex + 1}` : '';
+  //     link.download = `nesting_${selectedNestingRow}${sheetSuffix}_${new Date().toISOString().split('T')[0]}.svg`;
+  //     document.body.appendChild(link);
+  //     link.click();
+  //     document.body.removeChild(link);
+  //     URL.revokeObjectURL(url);
       
-      console.log('DXF file exported successfully');
-    } catch (error) {
-      console.error('Error exporting DXF file:', error);
-    }
-  }
+  //     console.log('SVG file exported successfully');
+  //   } catch (error) {
+  //     console.error('Error exporting SVG file:', error);
+  //   }
+  // }
 
-  // Helper function to generate DXF content for AutoCAD R12
-  const generateDXF = (placements: NestingPlacement[], foamSheetName: string): string => {
+// // Helper function to generate DXF content for AutoCAD 2010 (AC1024)
+// const generateDXF = (placements: NestingPlacement[], foamSheetName: string): string => {
+//   const PADDING = 10; // 10mm padding
+//   const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
+//   const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
+
+//   let dxfLines: string[] = [];
+
+//   // Initialize handle counter. Handles are hexadecimal.
+//   // Start from 1, or a higher number if you have known fixed handles for root objects.
+//   let currentHandle = 1;
+
+//   // Helper to get next handle and increment
+//   const getNextHandle = (): string => {
+//     return (currentHandle++).toString(16).toUpperCase();
+//   };
+
+//   // DXF Header for AutoCAD 2010
+//   dxfLines.push('0');
+//   dxfLines.push('SECTION');
+//   dxfLines.push('2');
+//   dxfLines.push('HEADER');
+//   dxfLines.push('9');
+//   dxfLines.push('$ACADVER');
+//   dxfLines.push('1');
+//   dxfLines.push('AC1024'); // AutoCAD 2010
+//   dxfLines.push('9');
+//   dxfLines.push('$DWGCODEPAGE');
+//   dxfLines.push('3');
+//   dxfLines.push('ANSI_1252');
+//   dxfLines.push('9');
+//   dxfLines.push('$INSBASE');
+//   dxfLines.push('10');
+//   dxfLines.push('0.0');
+//   dxfLines.push('20');
+//   dxfLines.push('0.0');
+//   dxfLines.push('30');
+//   dxfLines.push('0.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$EXTMIN');
+//   dxfLines.push('10');
+//   dxfLines.push('0.0');
+//   dxfLines.push('20');
+//   dxfLines.push('0.0');
+//   dxfLines.push('30');
+//   dxfLines.push('0.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$EXTMAX');
+//   dxfLines.push('10');
+//   dxfLines.push(VIEWBOX_WIDTH.toString());
+//   dxfLines.push('20');
+//   dxfLines.push(VIEWBOX_HEIGHT.toString());
+//   dxfLines.push('30');
+//   dxfLines.push('0.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$LIMMIN');
+//   dxfLines.push('10');
+//   dxfLines.push('0.0');
+//   dxfLines.push('20');
+//   dxfLines.push('0.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$LIMMAX');
+//   dxfLines.push('10');
+//   dxfLines.push(VIEWBOX_WIDTH.toString());
+//   dxfLines.push('20');
+//   dxfLines.push(VIEWBOX_HEIGHT.toString());
+//   dxfLines.push('9');
+//   dxfLines.push('$ORTHOMODE');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('9');
+//   dxfLines.push('$LTSCALE');
+//   dxfLines.push('40');
+//   dxfLines.push('1.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$ATTMODE');
+//   dxfLines.push('70');
+//   dxfLines.push('1');
+//   dxfLines.push('9');
+//   dxfLines.push('$TEXTSIZE');
+//   dxfLines.push('40');
+//   dxfLines.push('2.5');
+//   dxfLines.push('9');
+//   dxfLines.push('$TRACEWID');
+//   dxfLines.push('40');
+//   dxfLines.push('0.05');
+//   dxfLines.push('9');
+//   dxfLines.push('$TEXTSTYLE');
+//   dxfLines.push('7');
+//   dxfLines.push('STANDARD');
+//   dxfLines.push('9');
+//   dxfLines.push('$CLAYER');
+//   dxfLines.push('8');
+//   dxfLines.push('0');
+//   dxfLines.push('9');
+//   dxfLines.push('$DIMASZ');
+//   dxfLines.push('40');
+//   dxfLines.push('2.5');
+//   dxfLines.push('9');
+//   dxfLines.push('$DIMLFAC');
+//   dxfLines.push('40');
+//   dxfLines.push('1.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$DIMSCALE');
+//   dxfLines.push('40');
+//   dxfLines.push('1.0');
+//   dxfLines.push('9');
+//   dxfLines.push('$DIMTXT');
+//   dxfLines.push('40');
+//   dxfLines.push('2.5');
+//   // ADD $HANDSEED here, before ENDSEC of HEADER
+//   dxfLines.push('9');
+//   dxfLines.push('$HANDSEED');
+//   dxfLines.push('5'); // Group 5 for handle
+//   dxfLines.push(getNextHandle()); // Assign first handle to $HANDSEED, which will be 1
+//   dxfLines.push('0');
+//   dxfLines.push('ENDSEC');
+
+//   // CLASSES section for R13+ compatibility (add handles)
+//   dxfLines.push('0');
+//   dxfLines.push('SECTION');
+//   dxfLines.push('2');
+//   dxfLines.push('CLASSES');
+  
+//   dxfLines.push('0');
+//   dxfLines.push('CLASS');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this CLASS object
+//   dxfLines.push('100'); dxfLines.push('AcDbClass'); // Subclass marker
+//   dxfLines.push('1');
+//   dxfLines.push('ACDBDICTIONARYWDFLT');
+//   dxfLines.push('2');
+//   dxfLines.push('AcDbDictionaryWithDefault');
+//   dxfLines.push('3');
+//   dxfLines.push('ObjectDBX Classes');
+//   dxfLines.push('90');
+//   dxfLines.push('0');
+//   dxfLines.push('91');
+//   dxfLines.push('1');
+//   dxfLines.push('280');
+//   dxfLines.push('0');
+//   dxfLines.push('281');
+//   dxfLines.push('0');
+  
+//   dxfLines.push('0');
+//   dxfLines.push('CLASS');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this CLASS object
+//   dxfLines.push('100'); dxfLines.push('AcDbClass');
+//   dxfLines.push('1');
+//   dxfLines.push('MATERIAL');
+//   dxfLines.push('2');
+//   dxfLines.push('AcDbMaterial');
+//   dxfLines.push('3');
+//   dxfLines.push('ObjectDBX Classes');
+//   dxfLines.push('90');
+//   dxfLines.push('1153');
+//   dxfLines.push('91');
+//   dxfLines.push('3');
+//   dxfLines.push('280');
+//   dxfLines.push('0');
+//   dxfLines.push('281');
+//   dxfLines.push('0');
+  
+//   dxfLines.push('0');
+//   dxfLines.push('CLASS');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this CLASS object
+//   dxfLines.push('100'); dxfLines.push('AcDbClass');
+//   dxfLines.push('1');
+//   dxfLines.push('VISUALSTYLE');
+//   dxfLines.push('2');
+//   dxfLines.push('AcDbVisualStyle');
+//   dxfLines.push('3');
+//   dxfLines.push('ObjectDBX Classes');
+//   dxfLines.push('90');
+//   dxfLines.push('4095');
+//   dxfLines.push('91');
+//   dxfLines.push('24');
+//   dxfLines.push('280');
+//   dxfLines.push('0');
+//   dxfLines.push('281');
+//   dxfLines.push('0');
+//   dxfLines.push('0');
+//   dxfLines.push('ENDSEC');
+
+//   // DXF Tables for AutoCAD (add handles)
+//   dxfLines.push('0');
+//   dxfLines.push('SECTION');
+//   dxfLines.push('2');
+//   dxfLines.push('TABLES');
+
+//   // Viewport table (required for Illustrator compatibility)
+//   dxfLines.push('0');
+//   dxfLines.push('TABLE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for VPORT Table
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
+//   dxfLines.push('2');
+//   dxfLines.push('VPORT');
+//   dxfLines.push('70');
+//   dxfLines.push('1');
+  
+//   dxfLines.push('0');
+//   dxfLines.push('VPORT');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for *Active VPORT
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
+//   dxfLines.push('100'); dxfLines.push('AcDbViewportTableRecord');
+//   dxfLines.push('2');
+//   dxfLines.push('*Active');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('10');
+//   dxfLines.push('0.0');
+//   dxfLines.push('20');
+//   dxfLines.push('0.0');
+//   dxfLines.push('11');
+//   dxfLines.push('1.0');
+//   dxfLines.push('21');
+//   dxfLines.push('1.0');
+//   dxfLines.push('12');
+//   dxfLines.push('0.0');
+//   dxfLines.push('22');
+//   dxfLines.push('0.0');
+//   dxfLines.push('13');
+//   dxfLines.push('0.0');
+//   dxfLines.push('23');
+//   dxfLines.push('0.0');
+//   dxfLines.push('14');
+//   dxfLines.push('1.0');
+//   dxfLines.push('24');
+//   dxfLines.push('1.0');
+//   dxfLines.push('15');
+//   dxfLines.push('0.0');
+//   dxfLines.push('25');
+//   dxfLines.push('0.0');
+//   dxfLines.push('16');
+//   dxfLines.push('0.0');
+//   dxfLines.push('26');
+//   dxfLines.push('0.0');
+//   dxfLines.push('36');
+//   dxfLines.push('1.0');
+//   dxfLines.push('17'); // Camera position X
+//   dxfLines.push('108.0815506271596');
+//   dxfLines.push('27'); // Camera position Y
+//   dxfLines.push('148.5000119155985');
+//   dxfLines.push('37'); // Camera position Z
+//   dxfLines.push('0.0');
+//   dxfLines.push('40'); // View Height
+//   dxfLines.push('302.940024307821');
+//   dxfLines.push('41'); // Aspect ratio
+//   dxfLines.push('1.42206311037954');
+//   dxfLines.push('42'); // Lens length
+//   dxfLines.push('50.0');
+//   dxfLines.push('43');
+//   dxfLines.push('0.0');
+//   dxfLines.push('44');
+//   dxfLines.push('0.0');
+//   dxfLines.push('50');
+//   dxfLines.push('0.0');
+//   dxfLines.push('51');
+//   dxfLines.push('0.0');
+//   dxfLines.push('71');
+//   dxfLines.push('0');
+//   dxfLines.push('72');
+//   dxfLines.push('100');
+//   dxfLines.push('73');
+//   dxfLines.push('1');
+//   dxfLines.push('74');
+//   dxfLines.push('1');
+//   dxfLines.push('75');
+//   dxfLines.push('0');
+//   dxfLines.push('76');
+//   dxfLines.push('0');
+//   dxfLines.push('77');
+//   dxfLines.push('0');
+//   dxfLines.push('78');
+//   dxfLines.push('0');
+//   dxfLines.push('281');
+//   dxfLines.push('0');
+//   dxfLines.push('65');
+//   dxfLines.push('1');
+//   dxfLines.push('110');
+//   dxfLines.push('0.0');
+//   dxfLines.push('120');
+//   dxfLines.push('0.0');
+//   dxfLines.push('130');
+//   dxfLines.push('0.0');
+//   dxfLines.push('111');
+//   dxfLines.push('1.0');
+//   dxfLines.push('121');
+//   dxfLines.push('0.0');
+//   dxfLines.push('131');
+//   dxfLines.push('0.0');
+//   dxfLines.push('112');
+//   dxfLines.push('0.0');
+//   dxfLines.push('122');
+//   dxfLines.push('1.0');
+//   dxfLines.push('132');
+//   dxfLines.push('0.0');
+//   dxfLines.push('79');
+//   dxfLines.push('0');
+//   dxfLines.push('0');
+//   dxfLines.push('ENDTAB');
+
+//   // Layer table (add handles)
+//   dxfLines.push('0');
+//   dxfLines.push('TABLE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for LAYER Table
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
+//   dxfLines.push('2');
+//   dxfLines.push('LAYER');
+//   dxfLines.push('70');
+//   dxfLines.push('3');
+
+//   // Default layer
+//   dxfLines.push('0');
+//   dxfLines.push('LAYER');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for Layer '0'
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
+//   dxfLines.push('100'); dxfLines.push('AcDbLayerTableRecord');
+//   dxfLines.push('2');
+//   dxfLines.push('0');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('62');
+//   dxfLines.push('7');
+//   dxfLines.push('6');
+//   dxfLines.push('CONTINUOUS');
+//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LAYER Table)
+
+//   // PARTS layer
+//   dxfLines.push('0');
+//   dxfLines.push('LAYER');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for Layer 'PARTS'
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
+//   dxfLines.push('100'); dxfLines.push('AcDbLayerTableRecord');
+//   dxfLines.push('2');
+//   dxfLines.push('PARTS');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('62');
+//   dxfLines.push('1');
+//   dxfLines.push('6');
+//   dxfLines.push('CONTINUOUS');
+//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LAYER Table)
+
+//   // BIN layer
+//   dxfLines.push('0');
+//   dxfLines.push('LAYER');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for Layer 'BIN'
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
+//   dxfLines.push('100'); dxfLines.push('AcDbLayerTableRecord');
+//   dxfLines.push('2');
+//   dxfLines.push('BIN');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('62');
+//   dxfLines.push('2');
+//   dxfLines.push('6');
+//   dxfLines.push('CONTINUOUS');
+//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LAYER Table)
+
+//   dxfLines.push('0');
+//   dxfLines.push('ENDTAB');
+
+//   // Linetype table (add handles)
+//   dxfLines.push('0');
+//   dxfLines.push('TABLE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for LTYPE Table
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
+//   dxfLines.push('2');
+//   dxfLines.push('LTYPE');
+//   dxfLines.push('70');
+//   dxfLines.push('1');
+  
+//   dxfLines.push('0');
+//   dxfLines.push('LTYPE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for LTYPE 'CONTINUOUS'
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
+//   dxfLines.push('100'); dxfLines.push('AcDbLinetypeTableRecord');
+//   dxfLines.push('2');
+//   dxfLines.push('CONTINUOUS');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('3');
+//   dxfLines.push('Solid line');
+//   dxfLines.push('72');
+//   dxfLines.push('65');
+//   dxfLines.push('73');
+//   dxfLines.push('0');
+//   dxfLines.push('40');
+//   dxfLines.push('0.0'); // Total pattern length for empty pattern
+//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LTYPE Table)
+//   dxfLines.push('0');
+//   dxfLines.push('ENDTAB');
+
+//   // Style table (add handles)
+//   dxfLines.push('0');
+//   dxfLines.push('TABLE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for STYLE Table
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
+//   dxfLines.push('2');
+//   dxfLines.push('STYLE');
+//   dxfLines.push('70');
+//   dxfLines.push('1');
+  
+//   dxfLines.push('0');
+//   dxfLines.push('STYLE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for STYLE 'STANDARD'
+//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
+//   dxfLines.push('100'); dxfLines.push('AcDbTextStyleTableRecord');
+//   dxfLines.push('2');
+//   dxfLines.push('STANDARD');
+//   dxfLines.push('70');
+//   dxfLines.push('0');
+//   dxfLines.push('40');
+//   dxfLines.push('0.0');
+//   dxfLines.push('41');
+//   dxfLines.push('1.0');
+//   dxfLines.push('50');
+//   dxfLines.push('0.0');
+//   dxfLines.push('71');
+//   dxfLines.push('0');
+//   dxfLines.push('42');
+//   dxfLines.push('2.5');
+//   dxfLines.push('3');
+//   dxfLines.push(''); // Font file name (empty for default)
+//   dxfLines.push('4');
+//   dxfLines.push(''); // Big font file name (empty)
+//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of STYLE Table)
+//   dxfLines.push('0');
+//   dxfLines.push('ENDTAB');
+
+//   dxfLines.push('0');
+//   dxfLines.push('ENDSEC');
+
+//   // BLOCKS section (required for Illustrator compatibility, add handles if blocks were present)
+//   // For now, it's empty, but if you add blocks, they would need handles.
+//   dxfLines.push('0');
+//   dxfLines.push('SECTION');
+//   dxfLines.push('2');
+//   dxfLines.push('BLOCKS');
+//   dxfLines.push('0');
+//   dxfLines.push('ENDSEC');
+
+//   // DXF Entities
+//   dxfLines.push('0');
+//   dxfLines.push('SECTION');
+//   dxfLines.push('2');
+//   dxfLines.push('ENTITIES');
+  
+//   // Add bin boundary as LWPOLYLINE (add handle and owner)
+//   const binPolygon = [
+//     { x: PADDING, y: PADDING },
+//     { x: 1000 + PADDING, y: PADDING },
+//     { x: 1000 + PADDING, y: 2000 + PADDING },
+//     { x: PADDING, y: 2000 + PADDING }
+//   ];
+
+//   dxfLines.push('0');
+//   dxfLines.push('LWPOLYLINE');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for the BIN LWPOLYLINE
+//   dxfLines.push('100'); dxfLines.push('AcDbEntity'); // Subclass marker
+//   dxfLines.push('8');
+//   dxfLines.push('BIN'); // Layer name
+//   dxfLines.push('100'); dxfLines.push('AcDbPolyline'); // Subclass marker
+//   dxfLines.push('90'); // Number of vertices
+//   dxfLines.push(binPolygon.length.toString());
+//   dxfLines.push('70'); // Polyline flags
+//   dxfLines.push('1'); // Flag 1 = Closed polyline
+
+//   binPolygon.forEach(point => {
+//     dxfLines.push('10'); // X coordinate
+//     dxfLines.push(point.x.toString());
+//     dxfLines.push('20'); // Y coordinate
+//     dxfLines.push(point.y.toString());
+//   });
+
+//   // Add all parts from placements (add handle and owner)
+//   placements.forEach((placement: NestingPlacement) => {
+//     placement.parts.forEach((part: NestingPart) => {
+//       if (!part.polygons || !part.polygons[0]) return;
+
+//       // Transform polygon points (apply rotation and translation)
+//       const transformedPoints = part.polygons[0].map(pt => {
+//         const angle = (part.rotation || 0) * Math.PI / 180;
+//         const cos = Math.cos(angle);
+//         const sin = Math.sin(angle);
+//         const x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
+//         const y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
+//         return { x, y };
+//       });
+
+//       // Adjust polygon closure logic for LWPOLYLINE.
+//       // For LWPOLYLINE with flag 1 (closed), the last point should NOT be a repeat of the first.
+//       // The DXF reader closes the loop automatically.
+//       let pointsForLWPolyline = [...transformedPoints];
+
+//       if (pointsForLWPolyline.length > 0 &&
+//           pointsForLWPolyline[0].x === pointsForLWPolyline[pointsForLWPolyline.length - 1].x &&
+//           pointsForLWPolyline[0].y === pointsForLWPolyline[pointsForLWPolyline.length - 1].y) {
+//           pointsForLWPolyline.pop(); // Remove the duplicate closing point
+//       }
+      
+//       // Ensure there are enough points after processing
+//       if (pointsForLWPolyline.length < 2) {
+//           console.warn('Skipping part due to insufficient points for LWPOLYLINE after processing:', part);
+//           return; // Skip this part if it's not a valid polyline
+//       }
+
+//       // Add part as LWPOLYLINE
+//       dxfLines.push('0');
+//       dxfLines.push('LWPOLYLINE');
+//       dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this PART LWPOLYLINE
+//       dxfLines.push('100'); dxfLines.push('AcDbEntity'); // Subclass marker
+//       dxfLines.push('8');
+//       dxfLines.push('PARTS'); // Layer name
+//       dxfLines.push('100'); dxfLines.push('AcDbPolyline'); // Subclass marker
+//       dxfLines.push('90'); // Number of vertices
+//       dxfLines.push(pointsForLWPolyline.length.toString());
+//       dxfLines.push('70'); // Polyline flags
+//       dxfLines.push('1'); // Flag 1 = Closed polyline
+
+//       pointsForLWPolyline.forEach(point => {
+//         dxfLines.push('10'); // X coordinate
+//         dxfLines.push(point.x.toString());
+//         dxfLines.push('20'); // Y coordinate
+//         dxfLines.push(point.y.toString());
+//       });
+//     });
+//   });
+
+//   dxfLines.push('0');
+//   dxfLines.push('ENDSEC');
+
+//   // OBJECTS section (add a minimal root dictionary)
+//   dxfLines.push('0');
+//   dxfLines.push('SECTION');
+//   dxfLines.push('2');
+//   dxfLines.push('OBJECTS');
+
+//   // Root Dictionary - essential for handle-based DXF.
+//   // Its handle is typically 1 (if $HANDSEED starts at 1) and its owner is 0 (null).
+//   dxfLines.push('0');
+//   dxfLines.push('DICTIONARY');
+//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Assign a handle for the root dictionary
+//   dxfLines.push('102'); dxfLines.push('{ACAD_REACTORS'); // Begin reactors group (optional but often present)
+//   dxfLines.push('330'); dxfLines.push('1'); // Reactor to the root dictionary itself (or another handle)
+//   dxfLines.push('102'); dxfLines.push('}'); // End reactors group
+//   dxfLines.push('330'); dxfLines.push('0'); // Owner handle (0 for root dictionary)
+//   dxfLines.push('100'); dxfLines.push('AcDbDictionary'); // Subclass marker
+//   dxfLines.push('280'); dxfLines.push('1'); // Hard-pointer owner flag
+//   dxfLines.push('281'); dxfLines.push('0'); // Cloned dictionary (0 = No, 1 = Yes)
+
+//   dxfLines.push('0');
+//   dxfLines.push('ENDSEC');
+
+//   dxfLines.push('0');
+//   dxfLines.push('EOF');
+
+//   // Use CRLF line endings for maximum compatibility
+//   return dxfLines.join('\r\n');
+// }
+  const generateSVG = (placements: NestingPlacement[], foamSheetName: string): string => {
     const PADDING = 10; // 10mm padding
-    const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
-    const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
+    const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // 1020mm total width
+    const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // 2020mm total height
     
-    let dxfLines: string[] = [];
+    // Get the selected sheet's placement data
+    const selectedSheet = placements[0]; // We're only exporting one sheet
+    const allParts = selectedSheet.parts || [];
     
-    // DXF Header for AutoCAD R12
-    dxfLines.push('0');
-    dxfLines.push('SECTION');
-    dxfLines.push('2');
-    dxfLines.push('HEADER');
-    dxfLines.push('9');
-    dxfLines.push('$ACADVER');
-    dxfLines.push('1');
-    dxfLines.push('AC1009');
-    dxfLines.push('9');
-    dxfLines.push('$DWGCODEPAGE');
-    dxfLines.push('3');
-    dxfLines.push('ANSI_1252');
-    dxfLines.push('9');
-    dxfLines.push('$INSBASE');
-    dxfLines.push('10');
-    dxfLines.push('0.0');
-    dxfLines.push('20');
-    dxfLines.push('0.0');
-    dxfLines.push('30');
-    dxfLines.push('0.0');
-    dxfLines.push('9');
-    dxfLines.push('$EXTMIN');
-    dxfLines.push('10');
-    dxfLines.push('0.0');
-    dxfLines.push('20');
-    dxfLines.push('0.0');
-    dxfLines.push('30');
-    dxfLines.push('0.0');
-    dxfLines.push('9');
-    dxfLines.push('$EXTMAX');
-    dxfLines.push('10');
-    dxfLines.push(VIEWBOX_WIDTH.toString());
-    dxfLines.push('20');
-    dxfLines.push(VIEWBOX_HEIGHT.toString());
-    dxfLines.push('30');
-    dxfLines.push('0.0');
-    dxfLines.push('9');
-    dxfLines.push('$LIMMIN');
-    dxfLines.push('10');
-    dxfLines.push('0.0');
-    dxfLines.push('20');
-    dxfLines.push('0.0');
-    dxfLines.push('9');
-    dxfLines.push('$LIMMAX');
-    dxfLines.push('10');
-    dxfLines.push(VIEWBOX_WIDTH.toString());
-    dxfLines.push('20');
-    dxfLines.push(VIEWBOX_HEIGHT.toString());
-    dxfLines.push('9');
-    dxfLines.push('$ORTHOMODE');
-    dxfLines.push('70');
-    dxfLines.push('0');
-    dxfLines.push('9');
-    dxfLines.push('$LTSCALE');
-    dxfLines.push('40');
-    dxfLines.push('1.0');
-    dxfLines.push('9');
-    dxfLines.push('$ATTMODE');
-    dxfLines.push('70');
-    dxfLines.push('1');
-    dxfLines.push('9');
-    dxfLines.push('$TEXTSIZE');
-    dxfLines.push('40');
-    dxfLines.push('2.5');
-    dxfLines.push('9');
-    dxfLines.push('$TRACEWID');
-    dxfLines.push('40');
-    dxfLines.push('0.05');
-    dxfLines.push('9');
-    dxfLines.push('$TEXTSTYLE');
-    dxfLines.push('7');
-    dxfLines.push('STANDARD');
-    dxfLines.push('9');
-    dxfLines.push('$CLAYER');
-    dxfLines.push('8');
-    dxfLines.push('0');
-    dxfLines.push('9');
-    dxfLines.push('$DIMASZ');
-    dxfLines.push('40');
-    dxfLines.push('2.5');
-    dxfLines.push('9');
-    dxfLines.push('$DIMLFAC');
-    dxfLines.push('40');
-    dxfLines.push('1.0');
-    dxfLines.push('9');
-    dxfLines.push('$DIMSCALE');
-    dxfLines.push('40');
-    dxfLines.push('1.0');
-    dxfLines.push('9');
-    dxfLines.push('$DIMTXT');
-    dxfLines.push('40');
-    dxfLines.push('2.5');
-    dxfLines.push('0');
-    dxfLines.push('ENDSEC');
+    // Gather all points after translation/rotation
+    let allPoints: { x: number, y: number }[] = [];
+    allParts.forEach((part: NestingPart) => {
+      if (part.polygons && part.polygons[0]) {
+        const angle = (part.rotation || 0) * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        part.polygons[0].forEach(pt => {
+          const x = pt.x * cos - pt.y * sin + (part.x || 0);
+          const y = pt.x * sin + pt.y * cos + (part.y || 0);
+          allPoints.push({ x, y });
+        });
+      }
+    });
     
-    // DXF Tables for AutoCAD R12
-    dxfLines.push('0');
-    dxfLines.push('SECTION');
-    dxfLines.push('2');
-    dxfLines.push('TABLES');
+    // Compute bounding box of all points
+    let minX = allPoints.length > 0 ? Math.min(...allPoints.map(p => p.x)) : 0;
+    let minY = allPoints.length > 0 ? Math.min(...allPoints.map(p => p.y)) : 0;
+    let maxX = allPoints.length > 0 ? Math.max(...allPoints.map(p => p.x)) : 1000;
+    let maxY = allPoints.length > 0 ? Math.max(...allPoints.map(p => p.y)) : 2000;
     
-    // Layer table
-    dxfLines.push('0');
-    dxfLines.push('TABLE');
-    dxfLines.push('2');
-    dxfLines.push('LAYER');
-    dxfLines.push('70');
-    dxfLines.push('3');
+    // Compute scale to fit the specified viewBox dimensions
+    const polyWidth = maxX - minX;
+    const polyHeight = maxY - minY;
+    const scale = Math.min(
+      VIEWBOX_WIDTH / polyWidth,
+      VIEWBOX_HEIGHT / polyHeight
+    );
     
-    // Default layer
-    dxfLines.push('0');
-    dxfLines.push('LAYER');
-    dxfLines.push('2');
-    dxfLines.push('0');
-    dxfLines.push('70');
-    dxfLines.push('0');
-    dxfLines.push('62');
-    dxfLines.push('7');
-    dxfLines.push('6');
-    dxfLines.push('CONTINUOUS');
+    // Compute translation to center polygons in the viewBox
+    const offsetX = (VIEWBOX_WIDTH - polyWidth * scale) / 2 - minX * scale;
+    const offsetY = (VIEWBOX_HEIGHT - polyHeight * scale) / 2 - minY * scale;
     
-    // PARTS layer
-    dxfLines.push('0');
-    dxfLines.push('LAYER');
-    dxfLines.push('2');
-    dxfLines.push('PARTS');
-    dxfLines.push('70');
-    dxfLines.push('0');
-    dxfLines.push('62');
-    dxfLines.push('1');
-    dxfLines.push('6');
-    dxfLines.push('CONTINUOUS');
+    // Generate unique order colors
+    const uniqueOrders = (() => {
+      const items = nestingQueueData[foamSheetName]?.items || [];
+      const grouped = items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
+        const key = `${item.orderId}-${item.customerName}`;
+        if (!acc[key]) {
+          acc[key] = { orderId: item.orderId, customerName: item.customerName, items: [] };
+        }
+        acc[key].items.push(item);
+        return acc;
+      }, {});
+      return Object.values(grouped);
+    })();
     
-    // BIN layer
-    dxfLines.push('0');
-    dxfLines.push('LAYER');
-    dxfLines.push('2');
-    dxfLines.push('BIN');
-    dxfLines.push('70');
-    dxfLines.push('0');
-    dxfLines.push('62');
-    dxfLines.push('2');
-    dxfLines.push('6');
-    dxfLines.push('CONTINUOUS');
+    // SVG header
+    let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${VIEWBOX_WIDTH}mm" height="${VIEWBOX_HEIGHT}mm" viewBox="0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .viewbox { stroke: #000000; stroke-width: 2; fill: #ffffff; }
+      .part { stroke: #000000; stroke-width: 1; fill: none; }
+    </style>
+  </defs>`;
     
-    dxfLines.push('0');
-    dxfLines.push('ENDTAB');
-    
-    // Linetype table
-    dxfLines.push('0');
-    dxfLines.push('TABLE');
-    dxfLines.push('2');
-    dxfLines.push('LTYPE');
-    dxfLines.push('70');
-    dxfLines.push('1');
-    dxfLines.push('0');
-    dxfLines.push('LTYPE');
-    dxfLines.push('2');
-    dxfLines.push('CONTINUOUS');
-    dxfLines.push('70');
-    dxfLines.push('0');
-    dxfLines.push('3');
-    dxfLines.push('Solid line');
-    dxfLines.push('72');
-    dxfLines.push('65');
-    dxfLines.push('73');
-    dxfLines.push('0');
-    dxfLines.push('ENDTAB');
-    
-    // Style table
-    dxfLines.push('0');
-    dxfLines.push('TABLE');
-    dxfLines.push('2');
-    dxfLines.push('STYLE');
-    dxfLines.push('70');
-    dxfLines.push('1');
-    dxfLines.push('0');
-    dxfLines.push('STYLE');
-    dxfLines.push('2');
-    dxfLines.push('STANDARD');
-    dxfLines.push('70');
-    dxfLines.push('0');
-    dxfLines.push('40');
-    dxfLines.push('0.0');
-    dxfLines.push('41');
-    dxfLines.push('1.0');
-    dxfLines.push('50');
-    dxfLines.push('0.0');
-    dxfLines.push('71');
-    dxfLines.push('0');
-    dxfLines.push('42');
-    dxfLines.push('2.5');
-    dxfLines.push('3');
-    dxfLines.push('');
-    dxfLines.push('4');
-    dxfLines.push('');
-    dxfLines.push('0');
-    dxfLines.push('ENDTAB');
-    
-    dxfLines.push('0');
-    dxfLines.push('ENDSEC');
-    
-    // DXF Entities
-    dxfLines.push('0');
-    dxfLines.push('SECTION');
-    dxfLines.push('2');
-    dxfLines.push('ENTITIES');
-    
-    // Add bin boundary as POLYLINE
-    const binPolygon = [
+    // Add viewbox boundary
+    const viewboxPolygon = [
       { x: PADDING, y: PADDING },
       { x: 1000 + PADDING, y: PADDING },
       { x: 1000 + PADDING, y: 2000 + PADDING },
-      { x: PADDING, y: 2000 + PADDING },
-      { x: PADDING, y: PADDING }
+      { x: PADDING, y: 2000 + PADDING }
     ];
+    const viewboxPoints = viewboxPolygon.map(pt => `${pt.x},${pt.y}`).join(' ');
+    svgContent += `
+  <polygon points="${viewboxPoints}" class="viewbox" />`;
     
-    dxfLines.push('0');
-    dxfLines.push('POLYLINE');
-    dxfLines.push('8');
-    dxfLines.push('BIN');
-    dxfLines.push('66');
-    dxfLines.push('1');
-    dxfLines.push('70');
-    dxfLines.push('1');
-    
-    binPolygon.forEach(point => {
-      dxfLines.push('0');
-      dxfLines.push('VERTEX');
-      dxfLines.push('8');
-      dxfLines.push('BIN');
-      dxfLines.push('10');
-      dxfLines.push(point.x.toString());
-      dxfLines.push('20');
-      dxfLines.push(point.y.toString());
-      dxfLines.push('30');
-      dxfLines.push('0.0');
-    });
-    
-    dxfLines.push('0');
-    dxfLines.push('SEQEND');
-    
-    // Add all parts from placements
-    placements.forEach((placement: NestingPlacement, placementIndex: number) => {
-      placement.parts.forEach((part: NestingPart, partIndex: number) => {
-        if (!part.polygons || !part.polygons[0]) return;
-        
-        // Transform polygon points (apply rotation and translation)
-        const transformedPoints = part.polygons[0].map(pt => {
-          const angle = (part.rotation || 0) * Math.PI / 180;
-          const cos = Math.cos(angle);
-          const sin = Math.sin(angle);
-          const x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
-          const y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
-          return { x, y };
-        });
-        
-        // Close the polygon if not already closed
-        if (transformedPoints.length > 0 && 
-            (transformedPoints[0].x !== transformedPoints[transformedPoints.length - 1].x || 
-             transformedPoints[0].y !== transformedPoints[transformedPoints.length - 1].y)) {
-          transformedPoints.push(transformedPoints[0]);
-        }
-        
-        // Add part as POLYLINE
-        dxfLines.push('0');
-        dxfLines.push('POLYLINE');
-        dxfLines.push('8');
-        dxfLines.push('PARTS');
-        dxfLines.push('66');
-        dxfLines.push('1');
-        dxfLines.push('70');
-        dxfLines.push('1');
-        
-        transformedPoints.forEach(point => {
-          dxfLines.push('0');
-          dxfLines.push('VERTEX');
-          dxfLines.push('8');
-          dxfLines.push('PARTS');
-          dxfLines.push('10');
-          dxfLines.push(point.x.toString());
-          dxfLines.push('20');
-          dxfLines.push(point.y.toString());
-          dxfLines.push('30');
-          dxfLines.push('0.0');
-        });
-        
-        dxfLines.push('0');
-        dxfLines.push('SEQEND');
+    // Add all parts
+    selectedSheet.parts.forEach((part: NestingPart, partIndex: number) => {
+      if (!part.polygons || !part.polygons[0]) return;
+      
+      // Transform polygon points
+      const transformedPoints = part.polygons[0].map(pt => {
+        const angle = (part.rotation || 0) * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
+        const y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
+        return { x, y };
       });
+      
+      const points = transformedPoints.map(pt => `${pt.x},${pt.y}`).join(' ');
+      
+      // Add part polygon (outline only, no fill)
+      svgContent += `
+  <polygon points="${points}" class="part" />`;
     });
     
-    // DXF Footer
-    dxfLines.push('0');
-    dxfLines.push('ENDSEC');
-    dxfLines.push('0');
-    dxfLines.push('EOF');
+    svgContent += `
+</svg>`;
     
-    return dxfLines.join('\n');
+    return svgContent;
   }
 
   // Update the table in the first section to show nesting queue data
@@ -2396,17 +2751,34 @@ export default function Manufacturing() {
                     <h1 className="text-xl font-bold text-white">
                       Nesting Visualization
                     </h1>
-                    <button 
-                      className={`px-4 py-2 rounded-md ${
-                        selectedNestingRow 
-                          ? 'text-white bg-blue-500 hover:bg-blue-600' 
-                          : 'text-gray-400 bg-gray-500 cursor-not-allowed'
-                      }`}
-                      onClick={handleExportNestingVisualization}
-                      disabled={!selectedNestingRow}
-                    >
-                      Export
-                    </button>
+                    {selectedNestingRow && (() => {
+                      // Get the nesting data for the selected row and sheet
+                      const nestingData = nestingQueueData[selectedNestingRow];
+                      const placements = nestingData?.nestingResult?.placements || [];
+                      
+                      if (placements.length === 0 || selectedSheetIndex >= placements.length) {
+                        return null;
+                      }
+
+                      const selectedSheet = placements[selectedSheetIndex];
+                      const sheetsToExport = [selectedSheet]; // Export only the selected sheet
+
+                      // Generate SVG content
+                      const svgContent = generateSVG(sheetsToExport, selectedNestingRow);
+                      
+                      return (
+                        <DxfConverterButton
+                          svgContent={svgContent}
+                          userId={userProfile?.email || ''}
+                          onConversionSuccess={(dxfUrl) => {
+                            console.log('DXF conversion successful:', dxfUrl);
+                          }}
+                          onConversionError={(error) => {
+                            console.error('DXF conversion failed:', error);
+                          }}
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="h-full overflow-y-auto">

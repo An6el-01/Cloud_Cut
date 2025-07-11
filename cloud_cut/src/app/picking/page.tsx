@@ -14,7 +14,6 @@ export default function Picking () {
     const { loading, error} = useSelector((state: RootState) => state.orders);
     const dispatch = useDispatch<AppDispatch>();
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [allRetailPacksChecked, setAllRetailPacksChecked] = useState(false);
     const [retailPackFilter, setRetailPackFilter] = useState('');
     const [retailPackPage, setRetailPackPage] = useState(1);
     const retailPacksPerPage = 15;
@@ -100,18 +99,6 @@ export default function Picking () {
         return filteredPacks.slice(tableBStartIndex, tableBEndIndex);
     };
 
-    const findOrdersWithRetailPack = (retailPack: string | null) => {
-        if(!retailPack) return [];
-
-        // Return cached orders if already fetched
-        if(ordersWithRetailPacks[retailPack]) {
-            return ordersWithRetailPacks[retailPack];
-        }
-
-        // If not cached, trigger a background fetch and return empty array for now
-        fetchOrdersWithRetailPack(retailPack);
-        return [];
-    }
 
     const fetchOrdersWithRetailPack = async (retailPack: string | null) => {
         if(!retailPack) return [];
@@ -278,34 +265,6 @@ export default function Picking () {
         setShowRetailPackConfirmDialog(true);
     };
 
-    const handleTableAAllRetailPacksCheckbox = async () => {
-        const tableARetailPacks = getTableARetailPacks();
-        const tableARetailPackOrders = [];
-        
-        for (const [retailPackName] of tableARetailPacks) {
-            const orders = await fetchOrdersWithRetailPack(retailPackName);
-            const orderIds = orders.map(order => order.order_id);
-            tableARetailPackOrders.push({ retailPackName, orderIds });
-        }
-        
-        setPendingRetailPackOrders(tableARetailPackOrders);
-        setShowRetailPackConfirmDialog(true);
-    };
-
-    const handleTableBAllRetailPacksCheckbox = async () => {
-        const tableBRetailPacks = getTableBRetailPacks();
-        const tableBRetailPackOrders = [];
-        
-        for (const [retailPackName] of tableBRetailPacks) {
-            const orders = await fetchOrdersWithRetailPack(retailPackName);
-            const orderIds = orders.map(order => order.order_id);
-            tableBRetailPackOrders.push({ retailPackName, orderIds });
-        }
-        
-        setPendingRetailPackOrders(tableBRetailPackOrders);
-        setShowRetailPackConfirmDialog(true);
-    };
-
     // Add this function to mark all retail packs as picked (completed)
     const markAllRetailPacksAsPicked = async (retailPackOrders: RetailPackOrders) => {
         console.log('markAllRetailPacksAsPicked called with:', retailPackOrders);
@@ -389,28 +348,7 @@ export default function Picking () {
                                                     <tr>
                                                         <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
                                                         <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
-                                                        <th className="px-6 py-4 text-center">
-                                                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={allRetailPacksChecked}
-                                                                        onChange={handleTableAAllRetailPacksCheckbox}
-                                                                        className="sr-only peer"
-                                                                        aria-label="Mark all retail packs as packed"
-                                                                        disabled={getTableARetailPacks().length === 0}
-                                                                    />
-                                                                    <div className="w-5 h-5 border-2 border-black rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                                                        {allRetailPacksChecked && (
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                                                                            <path d="m9 12 2 2 4-4" />
-                                                                          </svg>
-                                                                        )}
-                                                                    </div>
-                                                                </label>
-                                                            </div>
-                                                        </th>
+                                                        <th className="px-6 py-4 text-center text-lg font-semibold text-black">Select</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-300">
@@ -544,28 +482,7 @@ export default function Picking () {
                                                     <tr>
                                                         <th className="px-6 py-4 text-left text-lg font-semibold text-black">Retail Pack</th>
                                                         <th className="px-6 py-4 text-center text-lg font-semibold text-black">Quantity</th>
-                                                        <th className="px-6 py-4 text-center">
-                                                            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                                                <label className={`relative inline-flex items-center cursor-pointer`}>
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={allRetailPacksChecked}
-                                                                        onChange={handleTableBAllRetailPacksCheckbox}
-                                                                        className="sr-only peer"
-                                                                        aria-label="Mark all retail packs as packed"
-                                                                        disabled={getTableBRetailPacks().length === 0}
-                                                                    />
-                                                                    <div className="w-5 h-5 border-2 border-black rounded peer-checked:bg-green-500 peer-checked:border-green-500 peer-focus:ring-2 peer-focus:ring-green-400/50 transition-all flex items-center justify-center">
-                                                                        {allRetailPacksChecked && (
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                                                                            <path d="m9 12 2 2 4-4" />
-                                                                          </svg>
-                                                                        )}
-                                                                    </div>
-                                                                </label>
-                                                            </div>
-                                                        </th>
+                                                        <th className="px-6 py-4 text-center text-lg font-semibold text-black">Select</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-300">
