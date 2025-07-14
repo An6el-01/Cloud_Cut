@@ -1762,607 +1762,6 @@ export default function Manufacturing() {
     setSelectedFoamSheet(null);
   }
 
-  // const handleExportNestingVisualization = () => {
-  //   // Export the nesting visualization as an SVG file
-  //   if (!selectedNestingRow || !nestingQueueData[selectedNestingRow]) {
-  //     console.warn('No nesting row selected for export');
-  //     return;
-  //   }
-
-  //   try {
-  //     // Get the nesting data for the selected row and sheet
-  //     const nestingData = nestingQueueData[selectedNestingRow];
-  //     const placements = nestingData.nestingResult?.placements || [];
-      
-  //     if (placements.length === 0 || selectedSheetIndex >= placements.length) {
-  //       console.warn('No placement data available for export');
-  //       return;
-  //     }
-
-  //     const selectedSheet = placements[selectedSheetIndex];
-  //     const sheetsToExport = [selectedSheet]; // Export only the selected sheet
-
-  //     // Generate SVG content
-  //     const svgContent = generateSVG(sheetsToExport, selectedNestingRow);
-      
-  //     // Create and download the file
-  //     const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-  //     const url = URL.createObjectURL(blob);
-  //     const link = document.createElement('a');
-  //     link.href = url;
-  //     const sheetSuffix = placements.length > 1 ? `_sheet${selectedSheetIndex + 1}` : '';
-  //     link.download = `nesting_${selectedNestingRow}${sheetSuffix}_${new Date().toISOString().split('T')[0]}.svg`;
-  //     document.body.appendChild(link);
-  //     link.click();
-  //     document.body.removeChild(link);
-  //     URL.revokeObjectURL(url);
-      
-  //     console.log('SVG file exported successfully');
-  //   } catch (error) {
-  //     console.error('Error exporting SVG file:', error);
-  //   }
-  // }
-
-// // Helper function to generate DXF content for AutoCAD 2010 (AC1024)
-// const generateDXF = (placements: NestingPlacement[], foamSheetName: string): string => {
-//   const PADDING = 10; // 10mm padding
-//   const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // mm
-//   const VIEWBOX_HEIGHT = 2000 + 2 * PADDING; // mm
-
-//   let dxfLines: string[] = [];
-
-//   // Initialize handle counter. Handles are hexadecimal.
-//   // Start from 1, or a higher number if you have known fixed handles for root objects.
-//   let currentHandle = 1;
-
-//   // Helper to get next handle and increment
-//   const getNextHandle = (): string => {
-//     return (currentHandle++).toString(16).toUpperCase();
-//   };
-
-//   // DXF Header for AutoCAD 2010
-//   dxfLines.push('0');
-//   dxfLines.push('SECTION');
-//   dxfLines.push('2');
-//   dxfLines.push('HEADER');
-//   dxfLines.push('9');
-//   dxfLines.push('$ACADVER');
-//   dxfLines.push('1');
-//   dxfLines.push('AC1024'); // AutoCAD 2010
-//   dxfLines.push('9');
-//   dxfLines.push('$DWGCODEPAGE');
-//   dxfLines.push('3');
-//   dxfLines.push('ANSI_1252');
-//   dxfLines.push('9');
-//   dxfLines.push('$INSBASE');
-//   dxfLines.push('10');
-//   dxfLines.push('0.0');
-//   dxfLines.push('20');
-//   dxfLines.push('0.0');
-//   dxfLines.push('30');
-//   dxfLines.push('0.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$EXTMIN');
-//   dxfLines.push('10');
-//   dxfLines.push('0.0');
-//   dxfLines.push('20');
-//   dxfLines.push('0.0');
-//   dxfLines.push('30');
-//   dxfLines.push('0.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$EXTMAX');
-//   dxfLines.push('10');
-//   dxfLines.push(VIEWBOX_WIDTH.toString());
-//   dxfLines.push('20');
-//   dxfLines.push(VIEWBOX_HEIGHT.toString());
-//   dxfLines.push('30');
-//   dxfLines.push('0.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$LIMMIN');
-//   dxfLines.push('10');
-//   dxfLines.push('0.0');
-//   dxfLines.push('20');
-//   dxfLines.push('0.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$LIMMAX');
-//   dxfLines.push('10');
-//   dxfLines.push(VIEWBOX_WIDTH.toString());
-//   dxfLines.push('20');
-//   dxfLines.push(VIEWBOX_HEIGHT.toString());
-//   dxfLines.push('9');
-//   dxfLines.push('$ORTHOMODE');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('9');
-//   dxfLines.push('$LTSCALE');
-//   dxfLines.push('40');
-//   dxfLines.push('1.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$ATTMODE');
-//   dxfLines.push('70');
-//   dxfLines.push('1');
-//   dxfLines.push('9');
-//   dxfLines.push('$TEXTSIZE');
-//   dxfLines.push('40');
-//   dxfLines.push('2.5');
-//   dxfLines.push('9');
-//   dxfLines.push('$TRACEWID');
-//   dxfLines.push('40');
-//   dxfLines.push('0.05');
-//   dxfLines.push('9');
-//   dxfLines.push('$TEXTSTYLE');
-//   dxfLines.push('7');
-//   dxfLines.push('STANDARD');
-//   dxfLines.push('9');
-//   dxfLines.push('$CLAYER');
-//   dxfLines.push('8');
-//   dxfLines.push('0');
-//   dxfLines.push('9');
-//   dxfLines.push('$DIMASZ');
-//   dxfLines.push('40');
-//   dxfLines.push('2.5');
-//   dxfLines.push('9');
-//   dxfLines.push('$DIMLFAC');
-//   dxfLines.push('40');
-//   dxfLines.push('1.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$DIMSCALE');
-//   dxfLines.push('40');
-//   dxfLines.push('1.0');
-//   dxfLines.push('9');
-//   dxfLines.push('$DIMTXT');
-//   dxfLines.push('40');
-//   dxfLines.push('2.5');
-//   // ADD $HANDSEED here, before ENDSEC of HEADER
-//   dxfLines.push('9');
-//   dxfLines.push('$HANDSEED');
-//   dxfLines.push('5'); // Group 5 for handle
-//   dxfLines.push(getNextHandle()); // Assign first handle to $HANDSEED, which will be 1
-//   dxfLines.push('0');
-//   dxfLines.push('ENDSEC');
-
-//   // CLASSES section for R13+ compatibility (add handles)
-//   dxfLines.push('0');
-//   dxfLines.push('SECTION');
-//   dxfLines.push('2');
-//   dxfLines.push('CLASSES');
-  
-//   dxfLines.push('0');
-//   dxfLines.push('CLASS');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this CLASS object
-//   dxfLines.push('100'); dxfLines.push('AcDbClass'); // Subclass marker
-//   dxfLines.push('1');
-//   dxfLines.push('ACDBDICTIONARYWDFLT');
-//   dxfLines.push('2');
-//   dxfLines.push('AcDbDictionaryWithDefault');
-//   dxfLines.push('3');
-//   dxfLines.push('ObjectDBX Classes');
-//   dxfLines.push('90');
-//   dxfLines.push('0');
-//   dxfLines.push('91');
-//   dxfLines.push('1');
-//   dxfLines.push('280');
-//   dxfLines.push('0');
-//   dxfLines.push('281');
-//   dxfLines.push('0');
-  
-//   dxfLines.push('0');
-//   dxfLines.push('CLASS');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this CLASS object
-//   dxfLines.push('100'); dxfLines.push('AcDbClass');
-//   dxfLines.push('1');
-//   dxfLines.push('MATERIAL');
-//   dxfLines.push('2');
-//   dxfLines.push('AcDbMaterial');
-//   dxfLines.push('3');
-//   dxfLines.push('ObjectDBX Classes');
-//   dxfLines.push('90');
-//   dxfLines.push('1153');
-//   dxfLines.push('91');
-//   dxfLines.push('3');
-//   dxfLines.push('280');
-//   dxfLines.push('0');
-//   dxfLines.push('281');
-//   dxfLines.push('0');
-  
-//   dxfLines.push('0');
-//   dxfLines.push('CLASS');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this CLASS object
-//   dxfLines.push('100'); dxfLines.push('AcDbClass');
-//   dxfLines.push('1');
-//   dxfLines.push('VISUALSTYLE');
-//   dxfLines.push('2');
-//   dxfLines.push('AcDbVisualStyle');
-//   dxfLines.push('3');
-//   dxfLines.push('ObjectDBX Classes');
-//   dxfLines.push('90');
-//   dxfLines.push('4095');
-//   dxfLines.push('91');
-//   dxfLines.push('24');
-//   dxfLines.push('280');
-//   dxfLines.push('0');
-//   dxfLines.push('281');
-//   dxfLines.push('0');
-//   dxfLines.push('0');
-//   dxfLines.push('ENDSEC');
-
-//   // DXF Tables for AutoCAD (add handles)
-//   dxfLines.push('0');
-//   dxfLines.push('SECTION');
-//   dxfLines.push('2');
-//   dxfLines.push('TABLES');
-
-//   // Viewport table (required for Illustrator compatibility)
-//   dxfLines.push('0');
-//   dxfLines.push('TABLE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for VPORT Table
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
-//   dxfLines.push('2');
-//   dxfLines.push('VPORT');
-//   dxfLines.push('70');
-//   dxfLines.push('1');
-  
-//   dxfLines.push('0');
-//   dxfLines.push('VPORT');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for *Active VPORT
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
-//   dxfLines.push('100'); dxfLines.push('AcDbViewportTableRecord');
-//   dxfLines.push('2');
-//   dxfLines.push('*Active');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('10');
-//   dxfLines.push('0.0');
-//   dxfLines.push('20');
-//   dxfLines.push('0.0');
-//   dxfLines.push('11');
-//   dxfLines.push('1.0');
-//   dxfLines.push('21');
-//   dxfLines.push('1.0');
-//   dxfLines.push('12');
-//   dxfLines.push('0.0');
-//   dxfLines.push('22');
-//   dxfLines.push('0.0');
-//   dxfLines.push('13');
-//   dxfLines.push('0.0');
-//   dxfLines.push('23');
-//   dxfLines.push('0.0');
-//   dxfLines.push('14');
-//   dxfLines.push('1.0');
-//   dxfLines.push('24');
-//   dxfLines.push('1.0');
-//   dxfLines.push('15');
-//   dxfLines.push('0.0');
-//   dxfLines.push('25');
-//   dxfLines.push('0.0');
-//   dxfLines.push('16');
-//   dxfLines.push('0.0');
-//   dxfLines.push('26');
-//   dxfLines.push('0.0');
-//   dxfLines.push('36');
-//   dxfLines.push('1.0');
-//   dxfLines.push('17'); // Camera position X
-//   dxfLines.push('108.0815506271596');
-//   dxfLines.push('27'); // Camera position Y
-//   dxfLines.push('148.5000119155985');
-//   dxfLines.push('37'); // Camera position Z
-//   dxfLines.push('0.0');
-//   dxfLines.push('40'); // View Height
-//   dxfLines.push('302.940024307821');
-//   dxfLines.push('41'); // Aspect ratio
-//   dxfLines.push('1.42206311037954');
-//   dxfLines.push('42'); // Lens length
-//   dxfLines.push('50.0');
-//   dxfLines.push('43');
-//   dxfLines.push('0.0');
-//   dxfLines.push('44');
-//   dxfLines.push('0.0');
-//   dxfLines.push('50');
-//   dxfLines.push('0.0');
-//   dxfLines.push('51');
-//   dxfLines.push('0.0');
-//   dxfLines.push('71');
-//   dxfLines.push('0');
-//   dxfLines.push('72');
-//   dxfLines.push('100');
-//   dxfLines.push('73');
-//   dxfLines.push('1');
-//   dxfLines.push('74');
-//   dxfLines.push('1');
-//   dxfLines.push('75');
-//   dxfLines.push('0');
-//   dxfLines.push('76');
-//   dxfLines.push('0');
-//   dxfLines.push('77');
-//   dxfLines.push('0');
-//   dxfLines.push('78');
-//   dxfLines.push('0');
-//   dxfLines.push('281');
-//   dxfLines.push('0');
-//   dxfLines.push('65');
-//   dxfLines.push('1');
-//   dxfLines.push('110');
-//   dxfLines.push('0.0');
-//   dxfLines.push('120');
-//   dxfLines.push('0.0');
-//   dxfLines.push('130');
-//   dxfLines.push('0.0');
-//   dxfLines.push('111');
-//   dxfLines.push('1.0');
-//   dxfLines.push('121');
-//   dxfLines.push('0.0');
-//   dxfLines.push('131');
-//   dxfLines.push('0.0');
-//   dxfLines.push('112');
-//   dxfLines.push('0.0');
-//   dxfLines.push('122');
-//   dxfLines.push('1.0');
-//   dxfLines.push('132');
-//   dxfLines.push('0.0');
-//   dxfLines.push('79');
-//   dxfLines.push('0');
-//   dxfLines.push('0');
-//   dxfLines.push('ENDTAB');
-
-//   // Layer table (add handles)
-//   dxfLines.push('0');
-//   dxfLines.push('TABLE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for LAYER Table
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
-//   dxfLines.push('2');
-//   dxfLines.push('LAYER');
-//   dxfLines.push('70');
-//   dxfLines.push('3');
-
-//   // Default layer
-//   dxfLines.push('0');
-//   dxfLines.push('LAYER');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for Layer '0'
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
-//   dxfLines.push('100'); dxfLines.push('AcDbLayerTableRecord');
-//   dxfLines.push('2');
-//   dxfLines.push('0');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('62');
-//   dxfLines.push('7');
-//   dxfLines.push('6');
-//   dxfLines.push('CONTINUOUS');
-//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LAYER Table)
-
-//   // PARTS layer
-//   dxfLines.push('0');
-//   dxfLines.push('LAYER');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for Layer 'PARTS'
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
-//   dxfLines.push('100'); dxfLines.push('AcDbLayerTableRecord');
-//   dxfLines.push('2');
-//   dxfLines.push('PARTS');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('62');
-//   dxfLines.push('1');
-//   dxfLines.push('6');
-//   dxfLines.push('CONTINUOUS');
-//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LAYER Table)
-
-//   // BIN layer
-//   dxfLines.push('0');
-//   dxfLines.push('LAYER');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for Layer 'BIN'
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
-//   dxfLines.push('100'); dxfLines.push('AcDbLayerTableRecord');
-//   dxfLines.push('2');
-//   dxfLines.push('BIN');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('62');
-//   dxfLines.push('2');
-//   dxfLines.push('6');
-//   dxfLines.push('CONTINUOUS');
-//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LAYER Table)
-
-//   dxfLines.push('0');
-//   dxfLines.push('ENDTAB');
-
-//   // Linetype table (add handles)
-//   dxfLines.push('0');
-//   dxfLines.push('TABLE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for LTYPE Table
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
-//   dxfLines.push('2');
-//   dxfLines.push('LTYPE');
-//   dxfLines.push('70');
-//   dxfLines.push('1');
-  
-//   dxfLines.push('0');
-//   dxfLines.push('LTYPE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for LTYPE 'CONTINUOUS'
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
-//   dxfLines.push('100'); dxfLines.push('AcDbLinetypeTableRecord');
-//   dxfLines.push('2');
-//   dxfLines.push('CONTINUOUS');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('3');
-//   dxfLines.push('Solid line');
-//   dxfLines.push('72');
-//   dxfLines.push('65');
-//   dxfLines.push('73');
-//   dxfLines.push('0');
-//   dxfLines.push('40');
-//   dxfLines.push('0.0'); // Total pattern length for empty pattern
-//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of LTYPE Table)
-//   dxfLines.push('0');
-//   dxfLines.push('ENDTAB');
-
-//   // Style table (add handles)
-//   dxfLines.push('0');
-//   dxfLines.push('TABLE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for STYLE Table
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTable');
-//   dxfLines.push('2');
-//   dxfLines.push('STYLE');
-//   dxfLines.push('70');
-//   dxfLines.push('1');
-  
-//   dxfLines.push('0');
-//   dxfLines.push('STYLE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for STYLE 'STANDARD'
-//   dxfLines.push('100'); dxfLines.push('AcDbSymbolTableRecord');
-//   dxfLines.push('100'); dxfLines.push('AcDbTextStyleTableRecord');
-//   dxfLines.push('2');
-//   dxfLines.push('STANDARD');
-//   dxfLines.push('70');
-//   dxfLines.push('0');
-//   dxfLines.push('40');
-//   dxfLines.push('0.0');
-//   dxfLines.push('41');
-//   dxfLines.push('1.0');
-//   dxfLines.push('50');
-//   dxfLines.push('0.0');
-//   dxfLines.push('71');
-//   dxfLines.push('0');
-//   dxfLines.push('42');
-//   dxfLines.push('2.5');
-//   dxfLines.push('3');
-//   dxfLines.push(''); // Font file name (empty for default)
-//   dxfLines.push('4');
-//   dxfLines.push(''); // Big font file name (empty)
-//   dxfLines.push('330'); dxfLines.push(dxfLines[dxfLines.lastIndexOf('5') - 1]); // Owner handle (handle of STYLE Table)
-//   dxfLines.push('0');
-//   dxfLines.push('ENDTAB');
-
-//   dxfLines.push('0');
-//   dxfLines.push('ENDSEC');
-
-//   // BLOCKS section (required for Illustrator compatibility, add handles if blocks were present)
-//   // For now, it's empty, but if you add blocks, they would need handles.
-//   dxfLines.push('0');
-//   dxfLines.push('SECTION');
-//   dxfLines.push('2');
-//   dxfLines.push('BLOCKS');
-//   dxfLines.push('0');
-//   dxfLines.push('ENDSEC');
-
-//   // DXF Entities
-//   dxfLines.push('0');
-//   dxfLines.push('SECTION');
-//   dxfLines.push('2');
-//   dxfLines.push('ENTITIES');
-  
-//   // Add bin boundary as LWPOLYLINE (add handle and owner)
-//   const binPolygon = [
-//     { x: PADDING, y: PADDING },
-//     { x: 1000 + PADDING, y: PADDING },
-//     { x: 1000 + PADDING, y: 2000 + PADDING },
-//     { x: PADDING, y: 2000 + PADDING }
-//   ];
-
-//   dxfLines.push('0');
-//   dxfLines.push('LWPOLYLINE');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for the BIN LWPOLYLINE
-//   dxfLines.push('100'); dxfLines.push('AcDbEntity'); // Subclass marker
-//   dxfLines.push('8');
-//   dxfLines.push('BIN'); // Layer name
-//   dxfLines.push('100'); dxfLines.push('AcDbPolyline'); // Subclass marker
-//   dxfLines.push('90'); // Number of vertices
-//   dxfLines.push(binPolygon.length.toString());
-//   dxfLines.push('70'); // Polyline flags
-//   dxfLines.push('1'); // Flag 1 = Closed polyline
-
-//   binPolygon.forEach(point => {
-//     dxfLines.push('10'); // X coordinate
-//     dxfLines.push(point.x.toString());
-//     dxfLines.push('20'); // Y coordinate
-//     dxfLines.push(point.y.toString());
-//   });
-
-//   // Add all parts from placements (add handle and owner)
-//   placements.forEach((placement: NestingPlacement) => {
-//     placement.parts.forEach((part: NestingPart) => {
-//       if (!part.polygons || !part.polygons[0]) return;
-
-//       // Transform polygon points (apply rotation and translation)
-//       const transformedPoints = part.polygons[0].map(pt => {
-//         const angle = (part.rotation || 0) * Math.PI / 180;
-//         const cos = Math.cos(angle);
-//         const sin = Math.sin(angle);
-//         const x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
-//         const y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
-//         return { x, y };
-//       });
-
-//       // Adjust polygon closure logic for LWPOLYLINE.
-//       // For LWPOLYLINE with flag 1 (closed), the last point should NOT be a repeat of the first.
-//       // The DXF reader closes the loop automatically.
-//       let pointsForLWPolyline = [...transformedPoints];
-
-//       if (pointsForLWPolyline.length > 0 &&
-//           pointsForLWPolyline[0].x === pointsForLWPolyline[pointsForLWPolyline.length - 1].x &&
-//           pointsForLWPolyline[0].y === pointsForLWPolyline[pointsForLWPolyline.length - 1].y) {
-//           pointsForLWPolyline.pop(); // Remove the duplicate closing point
-//       }
-      
-//       // Ensure there are enough points after processing
-//       if (pointsForLWPolyline.length < 2) {
-//           console.warn('Skipping part due to insufficient points for LWPOLYLINE after processing:', part);
-//           return; // Skip this part if it's not a valid polyline
-//       }
-
-//       // Add part as LWPOLYLINE
-//       dxfLines.push('0');
-//       dxfLines.push('LWPOLYLINE');
-//       dxfLines.push('5'); dxfLines.push(getNextHandle()); // Handle for this PART LWPOLYLINE
-//       dxfLines.push('100'); dxfLines.push('AcDbEntity'); // Subclass marker
-//       dxfLines.push('8');
-//       dxfLines.push('PARTS'); // Layer name
-//       dxfLines.push('100'); dxfLines.push('AcDbPolyline'); // Subclass marker
-//       dxfLines.push('90'); // Number of vertices
-//       dxfLines.push(pointsForLWPolyline.length.toString());
-//       dxfLines.push('70'); // Polyline flags
-//       dxfLines.push('1'); // Flag 1 = Closed polyline
-
-//       pointsForLWPolyline.forEach(point => {
-//         dxfLines.push('10'); // X coordinate
-//         dxfLines.push(point.x.toString());
-//         dxfLines.push('20'); // Y coordinate
-//         dxfLines.push(point.y.toString());
-//       });
-//     });
-//   });
-
-//   dxfLines.push('0');
-//   dxfLines.push('ENDSEC');
-
-//   // OBJECTS section (add a minimal root dictionary)
-//   dxfLines.push('0');
-//   dxfLines.push('SECTION');
-//   dxfLines.push('2');
-//   dxfLines.push('OBJECTS');
-
-//   // Root Dictionary - essential for handle-based DXF.
-//   // Its handle is typically 1 (if $HANDSEED starts at 1) and its owner is 0 (null).
-//   dxfLines.push('0');
-//   dxfLines.push('DICTIONARY');
-//   dxfLines.push('5'); dxfLines.push(getNextHandle()); // Assign a handle for the root dictionary
-//   dxfLines.push('102'); dxfLines.push('{ACAD_REACTORS'); // Begin reactors group (optional but often present)
-//   dxfLines.push('330'); dxfLines.push('1'); // Reactor to the root dictionary itself (or another handle)
-//   dxfLines.push('102'); dxfLines.push('}'); // End reactors group
-//   dxfLines.push('330'); dxfLines.push('0'); // Owner handle (0 for root dictionary)
-//   dxfLines.push('100'); dxfLines.push('AcDbDictionary'); // Subclass marker
-//   dxfLines.push('280'); dxfLines.push('1'); // Hard-pointer owner flag
-//   dxfLines.push('281'); dxfLines.push('0'); // Cloned dictionary (0 = No, 1 = Yes)
-
-//   dxfLines.push('0');
-//   dxfLines.push('ENDSEC');
-
-//   dxfLines.push('0');
-//   dxfLines.push('EOF');
-
-//   // Use CRLF line endings for maximum compatibility
-//   return dxfLines.join('\r\n');
-// }
   const generateSVG = (placements: NestingPlacement[], foamSheetName: string): string => {
     const PADDING = 10; // 10mm padding
     const VIEWBOX_WIDTH = 1000 + 2 * PADDING; // 1020mm total width
@@ -3364,161 +2763,130 @@ export default function Manufacturing() {
                     </div>
                   </div>
                 </>
-
               )}
-
             </div>
           </div>
 
           {/**Medium Sheets Order Details Section */}
-          <div className="flex-1 w-full h-[calc(100vh-300px)] overflow-hidden">
-            <div className="bg-black/90 rounded-xl shadow-xl overflow-hidden e h-full w-full flex flex-col">
-              <div className="px-6 py-5  bg-black/90">
-                <h2 className="text-2xl font-bold text-white text-center">
-                  Confirm Completion
-                </h2>
+          <div className="flex-1 w-full h-[calc(100vh-290px)] overflow-hidden">
+            <div className="bg-gradient-to-r from-black/90 to-black/90 shadow-xl overflow-hidden h-full w-full flex flex-col border">
+              {/* Streamlined Header */}
+              <div className="px-6 py-4">
+                <div className="text-center text-2xl text-white">
+                  {selectedFoamSheet ? (
+                    <div className="inline-flex items-center justify-center gap-2">
+                      <div className={`w-4 h-4 rounded-full ${getSheetColorClass(formatMediumSheetName(selectedFoamSheet))}`}></div>
+                      <span className="text-xl font-semibold text-white">{formatMediumSheetName(selectedFoamSheet)}</span>
+                    </div>
+                  ) : (
+                    <span className="text-lg text-gray-400">Select a Medium Sheet</span>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 overflow-auto p-4">
-                <div className="h-full">   
-                  <div className="overflow-x-auto rounded-xl border border-slate-200/20 shadow-2xl h-full bg-gradient-to-br from-slate-800 via-slate-600 to-slate-800">
-                    <div className="w-full h-full p-4 flex flex-col">
-                      {/* Header */}
-                      <div className="mb-4">
-                        <h2 className="text-xl font-bold text-white text-center tracking-tight">
-                          {selectedFoamSheet ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <div className={`w-4 h-4 rounded-full shadow-lg ${getSheetColorClass(formatMediumSheetName(selectedFoamSheet))}`}></div>
-                              <span className="text-lg">{formatMediumSheetName(selectedFoamSheet)}</span>
+              
+              <div className="flex-1 p-6 overflow-hidden">
+                <div className="h-full flex flex-col">
+                  {selectedFoamSheet ? (
+                    <div className="h-full flex flex-col">
+                      {/* Input Section */}
+                      <div className="flex-1 mb-2">
+                        <div className= "flex items-center gap-3 mb-4">
+                          <h3 className="text-lg font-semibold text-white mb-2">Input</h3>
+                          <div className="flex-1 h-px bg-gradient-to-r from-red-500/50 to-transparent"></div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 h-[calc(100%-2rem)]">
+                          {/* Current Stock Card */}
+                          <div className="bg-gradient-to-br from-red-600/20 via-red-500/10 to-red-500/20 backdrop-blur-xl border border-red-400/30 rounded-lg p-6 text-center flex flex-col justify-center">
+                            <div className="text-4xl font-bold text-white font-mono mb-3">
+                              {finishedStockBySku[selectedFoamSheet] ?? 0}
                             </div>
-                          ) : (
-                            <span className="text-slate-400">Select a Medium Sheet</span>
-                          )}
-                        </h2>
-                      </div>
-
-                      {selectedFoamSheet ? (
-                        <>
-                          {/* Cards Grid */}
-                          <div className="grid grid-cols-2 gap-3 flex-1">
-                            {/* Current Stock */}
-                             <div className="bg-slate-800/50 backdrop-blur-sm border border-blue-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-blue-400/50 flex flex-col">
-                               <div className="flex items-center gap-2 mb-2">
-                                 <div className="p-1.5 bg-blue-500/20 rounded-md">
-                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                   </svg>
-                                 </div>
-                                 <h3 className="text-md font-semibold text-blue-300 uppercase tracking-wide">Current Stock Available</h3>
-                               </div>
-                               <div className="flex-1 flex items-center justify-center">
-                                 <div className="text-5xl font-bold text-white font-mono">
-                                   {finishedStockBySku[selectedFoamSheet] ?? 0}
-                                 </div>
-                               </div>
-                             </div>
-
-                              {/* Cutting Required */}
-                             <div className="bg-slate-800/50 backdrop-blur-sm border border-orange-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-orange-400/50 flex flex-col">
-                               <div className="flex items-center gap-2 mb-2">
-                                 <div className="p-1.5 bg-orange-500/20 rounded-md">
-                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" />
-                                   </svg>
-                                 </div>
-                                 <h3 className="text-md font-semibold text-orange-300 uppercase tracking-wide">2X1's To Cut</h3>
-                               </div>
-                               <div className="flex-1 flex items-center justify-center">
-                                 <div className="text-5xl font-bold text-white font-mono">
-                                   {(() => {
-                                     const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
-                                     const needed = Math.max(0, selectedMediumSheetQuantity - stock);
-                                     let adjusted = needed;
-                                     if (needed > 0 && needed % 4 !== 0) {
-                                       adjusted = Math.ceil(needed / 4) * 4;
-                                     }
-                                     const numSheets = adjusted > 0 ? adjusted / 4 : 0;
-                                     return numSheets;
-                                   })()}
-                                 </div>
-                               </div>
-                             </div>
-
-                              {/* Take to Packing */}
-                             <div className="bg-slate-800/50 backdrop-blur-sm border border-emerald-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-emerald-400/50 flex flex-col">
-                               <div className="flex items-center gap-2 mb-2">
-                                 <div className="p-1.5 bg-emerald-500/20 rounded-md">
-                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                                   </svg>
-                                 </div>
-                                 <h3 className="text-md font-semibold text-emerald-300 uppercase tracking-wide">Take To Packing</h3>
-                               </div>
-                               <div className="flex-1 flex items-center justify-center">
-                                 <div className="text-5xl font-bold text-white font-mono">
-                                   {selectedMediumSheetQuantity || 0}
-                                 </div>
-                               </div>
-                             </div>
-
-                              {/* Stock After */}
-                             <div className="bg-slate-800/50 backdrop-blur-sm border border-violet-500/30 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 hover:border-violet-400/50 flex flex-col">
-                               <div className="flex items-center gap-2 mb-2">
-                                 <div className="p-1.5 bg-violet-500/20 rounded-md">
-                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                   </svg>
-                                 </div>
-                                 <h3 className="text-md font-semibold text-violet-300 uppercase tracking-wide">New Stock Level</h3>
-                               </div>
-                               <div className="flex-1 flex items-center justify-center">
-                                 <div className="text-5xl font-bold text-white font-mono">
-                                   {(() => {
-                                     const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
-                                     const needed = Math.max(0, selectedMediumSheetQuantity - stock);
-                                     let adjusted = needed;
-                                     if (needed > 0 && needed % 4 !== 0) {
-                                       adjusted = Math.ceil(needed / 4) * 4;
-                                     }
-                                     const numSheets = adjusted > 0 ? adjusted / 4 : 0;
-                                     const newStockLevel = stock + (numSheets * 4) - selectedMediumSheetQuantity;
-                                     return newStockLevel;
-                                   })()}
-                                 </div>
-                               </div>
-                             </div>
+                            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">In Stock</h4>
                           </div>
 
-                          {/* Action Button */}
-                          <div className="mt-4">
-                            <button
-                              type="button"
-                              className="w-full px-4 py-2.5 rounded-lg text-white font-semibold bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:from-emerald-500 hover:via-emerald-400 hover:to-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/50 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
-                              onClick={handleConfirmMediumSheet}
-                            >
-                              <div className="flex items-center justify-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                                Confirm Processing
-                              </div>
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex-1 flex items-center justify-center">
-                          <div className="text-center text-slate-400">
-                            <div className="w-12 h-12 mx-auto mb-3 p-3 bg-slate-800/50 rounded-full">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
+                          {/* Cutting Required Card */}
+                          <div className="bg-gradient-to-br from-red-600/20 via-red-500/10 to-red-500/20 backdrop-blur-xl border border-red-400/30 rounded-lg p-6 text-center flex flex-col justify-center">
+                            <div className="text-4xl font-bold text-white font-mono mb-3">
+                              {(() => {
+                                const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
+                                const needed = Math.max(0, selectedMediumSheetQuantity - stock);
+                                let adjusted = needed;
+                                if (needed > 0 && needed % 4 !== 0) {
+                                  adjusted = Math.ceil(needed / 4) * 4;
+                                }
+                                const numSheets = adjusted > 0 ? adjusted / 4 : 0;
+                                return numSheets;
+                              })()}
                             </div>
-                            <p className="text-sm font-medium">No medium sheet selected</p>
-                            <p className="text-xs mt-1 text-slate-500">Select a sheet to view details</p>
+                            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">2X1's To Cut</h4>
                           </div>
                         </div>
-                      )}
+                      </div>
+
+                      {/* Output Section */}
+                      <div className="flex-1 mt-8 mb-3">
+                        <div className= "flex items-center gap-3 mb-4">
+                          <h3 className="text-lg font-semibold text-white mb-2">Output</h3>
+                          <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 h-[calc(100%-2rem)]">
+                          {/* Medium Sheets Card */}
+                          <div className="bg-gradient-to-br from-emerald-600/20 via-emerald-500/10 to-emerald-500/20 backdrop-blur-xl border border-emerald-400/30 rounded-lg p-6 text-center flex flex-col justify-center">
+                            <div className="text-4xl font-bold text-white font-mono mb-3">
+                              {selectedMediumSheetQuantity || 0}
+                            </div>
+                            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">Medium Sheets To Packing</h4>
+                          </div>
+
+                          {/* New Stock Level Card */}
+                          <div className="bg-gradient-to-br from-emerald-600/20 via-emerald-500/10 to-emerald-500/20 backdrop-blur-xl border border-emerald-400/30 rounded-lg p-6 text-center flex flex-col justify-center">
+                            <div className="text-4xl font-bold text-white font-mono mb-3">
+                              {(() => {
+                                const stock = finishedStockBySku[selectedFoamSheet] ?? 0;
+                                const needed = Math.max(0, selectedMediumSheetQuantity - stock);
+                                let adjusted = needed;
+                                if (needed > 0 && needed % 4 !== 0) {
+                                  adjusted = Math.ceil(needed / 4) * 4;
+                                }
+                                const numSheets = adjusted > 0 ? adjusted / 4 : 0;
+                                const newStockLevel = stock + (numSheets * 4) - selectedMediumSheetQuantity;
+                                return newStockLevel;
+                              })()}
+                            </div>
+                            <h4 className="text-sm font-semibold text-white uppercase tracking-wide">New Stock Level</h4>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Button */}
+                      <div className="mt-6">
+                        <button
+                          type="button"
+                          className="w-full px-6 py-4 rounded-lg text-white font-semibold bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400/50 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+                          onClick={handleConfirmMediumSheet}
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Confirm Processing
+                          </div>
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-16 h-16 mx-auto mb-4 p-4 bg-slate-800/50 rounded-2xl">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-300 mb-2">No Medium Sheet Selected</h3>
+                        <p className="text-gray-400 text-sm">Select a sheet from the table to view details</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
