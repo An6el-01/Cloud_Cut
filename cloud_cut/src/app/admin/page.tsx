@@ -371,12 +371,23 @@ export default function Admin() {
     const [searchTerm, setSearchTerm] = useState("");
     const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
     const [filteredPendingOrders, setFilteredPendingOrders] = useState<Order[]>([]);
+    const [combinedSearchResults, setCombinedSearchResults] = useState<(Order & { orderType: 'pending' | 'completed' })[]>([]);
+    const [searchResultsPage, setSearchResultsPage] = useState(1);
     
     // Sorting functionality
     const [sortConfig, setSortConfig] = useState<{field: SortField, direction: SortDirection}>({
         field: 'order_date',
         direction: 'desc'
     });
+    
+    // Calculate pagination values based on current view
+    const isSearchMode = searchTerm.trim().length > 0;
+    
+    // Pagination for search results
+    const searchResultsStartIndex = (searchResultsPage - 1) * ordersPerPage;
+    const searchResultsEndIndex = searchResultsStartIndex + ordersPerPage;
+    const paginatedSearchResults = combinedSearchResults.slice(searchResultsStartIndex, searchResultsEndIndex);
+    const totalSearchPages = Math.ceil(combinedSearchResults.length / ordersPerPage);
     
     // Calculate pagination values based on filtered orders
     const indexOfLastOrder = completedOrdersPage * ordersPerPage;
@@ -482,23 +493,31 @@ export default function Admin() {
             name: 'filterAndSortOrdersUseEffect-Admin',
             op: 'data.processing'
         }, async () => {
-            // Handle completed orders
-            if (archivedOrders) {
-                let result = [...archivedOrders];
-
-                // Apply search filter
-                if (searchTerm) {
+            // Handle search mode - combine both datasets
+            if (searchTerm.trim()) {
                     const lowerSearchTerm = searchTerm.toLowerCase();
-                    result = result.filter(
-                        (order) =>
+                
+                // Filter and mark completed orders
+                const filteredCompleted = (archivedOrders || [])
+                    .filter(order => 
                             order.order_id.toLowerCase().includes(lowerSearchTerm) ||
                             order.customer_name.toLowerCase().includes(lowerSearchTerm)
-                    );
-                }
+                    )
+                    .map(order => ({ ...order, orderType: 'completed' as const }));
 
-                // Apply sorting
-                result.sort((a, b) => {
-                    // For completed orders, we don't have priority, so handle other fields
+                // Filter and mark pending orders
+                const filteredPending = (activeOrders || [])
+                    .filter(order =>
+                        order.order_id.toLowerCase().includes(lowerSearchTerm) ||
+                        order.customer_name.toLowerCase().includes(lowerSearchTerm)
+                    )
+                    .map(order => ({ ...order, orderType: 'pending' as const }));
+
+                // Combine and sort results
+                const combined = [...filteredCompleted, ...filteredPending];
+                
+                // Apply sorting to combined results
+                combined.sort((a, b) => {
                     let fieldA: any, fieldB: any;
                     
                     switch (sortConfig.field) {
@@ -515,9 +534,17 @@ export default function Admin() {
                             fieldB = b.customer_name;
                             break;
                         case 'priority':
-                            // Priority doesn't apply to completed orders, use order_date as fallback
+                            // For mixed results, handle priority carefully
+                            if (a.orderType === 'pending' && b.orderType === 'pending') {
+                                const priorityA = 'calculatedPriority' in a ? (a as OrderWithPriority).calculatedPriority : 10;
+                                const priorityB = 'calculatedPriority' in b ? (b as OrderWithPriority).calculatedPriority : 10;
+                                fieldA = priorityA;
+                                fieldB = priorityB;
+                            } else {
+                                // Fallback to order_date for mixed or completed orders
                             fieldA = a.order_date;
                             fieldB = b.order_date;
+                            }
                             break;
                         default:
                             return 0;
@@ -537,74 +564,32 @@ export default function Admin() {
                     return 0;
                 });
 
-                setFilteredOrders(result);
+                setCombinedSearchResults(combined);
+                setSearchResultsPage(1); // Reset to first page when search changes
+            } else {
+                // Clear search results when no search term
+                setCombinedSearchResults([]);
+                setSearchResultsPage(1);
             }
 
-            // Handle pending orders
+            // Handle completed orders (for non-search mode)
+            if (archivedOrders) {
+                let result = [...archivedOrders];
+
+                // Apply search filter only in non-search mode
+                if (!searchTerm.trim()) {
+                    setFilteredOrders(result);
+                }
+            }
+
+            // Handle pending orders (for non-search mode)
             if (activeOrders) {
                 let result = [...activeOrders];
 
-                // Apply search filter
-                if (searchTerm) {
-                    const lowerSearchTerm = searchTerm.toLowerCase();
-                    result = result.filter(
-                        (order) =>
-                            order.order_id.toLowerCase().includes(lowerSearchTerm) ||
-                            order.customer_name.toLowerCase().includes(lowerSearchTerm)
-                    );
+                // Apply search filter only in non-search mode
+                if (!searchTerm.trim()) {
+                    setFilteredPendingOrders(result);
                 }
-
-                // Apply sorting
-                result.sort((a, b) => {
-                    if (sortConfig.field === 'priority') {
-                        // For priority sorting, use calculatedPriority if available, otherwise use a default value
-                        const priorityA = 'calculatedPriority' in a ? (a as OrderWithPriority).calculatedPriority : 10;
-                        const priorityB = 'calculatedPriority' in b ? (b as OrderWithPriority).calculatedPriority : 10;
-                        
-                        if (priorityA < priorityB) {
-                            return sortConfig.direction === 'asc' ? -1 : 1;
-                        }
-                        if (priorityA > priorityB) {
-                            return sortConfig.direction === 'asc' ? 1 : -1;
-                        }
-                        return 0;
-                    } else {
-                        // For other fields, use the standard sorting
-                        let fieldA: any, fieldB: any;
-                        
-                        switch (sortConfig.field) {
-                            case 'order_id':
-                                fieldA = a.order_id;
-                                fieldB = b.order_id;
-                                break;
-                            case 'order_date':
-                                fieldA = a.order_date;
-                                fieldB = b.order_date;
-                                break;
-                            case 'customer_name':
-                                fieldA = a.customer_name;
-                                fieldB = b.customer_name;
-                                break;
-                            default:
-                                return 0;
-                        }
-                        
-                        // Handle null/undefined values
-                        if (fieldA == null && fieldB == null) return 0;
-                        if (fieldA == null) return sortConfig.direction === 'asc' ? -1 : 1;
-                        if (fieldB == null) return sortConfig.direction === 'asc' ? 1 : -1;
-                        
-                        if (fieldA < fieldB) {
-                            return sortConfig.direction === 'asc' ? -1 : 1;
-                        }
-                        if (fieldA > fieldB) {
-                            return sortConfig.direction === 'asc' ? 1 : -1;
-                        }
-                        return 0;
-                    }
-                });
-
-                setFilteredPendingOrders(result);
             }
         });
     }, [archivedOrders, activeOrders, searchTerm, sortConfig]);
@@ -645,44 +630,7 @@ export default function Admin() {
         };
     }, [dispatch, completedOrdersPage, ordersPerPage]);
     
-    // Filter orders when search term or original orders change
-    useEffect(() => {
-        filterOrders();
-    }, [searchTerm, archivedOrders, activeOrders]);
-    
-    // Filter orders based on search term
-    const filterOrders = () => {
-        Sentry.startSpan({
-            name: 'filterOrders-Admin',
-            op: 'data.search'
-        }, async () => {
-            if (!searchTerm.trim()) {
-                setFilteredOrders(archivedOrders);
-                setFilteredPendingOrders(activeOrders);
-                return;
-            }
-            
-            const term = searchTerm.toLowerCase().trim();
-            
-            // Filter completed orders
-            const filteredCompleted = archivedOrders.filter(order => 
-                order.order_id.toLowerCase().includes(term) || 
-                order.customer_name.toLowerCase().includes(term)
-            );
-            setFilteredOrders(filteredCompleted);
-            
-            // Filter pending orders
-            const filteredPending = activeOrders.filter(order => 
-                order.order_id.toLowerCase().includes(term) || 
-                order.customer_name.toLowerCase().includes(term)
-            );
-            setFilteredPendingOrders(filteredPending);
-            
-            // Reset to first page when search changes
-            setCompletedOrdersPage(1);
-            setPendingOrdersPage(1);
-        });
-    };
+
     
     // Clear search
     const handleClearSearch = () => {
@@ -691,6 +639,8 @@ export default function Admin() {
             op: 'ui.interaction.search'
         }, async () => {
             setSearchTerm("");
+            setCombinedSearchResults([]);
+            setSearchResultsPage(1);
         });
     };
 
@@ -724,7 +674,12 @@ export default function Admin() {
             name: 'handlePageChange-Admin',
             op: 'ui.navigation'
         }, async () => {
-            if (orderTableTab === 'Completed Orders') {
+            if (isSearchMode) {
+                if (pageNumber >= 1 && pageNumber <= totalSearchPages) {
+                    setSearchResultsPage(pageNumber);
+                    window.scrollTo(0, 0);
+                }
+            } else if (orderTableTab === 'Completed Orders') {
                 if (pageNumber >= 1 && pageNumber <= totalPages) {
                     setCompletedOrdersPage(pageNumber);
                     window.scrollTo(0, 0);
@@ -898,7 +853,16 @@ export default function Admin() {
                         orderId={selectedOrderId}
                         onClose={() => setShowOrderItems(false)}
                         items={
-                            orderTableTab === 'Completed Orders' 
+                            isSearchMode
+                                ? (() => {
+                                    const result = combinedSearchResults.find(order => order.order_id === selectedOrderId);
+                                    if (result?.orderType === 'completed') {
+                                        return archivedOrderItems[selectedOrderId] || [];
+                                    } else {
+                                        return orderItems[selectedOrderId] || [];
+                                    }
+                                })()
+                                : orderTableTab === 'Completed Orders' 
                                 ? archivedOrderItems[selectedOrderId!] || []
                                 : orderItems[selectedOrderId!] || []
                         }
@@ -910,14 +874,14 @@ export default function Admin() {
                     <div className="bg-[#1d1d1d]/90 rounded-t-lg backdrop-blur-sm p-4">
                         <div className="flex flex-col space-y-3 md:space-y-0 md:flex-row justify-between items-start md:items-center">
                             <h1 className="text-2xl font-bold text-white">
-                                {orderTableTab === 'Completed Orders' && 'Completed Orders'}
-                                {orderTableTab === 'Pending Orders' && 'Pending Orders'}
+                                {isSearchMode ? 'Search Results' : 
+                                    (orderTableTab === 'Completed Orders' ? 'Completed Orders' : 'Pending Orders')}
                             </h1>
                             <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-3 w-full md:w-auto">
                                 {/* Search results counter */}
                                 {searchTerm && (
                                     <div className="text-sm text-gray-300 self-start sm:self-center sm:mr-4" aria-live="polite">
-                                        Found {orderTableTab === 'Completed Orders' ? filteredOrders.length : filteredPendingOrders.length} {orderTableTab === 'Completed Orders' ? (filteredOrders.length === 1 ? 'result' : 'results') : (filteredPendingOrders.length === 1 ? 'result' : 'results')} for &quot;{searchTerm}&quot;
+                                        Found {combinedSearchResults.length} {combinedSearchResults.length === 1 ? 'result' : 'results'} for &quot;{searchTerm}&quot;
                                     </div>
                                 )}
                             
@@ -963,7 +927,7 @@ export default function Admin() {
                                         <SortDropdown 
                                             sortConfig={sortConfig} 
                                             onSortChange={handleSortChange} 
-                                            currentTab={orderTableTab}
+                                            currentTab={isSearchMode ? 'Pending Orders' : orderTableTab}
                                         />
                                     </div>
                                     
@@ -993,20 +957,36 @@ export default function Admin() {
                                 </div>
                             </div>
                         </div>
-                        {/**Navigation Tabs */}
+                                                {/**Navigation Tabs - Always visible, disabled during search */}
                         <div className="mt-4 mb-2">
                             <div>
                                 <button
-                                    className={`px-4 py-2 text-md font-medium ${orderTableTab === 'Pending Orders' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none`}
+                                    className={`px-4 py-2 text-md font-medium ${
+                                        isSearchMode 
+                                            ? 'text-gray-400 border-b-2 border-transparent cursor-not-allowed opacity-60' 
+                                            : orderTableTab === 'Pending Orders' 
+                                                ? 'text-white border-b-2 border-white' 
+                                                : 'text-gray-500 border-b-2 border-transparent hover:text-gray-300'
+                                    } bg-transparent focus:outline-none transition-colors`}
                                     style={{ marginBottom: '-1px' }}
-                                    onClick={() => handleOrderTableTabChange('Pending Orders')}
+                                    onClick={isSearchMode ? undefined : () => handleOrderTableTabChange('Pending Orders')}
+                                    disabled={isSearchMode}
+                                    title={isSearchMode ? "Clear search to switch tabs" : "Switch to Pending Orders"}
                                 >
                                     Pending Orders
                                 </button>
                                 <button
-                                    className={`px-4 py-2 text-md font-medium ${orderTableTab === 'Completed Orders' ? 'text-white border-b-2 border-white' : 'text-gray-500 border-b-2 border-transparent'} bg-transparent focus:outline-none`}
+                                    className={`px-4 py-2 text-md font-medium ${
+                                        isSearchMode 
+                                            ? 'text-gray-400 border-b-2 border-transparent cursor-not-allowed opacity-60' 
+                                            : orderTableTab === 'Completed Orders' 
+                                                ? 'text-white border-b-2 border-white' 
+                                                : 'text-gray-500 border-b-2 border-transparent hover:text-gray-300'
+                                    } bg-transparent focus:outline-none transition-colors`}
                                     style={{ marginBottom: '-1px' }}
-                                    onClick={() => handleOrderTableTabChange('Completed Orders')}
+                                    onClick={isSearchMode ? undefined : () => handleOrderTableTabChange('Completed Orders')}
+                                    disabled={isSearchMode}
+                                    title={isSearchMode ? "Clear search to switch tabs" : "Switch to Completed Orders"}
                                 >
                                     Completed Orders
                                 </button>
@@ -1031,8 +1011,8 @@ export default function Admin() {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                     </div>
-                                    <p className="text-red-600 font-medium mb-2">Error loading completed orders: {archivedOrdersError || error}</p>
-                                    <p className="text-gray-600 mb-4">Please try refreshing the orders in the completed orders table. If the issue persists, contact support.</p>
+                                    <p className="text-red-600 font-medium mb-2">Error loading orders: {archivedOrdersError || error}</p>
+                                    <p className="text-gray-600 mb-4">Please try refreshing the orders. If the issue persists, contact support.</p>
                                     <button
                                         onClick={async () => {
                                             await Sentry.startSpan({
@@ -1046,22 +1026,15 @@ export default function Admin() {
                                         Retry
                                     </button>
                                 </div>
-                            ) : ((orderTableTab === 'Completed Orders' && filteredOrders.length === 0) || 
-                                 (orderTableTab === 'Pending Orders' && filteredPendingOrders.length === 0)) ? (
+                            ) : isSearchMode ? (
+                                // Search Results Table
+                                combinedSearchResults.length === 0 ? (
                                 <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
                                     <div className="text-gray-400 mb-4">
-                                        {searchTerm ? (
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                             </svg>
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                                            </svg>
-                                        )}
                                     </div>
-                                    {searchTerm ? (
-                                        <>
                                             <p className="text-black font-medium mb-1">No matching orders found</p>
                                             <p className="text-gray-500 text-sm">Try a different search term or clear the search</p>
                                             <button 
@@ -1076,9 +1049,172 @@ export default function Admin() {
                                             >
                                                 Clear Search
                                             </button>
-                                        </>
-                                    ) : (
-                                        <>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 overflow-y-auto">
+                                        <table 
+                                            className="w-full bg-white/90 backdrop-blur-sm border border-gray-200 table-auto h-full"
+                                            role="grid"
+                                            aria-label="Search Results"
+                                        >
+                                            <thead className="bg-gray-100/90 sticky top-0">
+                                                <tr>
+                                                    <th scope="col" className="px-4 py-4 text-center text-black text-md font-semibold">Order ID</th>
+                                                    <th scope="col" className="px-4 py-2 text-center text-black text-md font-semibold">Customer Name</th>
+                                                    <th scope="col" className="px-4 py-2 text-center text-black text-md font-semibold whitespace-nowrap">Order Date</th>
+                                                    <th scope="col" className="px-4 py-2 text-center text-black text-md font-semibold">Type</th>
+                                                    <th scope="col" className="px-4 py-4 text-center text-black text-md font-semibold">Items</th>
+                                                    <th scope="col" className="px-4 py-4 text-center text-black text-md font-semibold">Edit</th>
+                                                    <th scope="col" className="px-4 py-4 text-center text-black text-md font-semibold">Delete</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-200">
+                                                {isRefreshing ? (
+                                                    // Skeleton loading rows while refreshing
+                                                    [...Array(5)].map((_, index) => (
+                                                        <tr key={`skeleton-${index}`} className="animate-pulse" aria-hidden="true">
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-28 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-28 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-24 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-8 mx-auto"></div>
+                                                            </td>
+                                                            <td className="px-4 py-5">
+                                                                <div className="h-4 bg-gray-200 rounded w-8 mx-auto"></div>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    paginatedSearchResults.map((order) => (
+                                                        <tr
+                                                            key={`${order.orderType}-${order.order_id}`}
+                                                            ref={order.order_id === selectedOrderId ? selectedRowRef : null}
+                                                            className={`transition-colors duration-150 cursor-pointer text-center h-[calc((100vh-300px-48px)/15)] ${
+                                                                order.order_id === selectedOrderId 
+                                                                  ? "bg-blue-100/90 border-l-4 border-blue-500 shadow-md" 
+                                                                  : "hover:bg-gray-50/90 hover:border-l-4 hover:border-gray-300"
+                                                            }`}
+                                                            onClick={async () => {
+                                                                await Sentry.startSpan({
+                                                                    name: 'handleOrderRowClick-admin-search',
+                                                                }, async () => {
+                                                                    handleOrderClick(order.order_id);
+                                                                })
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                    e.preventDefault();
+                                                                    handleOrderClick(order.order_id);
+                                                                }
+                                                            }}
+                                                            tabIndex={0}
+                                                            role="row"
+                                                            aria-selected={order.order_id === selectedOrderId}
+                                                        >
+                                                            <td className="px-4 py-2 text-black font-medium">{order.order_id}</td>
+                                                            <td className="px-4 py-2 text-black">{order.customer_name}</td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                {new Date(order.order_date).toLocaleDateString("en-GB")}
+                                                            </td>
+                                                            <td className="px-4 py-2">
+                                                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                                                    order.orderType === 'completed' 
+                                                                        ? 'bg-green-100 text-green-800' 
+                                                                        : 'bg-yellow-100 text-yellow-800'
+                                                                }`}>
+                                                                    {order.orderType === 'completed' ? 'Completed' : 'Pending'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-2">
+                                                                <button 
+                                                                    className="text-blue-600 hover:text-blue-800 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded px-2 py-1 transition-colors"
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        await Sentry.startSpan({
+                                                                            name: 'handleViewItemsButtonClick-admin-search',
+                                                                        }, async () => {
+                                                                            handleOrderClick(order.order_id);
+                                                                        })
+                                                                    }}
+                                                                    aria-label={`View items for order ${order.order_id}`}
+                                                                >
+                                                                    View Items
+                                                                </button>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                <button
+                                                                    className="p-1 text-blue-600 hover:text-blue-800 focus:outline-none"
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        await Sentry.startSpan({
+                                                                            name: 'handleEditButtonClick-admin-search',
+                                                                        }, async () => {
+                                                                            handleEditClick(order, e);
+                                                                        })
+                                                                    }}
+                                                                    aria-label={`Edit order ${order.order_id}`}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/>
+                                                                    </svg>
+                                                                </button>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-black">
+                                                                <button
+                                                                    className={`flex justify-center items-center h-full w-full rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 ${
+                                                                        order.orderType === 'completed' 
+                                                                            ? 'hover:bg-gray-100 cursor-pointer' 
+                                                                            : 'opacity-50 cursor-not-allowed'
+                                                                    }`}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (order.orderType === 'completed') {
+                                                                            Sentry.startSpan({
+                                                                                name: 'handleDeleteButtonClick-admin-search',
+                                                                            }, async () => {
+                                                                                handleDeleteClick(order.order_id, e);
+                                                                            });
+                                                                        }
+                                                                    }}
+                                                                    disabled={order.orderType === 'pending'}
+                                                                    title={order.orderType === 'pending' ? 'Cannot delete pending orders' : `Delete order ${order.order_id}`}
+                                                                    aria-label={order.orderType === 'pending' ? 'Delete not available for pending orders' : `Delete order ${order.order_id}`}
+                                                                >
+                                                                    <Image
+                                                                        src="/binClosed.png"
+                                                                        alt=""
+                                                                        width={15}
+                                                                        height={15}
+                                                                    />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )
+                            ) : ((orderTableTab === 'Completed Orders' && filteredOrders.length === 0) || 
+                                 (orderTableTab === 'Pending Orders' && filteredPendingOrders.length === 0)) ? (
+                                <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-6">
+                                    <div className="text-gray-400 mb-4">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                        </svg>
+                                    </div>
                                             <p className="text-black font-medium mb-1">
                                                 {orderTableTab === 'Completed Orders' ? 'No completed orders found' : 'No pending orders found'}
                                             </p>
@@ -1087,8 +1223,6 @@ export default function Admin() {
                                                     ? 'Orders marked as complete will appear here' 
                                                     : 'Pending orders will appear here'}
                                             </p>
-                                        </>
-                                    )}
                                 </div>
                             ) : orderTableTab === 'Completed Orders' ? (
                                 <div className="flex-1 overflow-y-auto">
@@ -1257,6 +1391,9 @@ export default function Admin() {
                                                         <td className="px-4 py-5">
                                                            <div className="h-4 bg-gray-200 rounded w-12 mx-auto"></div>
                                                         </td>
+                                                        <td className="px-4 py-5">
+                                                           <div className="h-4 bg-gray-200 rounded w-8 mx-auto"></div>
+                                                        </td>
                                                     </tr>
                                                 ))
                                             ) : (
@@ -1318,11 +1455,19 @@ export default function Admin() {
                                 </div>
                             )}
                             {/* Pagination controls */}
-                            {((orderTableTab === 'Completed Orders' && filteredOrders.length > 0) || 
+                            {((isSearchMode && combinedSearchResults.length > 0) ||
+                              (orderTableTab === 'Completed Orders' && filteredOrders.length > 0) || 
                               (orderTableTab === 'Pending Orders' && filteredPendingOrders.length > 0)) && (
                                 <div className="flex flex-col sm:flex-row justify-between items-center bg-white/90 backdrop-blur-sm p-4 border border-gray-200">
                                     <div className="text-sm text-gray-600 mb-3 sm:mb-0">
-                                        {orderTableTab === 'Completed Orders' ? (
+                                        {isSearchMode ? (
+                                            <>
+                                                Showing <span className="font-medium">{searchResultsStartIndex + 1}</span> to{" "}
+                                                <span className="font-medium">{Math.min(searchResultsEndIndex, combinedSearchResults.length)}</span> of{" "}
+                                                <span className="font-medium">{combinedSearchResults.length}</span>{" "}
+                                                search results
+                                            </>
+                                        ) : orderTableTab === 'Completed Orders' ? (
                                             <>
                                                 Showing <span className="font-medium">{indexOfFirstOrder + 1}</span> to{" "}
                                                 <span className="font-medium">{Math.min(indexOfLastOrder, filteredOrders.length)}</span> of{" "}
@@ -1338,17 +1483,21 @@ export default function Admin() {
                                             </>
                                         )}
                                     </div>
-                                    {(orderTableTab === 'Completed Orders' || orderTableTab === 'Pending Orders') && (
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={async () => {
                                                     await Sentry.startSpan({
                                                         name: 'handlePageChange-Previous-admin',
                                                     }, async () => {
-                                                        handlePageChange((orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage) - 1);
+                                                    const currentPage = isSearchMode ? searchResultsPage : 
+                                                        (orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage);
+                                                    handlePageChange(currentPage - 1);
                                                     })
                                                 }}
-                                                disabled={(orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage) === 1}
+                                            disabled={
+                                                isSearchMode ? searchResultsPage === 1 :
+                                                (orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage) === 1
+                                            }
                                                 className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 transition-colors"
                                                 aria-label="Previous page"
                                             >
@@ -1360,36 +1509,47 @@ export default function Admin() {
                                                     id="page-number"
                                                     type="number"
                                                     min="1"
-                                                    max={orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages}
-                                                    value={orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage}
+                                                max={isSearchMode ? totalSearchPages : 
+                                                    (orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages)}
+                                                value={isSearchMode ? searchResultsPage : 
+                                                    (orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage)}
                                                     onChange={(e) => {
                                                         const page = parseInt(e.target.value);
-                                                        const maxPages = orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages;
+                                                    const maxPages = isSearchMode ? totalSearchPages : 
+                                                        (orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages);
                                                         if (!isNaN(page) && page >= 1 && page <= maxPages) {
                                                             handlePageChange(page);
                                                         }
                                                     }}
                                                     className="w-12 text-center border border-gray-300 rounded mx-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                    aria-label={`Page ${orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage} of ${orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages}`}
+                                                aria-label={`Page ${isSearchMode ? searchResultsPage : 
+                                                    (orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage)} of ${isSearchMode ? totalSearchPages : 
+                                                    (orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages)}`}
                                                 />
-                                                <span>of {orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages}</span>
+                                            <span>of {isSearchMode ? totalSearchPages : 
+                                                (orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages)}</span>
                                             </div>
                                             <button
                                                 onClick={async () => {
                                                     await Sentry.startSpan({
                                                         name: 'handlePageChange-Next-admin',
                                                     }, async () => {
-                                                        handlePageChange((orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage) + 1);
-                                                    })
-                                                }}
-                                                disabled={(orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage) === (orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages)}
+                                                    const currentPage = isSearchMode ? searchResultsPage : 
+                                                        (orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage);
+                                                    handlePageChange(currentPage + 1);
+                                                })
+                                            }}
+                                            disabled={
+                                                isSearchMode ? searchResultsPage === totalSearchPages :
+                                                (orderTableTab === 'Completed Orders' ? completedOrdersPage : pendingOrdersPage) === 
+                                                (orderTableTab === 'Completed Orders' ? totalPages : totalPendingPages)
+                                            }
                                                 className="px-3 py-1 rounded bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500 transition-colors"
                                                 aria-label="Next page"
                                             >
                                                 Next <span aria-hidden="true"></span>
                                             </button>
                                         </div>
-                                    )}
                                 </div>
                             )}
                         </div>

@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom animation delays for enhanced loading states */
+.animation-delay-100 {
+  animation-delay: 100ms;
+}
+
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
+
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+/* Custom border width for compact loading spinners */
+.border-3 {
+  border-width: 3px;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
