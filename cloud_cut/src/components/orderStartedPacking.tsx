@@ -633,7 +633,7 @@ export default function StartPacking({
                                 id="dialog-title"
                                 className="text-2xl font-bold text-gray-800 mb-1"
                             >
-                                {showDespatch ? "Despatch Order" : `Order: #${selectedOrder.id}`}
+                                {showDespatch ? "Despatch Order" : `Order: #${selectedOrder.order_id}`}
                             </h2>
                             <p className="text-gray-500">{showDespatch ? "" : "Picking in progress"}</p>
                         </div>

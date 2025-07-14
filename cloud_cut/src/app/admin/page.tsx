@@ -14,10 +14,10 @@ import { createPortal } from 'react-dom';
 import EditCompOrder from '@/components/editCompOrder';
 import DeleteCompletedOrder from '@/components/DeleteCompletedOrder';
 import * as Sentry from '@sentry/nextjs';
-import { fetchArchivedOrders, fetchOrdersFromSupabase, fetchPendingOrdersForAdmin, fetchCompletedOrdersForAdmin } from '@/redux/thunks/ordersThunks';
+import { fetchPendingOrdersForAdmin, fetchCompletedOrdersForAdmin, syncOrders } from '@/redux/thunks/ordersThunks';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useRouter } from 'next/navigation';
-import { selectManufacturingOrders, selectPackingOrders, selectActiveOrders, selectOrderItemsById, selectAdminPendingOrders } from '@/redux/slices/ordersSelectors';
+import { selectOrderItemsById, selectAdminPendingOrders } from '@/redux/slices/ordersSelectors';
 
 // Define types used by the dropdown component
 type SortField = 'order_id' | 'order_date' | 'customer_name' | 'priority';
@@ -435,23 +435,46 @@ export default function Admin() {
     ]
 
 
-    // Fetch archived orders on component mount
+    // Fetch both pending and completed orders on component mount
     useEffect(() => {
-        dispatch(fetchCompletedOrdersForAdmin({
-            page: completedOrdersPage,
-            perPage: ordersPerPage
-        }));
-    }, [dispatch, completedOrdersPage]);
+        console.log('Admin component mounted - fetching initial data...');
+        
+        // Fetch both datasets when component first loads
+        Promise.all([
+            dispatch(fetchPendingOrdersForAdmin({
+                page: pendingOrdersPage,
+                perPage: ordersPerPage
+            })),
+            dispatch(fetchCompletedOrdersForAdmin({
+                page: completedOrdersPage,
+                perPage: ordersPerPage
+            }))
+        ]).then(() => {
+            console.log('Initial admin data loaded successfully');
+        }).catch((error) => {
+            console.error('Error loading initial admin data:', error);
+        });
+    }, [dispatch]); // Only run once on mount
 
-    // Fetch active orders when on Pending Orders tab
+    // Fetch completed orders when pagination changes
     useEffect(() => {
-        if (orderTableTab === 'Pending Orders') {
+        if (completedOrdersPage > 1) { // Skip page 1 since it's handled on mount
+            dispatch(fetchCompletedOrdersForAdmin({
+                page: completedOrdersPage,
+                perPage: ordersPerPage
+            }));
+        }
+    }, [dispatch, completedOrdersPage, ordersPerPage]);
+
+    // Fetch pending orders when pagination changes
+    useEffect(() => {
+        if (pendingOrdersPage > 1) { // Skip page 1 since it's handled on mount
             dispatch(fetchPendingOrdersForAdmin({
                 page: pendingOrdersPage,
                 perPage: ordersPerPage
             }));
         }
-    }, [dispatch, orderTableTab, pendingOrdersPage]);
+    }, [dispatch, pendingOrdersPage, ordersPerPage]);
 
     // Filter and sort orders when dependencies change
     useEffect(() => {
@@ -716,27 +739,51 @@ export default function Admin() {
     };
 
     const handleRefresh = () => {
+        // Prevent multiple simultaneous refreshes
+        if (isRefreshing) {
+            console.log('Refresh already in progress, skipping...');
+            return;
+        }
+
         Sentry.startSpan({
             name: 'handleRefresh-Admin',
             op: 'ui.interaction.function'
         }, async () => {
             setIsRefreshing(true);
-            if (orderTableTab === 'Completed Orders') {
-                dispatch(fetchCompletedOrdersForAdmin({
-                    page: completedOrdersPage,
-                    perPage: ordersPerPage
-                }))
-                .finally(() => {
-                    setIsRefreshing(false);
-                });
-            } else {
-                dispatch(fetchPendingOrdersForAdmin({
+            console.log('Starting admin refresh...');
+            
+            try {
+                // Perform full sync from DespatchCloud
+                console.log('Step 1: Syncing orders from DespatchCloud...');
+                await dispatch(syncOrders()).unwrap();
+                console.log('Step 1 completed: Orders synced successfully');
+                
+                // Wait a moment for database to stabilize
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // After sync, refresh both pending and completed orders sequentially to avoid race conditions
+                console.log('Step 2: Refreshing pending orders...');
+                await dispatch(fetchPendingOrdersForAdmin({
                     page: pendingOrdersPage,
                     perPage: ordersPerPage
-                }))
-                .finally(() => {
-                    setIsRefreshing(false);
-                });
+                })).unwrap();
+                console.log('Step 2 completed: Pending orders refreshed');
+                
+                console.log('Step 3: Refreshing completed orders...');
+                await dispatch(fetchCompletedOrdersForAdmin({
+                    page: completedOrdersPage,
+                    perPage: ordersPerPage
+                })).unwrap();
+                console.log('Step 3 completed: Completed orders refreshed');
+                
+                console.log('Admin refresh completed successfully');
+            } catch (error) {
+                console.error('Error during admin refresh:', error);
+                // You might want to show a user-friendly error message here
+                alert(`Refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            } finally {
+                setIsRefreshing(false);
+                console.log('Admin refresh finished');
             }
         });
     };

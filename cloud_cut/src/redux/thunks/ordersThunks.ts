@@ -61,12 +61,21 @@ export const syncOrders = createAsyncThunk(
           status = "Pending";
         }
 
-        // Trim whitespace from order_id to prevent database issues
-        const trimmedOrderId = order.channel_order_id.trim();
+        // Check if this is a Shopify order and determine the correct order_id
+        let orderId: string;
+        const isShopifyOrder = order.access_url && order.access_url.toLowerCase().includes('shopify');
+        
+        if (isShopifyOrder && order.channel_alt_id && order.channel_alt_id.trim() !== '') {
+          // Use channel_alt_id for Shopify orders when available
+          orderId = order.channel_alt_id.trim();
+        } else {
+          // Use normal channel_order_id for non-Shopify orders or when channel_alt_id is empty
+          orderId = order.channel_order_id.trim();
+        }
 
         return {
           id: order.id,
-          order_id: trimmedOrderId,
+          order_id: orderId,
           order_date: order.date_received,
           customer_name: order.shipping_name,
           status: status,
@@ -253,7 +262,20 @@ export const syncOrders = createAsyncThunk(
         
         // Only process items for newly added orders
         newlyAddedOrderIds.forEach(orderId => {
-          const order = allOrders.find(o => o.channel_order_id.trim() === orderId);
+          // Find the order using the same logic as above for order_id determination
+          const order = allOrders.find(o => {
+            const isShopifyOrder = o.access_url && o.access_url.toLowerCase().includes('shopify');
+            let orderIdToMatch: string;
+            
+            if (isShopifyOrder && o.channel_alt_id && o.channel_alt_id.trim() !== '') {
+              orderIdToMatch = o.channel_alt_id.trim();
+            } else {
+              orderIdToMatch = o.channel_order_id.trim();
+            }
+            
+            return orderIdToMatch === orderId;
+          });
+          
           if (order && order.inventory) {
             const dayNumber = calculateDayNumber(order.date_received);
             const isAmazon = isAmazonOrder(order);
