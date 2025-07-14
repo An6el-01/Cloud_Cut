@@ -1282,9 +1282,9 @@ export default function Manufacturing() {
             x: part.x,
             y: part.y,
             rotation: part.rotation || 0,
-            orderId: part.orderId,
-            customerName: part.customerName,
-            itemName: part.itemName,
+            orderId: part.source?.orderId || part.orderId,
+            customerName: part.source?.customerName || part.customerName,
+            itemName: part.source?.itemName || part.itemName,
             polygonCount: part.polygons?.length || 0,
             firstPolygonPoints: part.polygons?.[0]?.length || 0
           })) || []);
@@ -2296,8 +2296,8 @@ export default function Manufacturing() {
                                   return Object.values(grouped);
                                 })();
                                 
-                                const orderIndex = uniqueOrders.findIndex(o => o.orderId === part.orderId);
-                                const fillColor = getOrderColor(part.orderId || '', orderIndex);
+                                const orderIndex = uniqueOrders.findIndex(o => o.orderId === (part.source?.orderId || part.orderId));
+                                const fillColor = getOrderColor(part.source?.orderId || part.orderId || '', orderIndex);
                                 
                                 // Scale and center each polygon
                                 const pointsArr = part.polygons[0].map(pt => {
@@ -2311,7 +2311,7 @@ export default function Manufacturing() {
                                 const points = pointsArr.map(pt => `${pt.x},${pt.y}`).join(' ');
                                 
                                 // Unique key for this part
-                                const partKey = `${part.orderId || ''}-${partIndex}`;
+                                const partKey = `${part.source?.orderId || part.orderId || ''}-${partIndex}`;
                                 // Centroid for tooltip
                                 const centroid = getPolygonCentroid(pointsArr);
                                 

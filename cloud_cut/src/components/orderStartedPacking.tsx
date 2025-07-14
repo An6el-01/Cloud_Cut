@@ -67,11 +67,13 @@ export default function StartPacking({
         'Box 11B': 'SHA11B',
         'Box 12A': 'SHA12A',
         'Box 70': 'SHA70',
-        'Box 2X1': 'SHA2X1'
+        'Box 2X1': 'SHA2X1',
+        'None': 'None'
     };
 
     // Sample packing box types - you can replace with actual data from your system
     const packingBoxTypes = [
+        'None',
         'Box 00',
         'Box 1',
         'Box 2A',
@@ -87,7 +89,7 @@ export default function StartPacking({
         'Box 11B',
         'Box 12A',
         'Box 70',
-        'Box 2X1'
+        'Box 2X1',
     ];
 
     // Function to get current stock for a box type

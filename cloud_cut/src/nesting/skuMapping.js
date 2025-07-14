@@ -37,7 +37,11 @@ const SKU_MAPPING = {
     { sku: 'SFI-MPORG2-01', quantity: 1 },
     { sku: 'SFI-MPORG2-02', quantity: 1 },
     { sku: 'SFI-MPORG2-03', quantity: 1 },
-  ]
+  ],
+  'SFI-MPDORG2':[
+    { sku: 'SFI-MPDORG2-01', quantity: 1 },
+    { sku: 'SFI-MPDORG2-02', quantity: 1 },
+  ],
 };
 
 /**

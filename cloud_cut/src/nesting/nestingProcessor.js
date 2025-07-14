@@ -219,6 +219,7 @@ export class NestingProcessor {
 
   async convertSvgsToParts(items) {
     const parts = [];
+    let globalPartCounter = 0; // Add global part counter
     
     console.log('=== Starting convertSvgsToParts ===');
     console.log('Input items:', items);
@@ -304,7 +305,8 @@ export class NestingProcessor {
             console.log('Sub-part item:', subPartItem);
             
             // Process the sub-part
-            const subPartParts = await this.processSingleItem(subPartItem);
+            const subPartParts = await this.processSingleItem(subPartItem, globalPartCounter);
+            globalPartCounter += subPartParts.length; // Update global counter
             console.log(`Generated ${subPartParts.length} parts for sub-part ${subPartSku}`);
             parts.push(...subPartParts);
             
@@ -315,25 +317,29 @@ export class NestingProcessor {
       } else if (adjustedItem.svgUrl && adjustedItem.svgUrl[0] !== 'noMatch') {
         // Process regular item (not a composite SKU) that has existing SVG URLs
         console.log(`Processing regular SKU ${adjustedItem.sku} with existing SVG URLs:`, adjustedItem.svgUrl);
-        const regularParts = await this.processSingleItem(adjustedItem);
+        const regularParts = await this.processSingleItem(adjustedItem, globalPartCounter);
+        globalPartCounter += regularParts.length; // Update global counter
         console.log(`Generated ${regularParts.length} parts for regular SKU ${adjustedItem.sku}`);
         parts.push(...regularParts);
       } else if (adjustedItem.sku.startsWith('SFC')) {
         // Handle SFC items that don't have SVG URLs but need custom processing
         console.log(`Processing SFC SKU ${adjustedItem.sku} with custom dimensions`);
-        const sfcParts = await this.processSingleItem(adjustedItem);
+        const sfcParts = await this.processSingleItem(adjustedItem, globalPartCounter);
+        globalPartCounter += sfcParts.length; // Update global counter
         console.log(`Generated ${sfcParts.length} parts for SFC SKU ${adjustedItem.sku}`);
         parts.push(...sfcParts);
       } else if (adjustedItem.sku.startsWith('SFP')) {
         // Handle retail pack items that don't have SVG URLs but need custom processing
         console.log(`Processing retail pack SKU ${adjustedItem.sku} with custom dimensions`);
-        const retailPackParts = await this.processSingleItem(adjustedItem);
+        const retailPackParts = await this.processSingleItem(adjustedItem, globalPartCounter);
+        globalPartCounter += retailPackParts.length; // Update global counter
         console.log(`Generated ${retailPackParts.length} parts for retail pack SKU ${adjustedItem.sku}`);
         parts.push(...retailPackParts);
       } else if (adjustedItem.sku.startsWith('SFSK')) {
         // Handle starter kit items that don't have SVG URLs but need custom processing
         console.log(`Processing starter kit SKU ${adjustedItem.sku} with custom dimensions`);
-        const starterKitParts = await this.processSingleItem(adjustedItem);
+        const starterKitParts = await this.processSingleItem(adjustedItem, globalPartCounter);
+        globalPartCounter += starterKitParts.length; // Update global counter
         console.log(`Generated ${starterKitParts.length} parts for starter kit SKU ${adjustedItem.sku}`);
         parts.push(...starterKitParts);
       } else if (adjustedItem.sku.startsWith('SFSKMP')) {
@@ -355,7 +361,8 @@ export class NestingProcessor {
             isMixedPack: true,
             svgUrl: ['mixedPack']
           };
-          const mixedPackParts = await this.processSingleItem(partItem);
+          const mixedPackParts = await this.processSingleItem(partItem, globalPartCounter);
+          globalPartCounter += mixedPackParts.length; // Update global counter
           parts.push(...mixedPackParts);
         }
       } else {
@@ -376,7 +383,8 @@ export class NestingProcessor {
         console.log(`Generated SVG URL for ${adjustedItem.sku}: ${generatedSvgUrl}`);
         console.log('Item with generated SVG:', itemWithSvg);
         
-        const regularParts = await this.processSingleItem(itemWithSvg);
+        const regularParts = await this.processSingleItem(itemWithSvg, globalPartCounter);
+        globalPartCounter += regularParts.length; // Update global counter
         console.log(`Generated ${regularParts.length} parts for SKU ${adjustedItem.sku} with generated URL`);
         parts.push(...regularParts);
       }
@@ -395,7 +403,7 @@ export class NestingProcessor {
     return parts;
   }
 
-  async processSingleItem(item) {
+  async processSingleItem(item, startIndex = 0) {
     const parts = [];
     
     console.log(`\n--- processSingleItem called for SKU: ${item.sku} ---`);
@@ -878,7 +886,7 @@ export class NestingProcessor {
           
           for (let q = 0; q < item.quantity; q++) {
             const part = {
-              id: `${item.sku}-${parts.length}`,
+              id: `${item.sku}-${startIndex + parts.length}`,
               polygons: [shifted],
               quantity: 1,
               source: item,

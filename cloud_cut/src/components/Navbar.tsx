@@ -95,7 +95,7 @@ const Navbar = () => {
         <div className="flex justify-between h-16 ">
           {/* Logo and Brand */}
           <div className="flex items-center">
-            <Link href={accessPermissions.canAccessManufacturing ? "/manufacturing" : "/packing"} className="flex items-center">
+            <Link href={isClient ? (accessPermissions.canAccessManufacturing ? "/manufacturing" : "/packing") : "/manufacturing"} className="flex items-center">
               <Image
                 src="/sfLogo.png"
                 alt="Shadow Foam Logo"
@@ -110,84 +110,86 @@ const Navbar = () => {
             </Link>
           </div>
 
-          {/* Navigation Links */}
-          <div className="flex items-center space-x-4">
+          {/* Navigation Links - only render after hydration to prevent mismatch */}
+          {isClient && (
+            <div className="flex items-center space-x-4">
 
-            {/* Manufacturing link */}
-            {accessPermissions.canAccessManufacturing && (
-              <Link
-                href="/manufacturing"
-                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-              >
-                Manufacturing
-              </Link>
-            )}
+              {/* Manufacturing link */}
+              {accessPermissions.canAccessManufacturing && (
+                <Link
+                  href="/manufacturing"
+                  className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+                >
+                  Manufacturing
+                </Link>
+              )}
 
-            {/* Packing link */}
-            {accessPermissions.canAccessPacking && (
-              <Link
-                href="/packing"
-                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-              >
-                Packing
-              </Link>
-            )}
+              {/* Packing link */}
+              {accessPermissions.canAccessPacking && (
+                <Link
+                  href="/packing"
+                  className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+                >
+                  Packing
+                </Link>
+              )}
 
-            {/* Picking link */}
-            {accessPermissions.canAccessPicking && (
-              <Link
-                href="/picking"
-                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-              >
-                Picking
-              </Link>
-            )}
+              {/* Picking link */}
+              {accessPermissions.canAccessPicking && (
+                <Link
+                  href="/picking"
+                  className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+                >
+                  Picking
+                </Link>
+              )}
 
-            {/* Team link */}
-            {accessPermissions.canAccessTeam && (
-              <Link
-                href="/team"
-                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"  
-              >
-                My Team
-              </Link>
-            )}
+              {/* Team link */}
+              {accessPermissions.canAccessTeam && (
+                <Link
+                  href="/team"
+                  className="text-white relative px-3 py-2 rounded-md text-md font-medium group"  
+                >
+                  My Team
+                </Link>
+              )}
 
-            {/* Stock link */}
-            {accessPermissions.canAccessStock && (
-              <Link
-                href="/stock"
-                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-              >
-                Stock
-              </Link>
-            )}
+              {/* Stock link */}
+              {accessPermissions.canAccessStock && (
+                <Link
+                  href="/stock"
+                  className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+                >
+                  Stock
+                </Link>
+              )}
 
-            {/* Admin link */}
-            {accessPermissions.canAccessAdmin && (
-              <Link
-                href="/admin"
-                className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
-              >
-                Admin
-              </Link>
-            )}
-            
-            {/* Profile Section - always available */}
-            <div className="relative">
-              <Link href="/profile" className="flex flex-col items-center">
-                <div className="w-16 h-16 relative overflow-hidden rounded-full bg-white p-1 flex items-center justify-center">
-                  <Image
-                    src="/profile.png"
-                    alt="Profile"
-                    width={80}
-                    height={80}
-                    className="object-contain"
-                  />
-                </div>
-              </Link>
+              {/* Admin link */}
+              {accessPermissions.canAccessAdmin && (
+                <Link
+                  href="/admin"
+                  className="text-white relative px-3 py-2 rounded-md text-md font-medium group"
+                >
+                  Admin
+                </Link>
+              )}
+              
+              {/* Profile Section - always available */}
+              <div className="relative">
+                <Link href="/profile" className="flex flex-col items-center">
+                  <div className="w-16 h-16 relative overflow-hidden rounded-full bg-white p-1 flex items-center justify-center">
+                    <Image
+                      src="/profile.png"
+                      alt="Profile"
+                      width={80}
+                      height={80}
+                      className="object-contain"
+                    />
+                  </div>
+                </Link>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </nav>
