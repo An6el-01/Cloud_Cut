@@ -16,6 +16,18 @@ import RouteProtection from "@/components/RouteProtection";
 import { fetchOrdersFromSupabase } from "@/redux/thunks/ordersThunks";
 import Navbar from "@/components/Navbar";
 
+const NESTED_ORDER_COLOURS = [
+    '#2196F3',
+    '#F44336',
+    '#4CAF50',
+    '#FF9800',
+    '#9C27B0',
+    '#607D8B',
+    '#FF5722',
+    '#E91E63',
+    '#00BCD4',
+];
+
 export default function Cutting() {
     const dispatch = useDispatch<AppDispatch>();
     const allOrders = useSelector((state: RootState) => state.orders.allOrders);
@@ -43,6 +55,51 @@ export default function Cutting() {
         sheetIndex: number;
         nestingData: NestingPlacement;
     } | null>(null);
+    // Add state for activeNests
+    const [activeNests, setActiveNests] = useState<any[]>([]);
+
+    // Fetch active_nests on mount
+    useEffect(() => {
+        const fetchNests = async () => {
+            const supabase = getSupabaseClient();
+            const { data: active, error: activeError } = await supabase
+                .from('active_nests')
+                .select('*');
+            if (!activeError && active) setActiveNests(active);
+        };
+        fetchNests();
+    }, []);
+
+    // Determine which nest row to use (by foam sheet or nesting id)
+    const selectedNestRow = (() => {
+        if (importedNestingData?.foamSheet) {
+            return activeNests.find(n => n.foamsheet === importedNestingData.foamSheet);
+        }
+        if (selectedNestingRow) {
+            return activeNests.find(n => n.foamsheet === selectedNestingRow);
+        }
+        return null;
+    })();
+
+    // Parse nest and cut_details
+    let nestData: any = null;
+    let cutDetails: any[] = [];
+    if (selectedNestRow) {
+        try {
+            nestData = selectedNestRow.nest ? JSON.parse(selectedNestRow.nest) : null;
+        } catch {}
+        try {
+            cutDetails = Array.isArray(selectedNestRow.cut_details)
+                ? selectedNestRow.cut_details
+                : (selectedNestRow.cut_details ? JSON.parse(selectedNestRow.cut_details) : []);
+        } catch {}
+    }
+
+    // Assign a unique color to each order in cutDetails
+    const orderColorMap: Record<string, string> = {};
+    cutDetails.forEach((order, idx) => {
+        orderColorMap[order.orderId] = NESTED_ORDER_COLOURS[idx % NESTED_ORDER_COLOURS.length];
+    });
 
     useEffect(() => {
         // Try to load nesting data from sessionStorage
@@ -60,18 +117,6 @@ export default function Cutting() {
             }
         }
     }, []);
-
-    const NESTED_ORDER_COLOURS = [
-        '#2196F3',
-        '#F44336',
-        '#4CAF50',
-        '#FF9800',
-        '#9C27B0',
-        '#607D8B',
-        '#FF5722',
-        '#E91E63',
-        '#00BCD4',
-      ];
 
     const getOrderColor = (orderId: string, index: number) => {
         //Assign color based on the order's position in the uniqueOrders list (index)
@@ -231,279 +276,187 @@ export default function Cutting() {
         return svgContent;
      }
 
-    // Use importedNestingData if present for visualization and cut details
-    // For visualization:
-    const visualizationFoamSheet = importedNestingData?.foamSheet || selectedNestingRow;
-    const visualizationSheetIndex = importedNestingData?.sheetIndex ?? selectedSheetIndex;
-    const visualizationNestingData = importedNestingData?.nestingData || null;
 
-    // For cut details:
-    const cutDetailsFoamSheet = importedNestingData?.foamSheet || selectedNestingRow;
-    const cutDetailsSheetIndex = importedNestingData?.sheetIndex ?? selectedSheetIndex;
-    const cutDetailsNestingData = importedNestingData?.nestingData || null;
+    // Add this helper function for centroid calculation (if not already present)
+    const getPolygonCentroid = (pointsArr: {x: number, y: number}[]) => {
+        let x = 0, y = 0, len = pointsArr.length;
+        for (let i = 0; i < len; i++) {
+          x += pointsArr[i].x;
+          y += pointsArr[i].y;
+        }
+        return { x: x / len, y: y / len };
+    };
 
     return (
-        <div className="min-h-screen">
-            <Navbar />
-
-            <div className="w-full flex justify-center pt-10 mb-8 px-4 min-h-[calc(100vh-300px)]">
-                <div className="flex flex-col lg:flex-row gap-6 max-w-[2800px] w-fu;; justify-center">
-                    {/**Nesting Visualization Section */}
-                    <div className="flex-1 min-w-0 max-w-96 flex flex-col bg-gradient-to-br from slate-900/95 via-slate-800/90 to-slate-900/95 rounded-2xl shadow-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden">
-                        {/**Enhanced Header Section */}
-                        <div className="relative">
-                            {/**Background gradient overlay */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-slate-600/20 via-slate-600/20 to-slate-600/20"></div>
-
-                            <div className="relative flex flex-col gap-2 p-4 border-b border-slate-700/50">
-                                {/**Compact Title Row */}
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center">
-                                        <h1 className="text-lg font-bold text-white tracking-tight">
-                                            Nesting Visualization
-                                        </h1>
-                                    </div>
-                                    {/**Compact Status Indicator */}
-                                    <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                        visualizationFoamSheet
-                                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                            : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
-                                    }`}>
-                                        {visualizationFoamSheet ? 'Active' : 'Inactive'}
-                                    </div>
-                                </div>
-
-                                {/**Compact Sheet info and export row */}
-                                {visualizationFoamSheet && (
-                                    <div className="flex items-center justify-between bg-slate-800/50 rounded-md p-2 border border-slate-600/30">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-2.5 h-2.5 rounded-full ${getSheetColorClass(formatSheetName(visualizationFoamSheet))}`}></div>
-                                            <div>
-                                                <p className="text-white font-medium text-lg">
-                                                    {formatSheetName(visualizationFoamSheet)}
-                                                </p>
-                                            </div>
-                                        </div>  
-                                        {(() => {
-                                            // Use imported nesting data if present
-                                            const placements = visualizationNestingData ? [visualizationNestingData] : [];
-                                            if (placements.length === 0) {
-                                                return(
-                                                    <div className="px-2 py-1 bg-slate-600/30 text-slate-400 text-xs rounded border border-slate-500/30">
-                                                        No Data
-                                                    </div>
-                                                );
-                                            }
-                                            // Generate SVG content
-                                            const svgContent = generateSVG(placements, visualizationFoamSheet);
-                                            return (
-                                                <DxfConverterButton
-                                                    svgContent={svgContent}
-                                                    userId={userProfile?.email || ''}
-                                                    onConversionSuccess={(dxfUrl) => {
-                                                        console.log('DXF conversion successful:', dxfUrl);
-                                                    }}
-                                                    onConversionError={(error) => {
-                                                        console.error('DXF conversion failed:', error);
-                                                    }}
-                                                />
-                                            );
-                                        })()}
-                                    </div>
-                                )}
+        <RouteProtection requiredPermission="canAccessManufacturing">
+            <div className="min-h-screen ">
+                <Navbar />
+                <div className="w-full flex flex-col lg:flex-row gap-6 max-w-[1800px] mx-auto pt-6 px-4 justify-center h-[calc(100vh-80px)]">
+                    {/* Nesting Visualization Section */}
+                    <div className="flex-1 min-w-0 max-w-2xl flex flex-col bg-gradient-to-br from-slate-900/95 via-slate-800/90 to-slate-900/95 rounded-2xl shadow-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden h-[85vh] mt-24">
+                        {/* Header */}
+                        <div className="relative flex flex-col gap-2 p-4 border-b border-slate-700/50">
+                            <div className="flex items-center justify-between">
+                                <h1 className="text-lg font-bold text-white tracking-tight">Nesting Visualization</h1>
+                                <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${selectedNestRow ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border-slate-500/30'}`}>{selectedNestRow ? 'Active' : 'Inactive'}</div>
                             </div>
-                        </div>
-
-                        {/**Enhanced Visualization Content Area */}
-                        <div className="flex-1 overflow-hidden relative">
-                            {visualizationNestingData ? (
-                                <div>
-                                    {/* Render the visualization for the imported nesting data here */}
-                                    {/* You can adapt the existing visualization logic to use visualizationNestingData */}
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-center justify-center h-full text-slate-400 bg-slate-900/20">
-                               
+                            {selectedNestRow && (
+                                <div className="flex items-center justify-between bg-slate-800/50 rounded-md p-2 border border-slate-600/30 mt-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-4 h-4 rounded-full ${getSheetColorClass(formatSheetName(selectedNestRow.foamsheet))}`}></div>
+                                        <span className="text-white text-lg font-medium">{formatSheetName(selectedNestRow.foamsheet)}</span>
+                                    </div>
+                                    {nestData && nestData.placements && nestData.placements.length > 0 ? (
+                                        <DxfConverterButton
+                                            svgContent={generateSVG(nestData.placements, selectedNestRow.foamsheet)}
+                                            userId={userProfile?.email || ''}
+                                            onConversionSuccess={() => {}}
+                                            onConversionError={() => {}}
+                                        />
+                                    ) : (
+                                        <div className="px-2 py-1 bg-slate-600/30 text-slate-400 text-xs rounded border border-slate-500/30">No Data</div>
+                                    )}
                                 </div>
                             )}
                         </div>
-
-                        {/**Nesting Result Information Section */}
-                        <div className="flex-[1.2] min-w-0 max-w-[700px] flex flex-col bg-black/70 rounded-xl shadow-xl">
-                            <div className="bg-black/70 rounded-t-lg">
-                                <h1 className="text-2xl font-bold text-white p-4 flex justify-center">Cut Details</h1>
-                            </div>
-                            <div className="bg-black/70 border border-gray-200 p-6 h-[calc(100vh-300px)] overflow-y-auto">
-                                <div className="overflow-x-auto h-full flex flex-col bg-black/70 rounded-xl shadow-xl">
-                                    <table className="w-full text-white border-separate border-spacing-y-2">
-                                        <thead>
-                                            <tr>
-                                                <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"></th>
-                                                <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
-                                                <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {(() => {
-                                                // Use imported nesting data if present
-                                                if (cutDetailsNestingData) {
-                                                    // Extract unique orders from the parts in the imported nesting data
-                                                    const partsInSheet = cutDetailsNestingData.parts || [];
-                                                    const ordersInThisSheet = new Map<string, { orderId: string; customerName: string }>();
-                                                    partsInSheet.forEach((part: NestingPart) => {
-                                                        const orderId = part.source?.orderId || part.orderId || 'unknown';
-                                                        const customerName = part.source?.customerName || part.customerName || '(No Name in Order)';
-                                                        const key = `${orderId}-${customerName}`;
-                                                        if (!ordersInThisSheet.has(key)) {
-                                                            ordersInThisSheet.set(key, { orderId, customerName });
-                                                        }
+                        {/* Visualization Content */}
+                        <div className="flex-1 overflow-auto relative bg-slate-900/80 flex items-center justify-center h-0 min-h-0">
+                            {nestData && nestData.placements && nestData.placements.length > 0 ? (
+                                (() => {
+                                    const selectedSheet = nestData.placements[0];
+                                    const allParts: any[] = selectedSheet.parts || [];
+                                    let allPoints: {x: number, y: number}[] = [];
+                                    allParts.forEach((part) => {
+                                        if (part.polygons && part.polygons[0]) {
+                                            const angle = (part.rotation || 0) * Math.PI / 180;
+                                            const cos = Math.cos(angle);
+                                            const sin = Math.sin(angle);
+                                            part.polygons[0].forEach((pt: any) => {
+                                                const x = pt.x * cos - pt.y * sin + (part.x || 0);
+                                                const y = pt.x * sin + pt.y * cos + (part.y || 0);
+                                                allPoints.push({ x, y });
+                                            });
+                                        }
+                                    });
+                                    const PADDING = 10;
+                                    const VIEWBOX_WIDTH = 1000 + 2 * PADDING;
+                                    const VIEWBOX_HEIGHT = 2000 + 2 * PADDING;
+                                    const viewBox = `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`;
+                                    return (
+                                        <svg
+                                            width="100%"
+                                            height="100%"
+                                            viewBox={viewBox}
+                                            style={{ background: 'linear-gradient(135deg, rgba(30,41,59,0.95) 0%, rgba(30,41,59,0.9) 50%, rgba(30,41,59,0.95) 100%)', width: '100%', height: '100%' }}
+                                        >
+                                            {/* Bin polygon */}
+                                            <polygon
+                                                points={`${PADDING},${PADDING} ${1000 + PADDING},${PADDING} ${1000 + PADDING},${2000 + PADDING} ${PADDING},${2000 + PADDING}`}
+                                                fill="black"
+                                                opacity="0.6"
+                                            />
+                                            <g transform={`scale(1,-1) translate(0, -${VIEWBOX_HEIGHT})`}>
+                                                {selectedSheet.parts.map((part: any, partIndex: number) => {
+                                                    if (!part.polygons || !part.polygons[0]) return null;
+                                                    // Assign color by orderId using orderColorMap
+                                                    const orderId = part.source?.orderId || part.orderId || '';
+                                                    const fillColor = orderColorMap[orderId] || NESTED_ORDER_COLOURS[partIndex % NESTED_ORDER_COLOURS.length];
+                                                    const orderIdx = cutDetails.findIndex(order => order.orderId === orderId);
+                                                    const displayNumber = orderIdx >= 0 ? orderIdx + 1 : '';
+                                                    const pointsArr = part.polygons[0].map((pt: any) => {
+                                                        const angle = (part.rotation || 0) * Math.PI / 180;
+                                                        const cos = Math.cos(angle);
+                                                        const sin = Math.sin(angle);
+                                                        let x = pt.x * cos - pt.y * sin + (part.x || 0) + PADDING;
+                                                        let y = pt.x * sin + pt.y * cos + (part.y || 0) + PADDING;
+                                                        return { x, y };
                                                     });
-                                                    const uniqueOrdersInSheet = Array.from(ordersInThisSheet.values());
-                                                    if(uniqueOrdersInSheet.length === 0) {
-                                                        return (
-                                                            <tr>
-                                                                <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                                                    <div className="flex items-center justify-center h-full">
-                                                                        <p className="text-white text-lg">No orders found in this specific sheet.</p>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    }
-                                                    return uniqueOrdersInSheet.map((order: { orderId: string; customerName: string }, localIndex: number) => {
-                                                        return(
-                                                            <tr key={`${order.orderId}-${localIndex}`} className="hover:bg-gray-800/30 transition-colors">
-                                                                <td className="px-6 py-4 text-center text-md font-semibold">
-                                                                    <span className= "inline-block w-4 h-4 mr-4">
-                                                                        {localIndex + 1}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-3 py-4 text-center text-md font-semibold text-white">
-                                                                    {order.customerName || '(No Name in Order)'}
-                                                                </td>
-                                                                <td className="px-6 py-4 text-center text-md font-semibold text-white">
-                                                                    {order.orderId}
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    });
-                                                }
-                                                // Fallback to existing logic if no imported data
-                                                // Get the nesting data for the selectedn nest
-                                                const selectedFoamSheet = Object.keys(nestingQueueData).find(sheet =>
-                                                    formatSheetName(sheet) === selectedNestingRow
-                                                );
-
-                                                if (!selectedFoamSheet || !nestingQueueData[selectedFoamSheet]) {
-                                                    return(
-                                                        <tr>
-                                                            <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                                                <div className="flex items-center justify-center h-full">
-                                                                    <p className="text-white text-lg">No nest selected. Please choose a nest from the nesting queue.</p>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                }
-
-                                                //Get the nesting data for the selected foam sheet
-                                                const nestingData = nestingQueueData[selectedFoamSheet];
-                                                const sheets = nestingData?.nestingResult?.placements || [];
-
-                                                // Check if we have a valid sheet selection
-                                                if (sheets.length === 0 || selectedSheetIndex >= sheets.length) {
-                                                    return(
-                                                        <tr>
-                                                            <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                                                <div className="flex items-center justify-center h-full">
-                                                                    <p className="text-white text-lg">No placement data available for this sheet.</p>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                }
-
-                                                // Get the specific selected sheet and its parts
-                                                const selectedSheet = sheets[selectedSheetIndex];
-                                                const partsInSheet = selectedSheet.parts || [];
-
-                                                // First, get the global unique orders for this entire foam sheet type (for consistent coloring)
-                                                const globalUniqueOrders = (() => {
-                                                    const items = nestingData?.items || [];
-                                                    const grouped = items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
-                                                        const key = `${item.orderId}-${item.customerName}`;
-                                                        if (!acc[key]) {
-                                                            acc[key] = { orderId: item.orderId, customerName: item.customerName, items: [] };
-                                                        }
-                                                        acc[key].items.push(item);
-                                                        return acc;
-                                                    }, {});
-                                                    return Object.values(grouped);
-                                                })();
-
-                                                // Extract unique orders from the parts that are actually placed in this specific sheet
-                                                const ordersInThisSheet = new Map<string, { orderId: string; customerName: string }>();
-
-                                                partsInSheet.forEach((part: NestingPart) => {
-                                                    const orderId = part.source?.orderId || part.orderId || 'unknown';
-                                                    const customerName = part.source?.customerName || part.customerName || '(No Name in Order)';
-                                                    const key = `${orderId}-${customerName}`;
-
-                                                    if (!ordersInThisSheet.has(key)) {
-                                                        ordersInThisSheet.set(key, { orderId, customerName });
-                                                    }
-                                                });
-                                                
-                                                const uniqueOrdersInSheet = Array.from(ordersInThisSheet.values());
-
-                                                if(uniqueOrdersInSheet.length === 0) {
+                                                    const points = pointsArr.map((pt: {x: number, y: number}) => `${pt.x},${pt.y}`).join(' ');
+                                                    const centroid = getPolygonCentroid(pointsArr);
+                                                    const scale = Math.min(VIEWBOX_WIDTH / 1000, VIEWBOX_HEIGHT / 2000);
                                                     return (
-                                                        <tr>
-                                                            <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                                                <div className="flex items-center justify-center h-full">
-                                                                    <p className="text-white text-lg">No orders found in this specific sheet.</p>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
+                                                        <>
+                                                            <polygon
+                                                                key={partIndex}
+                                                                points={points}
+                                                                fill={fillColor}
+                                                                fillOpacity={0.7}
+                                                                stroke="#fff"
+                                                                strokeWidth="2"
+                                                            />
+                                                            {/* Add order index number at centroid, matching color legend */}
+                                                            <text
+                                                                x={centroid.x}
+                                                                y={centroid.y}
+                                                                textAnchor="middle"
+                                                                dominantBaseline="middle"
+                                                                fontSize={`${40 * scale}px`}
+                                                                fill="#fff"
+                                                                fontWeight="bold"
+                                                                pointerEvents="none"
+                                                                transform={`scale(1,-1) translate(0, -${2 * centroid.y})`}
+                                                            >
+                                                                {displayNumber}
+                                                            </text>
+                                                        </>
                                                     );
-                                                }
-
-                                                return uniqueOrdersInSheet.map((order: { orderId: string; customerName: string }, localIndex: number) => {
-                                                    // Find the global index of this order for consistent coloring across all sheets
-                                                    const globalIndex = globalUniqueOrders.findIndex(globalOrder => 
-                                                        globalOrder.orderId === order.orderId && globalOrder.customerName === order.customerName
-                                                    );
-
-                                                    return(
-                                                        <tr key={`${order.orderId}-${localIndex}`} className="hover:bg-gray-800/30 transition-colors">
-                                                            <td className="£px-6 py-4 text-center text-md font-semibold">
-                                                                <span className= "inline-block w-4 h-4 mr-4">
-                                                                    {globalIndex + 1}
-                                                                </span>
-                                                                <span
-                                                                    className="inline-block w-10 h-3 rounded-full"
-                                                                    style={{ backgroundColor: getOrderColor(order.orderId, globalIndex >= 0 ? globalIndex : localIndex)}}
-                                                                    title={`Order color for ${order.customerName}`}
-                                                                />
-                                                            </td>
-                                                            <td className="px-3 py-4 text-center text-md font-semibold text-white">
-                                                                {order.customerName || '(No Name in Order'}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-center text-md font-semibold text-white">
-                                                                {order.orderId}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                });
-                                            })() as React.ReactNode}
-                                        </tbody>
-                                    </table>
+                                                })}
+                                            </g>
+                                        </svg>
+                                    );
+                                })()
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-400 bg-slate-900/20">
+                                    <span>No nesting data available.</span>
                                 </div>
-                            </div>
+                            )}
+                        </div>
+                    </div>
+                    {/* Cut Details Section */}
+                    <div className="flex-1 min-w-0 max-w-xl flex flex-col bg-black/80 rounded-2xl shadow-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden h-[85vh] mt-24">
+                        <div className="bg-black/80 rounded-t-lg border-b border-slate-700/50 p-4">
+                            <h1 className="text-2xl font-bold text-white text-center">Cut Details</h1>
+                        </div>
+                        <div className="bg-black/80 p-6 flex-1 overflow-auto">
+                            <table className="w-full text-white border-separate border-spacing-y-2">
+                                <thead>
+                                    <tr>
+                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"></th>
+                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
+                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {cutDetails.length > 0 ? (
+                                        cutDetails.map((order, idx) => (
+                                            <tr key={`${order.orderId}-${idx}`} className="hover:bg-gray-800/30 transition-colors">
+                                                <td className="px-6 py-4 text-center text-md font-semibold">
+                                                    <span className="inline-block w-4 h-4 mr-4">{idx + 1}</span>
+                                                    <span
+                                                        className="inline-block w-10 h-3 rounded-full"
+                                                        style={{ backgroundColor: orderColorMap[order.orderId] }}
+                                                        title={`Order color for ${order.customerName}`}
+                                                    ></span>
+                                                </td>
+                                                <td className="px-3 py-4 text-center text-md font-semibold text-white">{order.customerName || '(No Name in Order)'}</td>
+                                                <td className="px-6 py-4 text-center text-md font-semibold text-white">{order.orderId}</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
+                                                <div className="flex items-center justify-center h-full">
+                                                    <p className="text-white text-lg">No nest selected. Please choose a nest from the nesting queue.</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    )
+        </RouteProtection>
+    );
 }

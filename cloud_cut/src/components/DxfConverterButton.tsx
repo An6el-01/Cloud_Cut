@@ -94,41 +94,6 @@ const DxfConverterButton: React.FC<DxfConverterButtonProps> = ({
                     )}
                 </div>
             </button>
-            
-            {error && (
-                <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-red-500/10 border border-red-500/30 rounded backdrop-blur-sm">
-                    <div className="flex items-center gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-red-400 text-xs font-medium">
-                            {error}
-                        </p>
-                    </div>
-                </div>
-            )}
-            
-            {dxfDownloadUrl && (
-                <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-emerald-500/10 border border-emerald-500/30 rounded backdrop-blur-sm">
-                    <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></div>
-                            <span className="text-emerald-400 text-xs font-medium">DXF ready!</span>
-                        </div>
-                        <a 
-                            href={dxfDownloadUrl} 
-                            target='_blank' 
-                            rel='noopener noreferrer' 
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 text-xs font-medium rounded transition-colors duration-200 border border-emerald-500/30"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            Download
-                        </a>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

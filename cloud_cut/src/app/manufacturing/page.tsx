@@ -1837,12 +1837,7 @@ export default function Manufacturing() {
                           router.push('/cutting');
                         }}
                         className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
-                        disabled={
-                          !selectedNestingRow ||
-                          !nestingQueueData[selectedNestingRow] ||
-                          !nestingQueueData[selectedNestingRow]?.nestingResult ||
-                          !(nestingQueueData[selectedNestingRow]?.nestingResult?.placements?.length > selectedSheetIndex)
-                        }
+                        disabled={!selectedNestingRow}
                         aria-label={
                           !selectedNestingRow
                             ? 'Select a nest to start cutting'

@@ -52,6 +52,8 @@ const Navbar = () => {
         switch (currentPage) {
           case 'manufacturing':
             return accessPermissions.canAccessManufacturing;
+          case 'cutting':
+            return accessPermissions.canAccessManufacturing;
           case 'packing':
             return accessPermissions.canAccessPacking;
           case 'picking':
