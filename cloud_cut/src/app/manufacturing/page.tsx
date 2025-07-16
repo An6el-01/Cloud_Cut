@@ -117,6 +117,7 @@ export default function Manufacturing() {
     fetchNests();
   }, []);
 
+  // Subscribe to real-time changes in active_nests for real-time locked status
   useEffect(() => {
     const activeNestsSubscription = subscribeToActiveNests((payload) => {
       // Refetch active_nests on any change
@@ -127,20 +128,8 @@ export default function Manufacturing() {
           if (!error && data) setActiveNests(data);
         });
     });
-
-    const completedNestsSubscription = subscribeToCompletedNests((payload) => {
-      // Refetch completed_nests on any change
-      getSupabaseClient()
-        .from('completed_nests')
-        .select('*')
-        .then(({ data, error }) => {
-          if (!error && data) setCompletedNests(data);
-        });
-    });
-
     return () => {
       activeNestsSubscription.unsubscribe();
-      completedNestsSubscription.unsubscribe();
     };
   }, []);
 
@@ -1255,50 +1244,53 @@ export default function Manufacturing() {
       };
       return parseYield(b.yield) - parseYield(a.yield);
     });
-    return sortedNests.map((nest, idx) => (
-      <tr
-        key={nest.id || idx}
-        className={`transition-colors duration-150 cursor-pointer shadow-sm
-          ${nest.foamsheet === selectedNestingRow ? 'bg-blue-200 !hover:bg-blue-200' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-          ${nest.foamsheet !== selectedNestingRow ? 'hover:bg-blue-50' : ''}
-        `}
-        role="button"
-        tabIndex={0}
-            onClick={() => {
-          setSelectedNestingRow(nest.foamsheet);
-          setSelectedMediumSheet(formatMediumSheetName(nest.foamsheet));
-              setSelectedSheetIndex(0);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
+    return sortedNests.map((nest, idx) => {
+      const isLocked = nest.locked === true || nest.locked === 'true';
+      return (
+        <tr
+          key={nest.id || idx}
+          className={`transition-colors duration-150 cursor-pointer shadow-sm
+            ${nest.foamsheet === selectedNestingRow ? 'bg-blue-200 !hover:bg-blue-200' : isLocked ? 'bg-red-200 !hover:bg-red-200' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+            ${nest.foamsheet !== selectedNestingRow ? 'hover:bg-blue-50' : ''}
+          `}
+          role="button"
+          tabIndex={0}
+          onClick={() => {
             setSelectedNestingRow(nest.foamsheet);
             setSelectedMediumSheet(formatMediumSheetName(nest.foamsheet));
-                setSelectedSheetIndex(0);
-              }
-            }}
-        aria-selected={selectedNestingRow === nest.foamsheet}
-          >
-            <td className="px-6 py-4 text-left">
-              <div className="flex items-center justify-center">
-            <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(nest.foamsheet))}`}></div>
-                <span className="text-black text-lg">
-              {formatMediumSheetName(nest.foamsheet)}
-                </span>
-              </div>
-            </td>
-        <td className="px-6 py-4 text-center">{nest.nesting_id}</td>
-            <td className="px-6 py-4 text-center">
-              <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-            {nest.pieces}
+            setSelectedSheetIndex(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSelectedNestingRow(nest.foamsheet);
+              setSelectedMediumSheet(formatMediumSheetName(nest.foamsheet));
+              setSelectedSheetIndex(0);
+            }
+          }}
+          aria-selected={selectedNestingRow === nest.foamsheet}
+        >
+          <td className="px-6 py-4 text-left">
+            <div className="flex items-center justify-center">
+              <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(nest.foamsheet))}`}></div>
+              <span className="text-black text-lg">
+                {formatMediumSheetName(nest.foamsheet)}
               </span>
-            </td>
-            <td className="px-6 py-4 text-center">
-          {nest.yield}
-            </td>
-        <td className="px-6 py-4 text-center">{nest.time}</td>
-          </tr>
-    ));
+            </div>
+          </td>
+          <td className="px-6 py-4 text-center">{nest.nesting_id}</td>
+          <td className="px-6 py-4 text-center">
+            <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
+              {nest.pieces}
+            </span>
+          </td>
+          <td className="px-6 py-4 text-center">
+            {nest.yield}
+          </td>
+          <td className="px-6 py-4 text-center">{nest.time}</td>
+        </tr>
+      );
+    });
   };
 
   const handleConfirmMediumSheet = async () => {
@@ -1817,6 +1809,8 @@ export default function Manufacturing() {
                       <button
                         onClick={async () => {
                           if (!selectedNestingRow) return;
+                          const nestRow = activeNests.find(n => n.foamsheet === selectedNestingRow);
+                          if (nestRow && nestRow.locked) return;
                           const nestingData = getSelectedNestingData();
                           if (!nestingData || !nestingData.nestingResult) return;
                           const placements = nestingData.nestingResult.placements || [];
@@ -1837,11 +1831,11 @@ export default function Manufacturing() {
                           router.push('/cutting');
                         }}
                         className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
-                        disabled={!selectedNestingRow}
+                        disabled={!selectedNestingRow || (activeNests.find(n => n.foamsheet === selectedNestingRow)?.locked)}
                         aria-label={
                           !selectedNestingRow
                             ? 'Select a nest to start cutting'
-                            : 'Start Cut'
+                            : (activeNests.find(n => n.foamsheet === selectedNestingRow)?.locked ? 'Nest is locked' : 'Start Cut')
                         }
                       >
                         <span className="text-white">

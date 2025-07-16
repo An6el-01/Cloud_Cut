@@ -57,6 +57,9 @@ export default function Cutting() {
     } | null>(null);
     // Add state for activeNests
     const [activeNests, setActiveNests] = useState<any[]>([]);
+    // Timer state
+    const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
+    const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Fetch active_nests on mount
     useEffect(() => {
@@ -117,6 +120,50 @@ export default function Cutting() {
             }
         }
     }, []);
+
+    useEffect(() => {
+        // Lock the nest when a sheet is selected and we are on the cutting page
+        const lockNest = async () => {
+            const foamSheet = importedNestingData?.foamSheet || selectedNestRow?.foamsheet;
+            if (!foamSheet) return;
+            try {
+                const supabase = getSupabaseClient();
+                await supabase
+                    .from('active_nests')
+                    .update({ locked: true })
+                    .eq('foamsheet', foamSheet);
+            } catch (err) {
+                console.error('Failed to lock nest:', err);
+            }
+        };
+        lockNest();
+
+        // Unlock the nest on unmount or tab close
+        const unlockNest = async () => {
+            const foamSheet = importedNestingData?.foamSheet || selectedNestRow?.foamsheet;
+            if (!foamSheet) return;
+            try {
+                const supabase = getSupabaseClient();
+                await supabase
+                    .from('active_nests')
+                    .update({ locked: false })
+                    .eq('foamsheet', foamSheet);
+            } catch (err) {
+                console.error('Failed to unlock nest:', err);
+            }
+        };
+
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            unlockNest();
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            unlockNest();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [importedNestingData?.foamSheet, selectedNestRow?.foamsheet]);
 
     const getOrderColor = (orderId: string, index: number) => {
         //Assign color based on the order's position in the uniqueOrders list (index)
@@ -287,35 +334,101 @@ export default function Cutting() {
         return { x: x / len, y: y / len };
     };
 
+    // Helper to parse time string (e.g., '27m 44s') to seconds
+    function parseTimeStringToSeconds(timeStr: string): number {
+        if (!timeStr) return 0;
+        let total = 0;
+        const minMatch = timeStr.match(/(\d+)m/);
+        const secMatch = timeStr.match(/(\d+)s/);
+        if (minMatch) total += parseInt(minMatch[1], 10) * 60;
+        if (secMatch) total += parseInt(secMatch[1], 10);
+        return total;
+    }
+
+    // Helper to format seconds as mm:ss
+    function formatSecondsToMMSS(secs: number): string {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // Start timer when selectedNestRow changes
+    useEffect(() => {
+        if (timerIntervalRef.current) {
+            clearInterval(timerIntervalRef.current);
+        }
+        if (selectedNestRow && selectedNestRow.time) {
+            const initial = parseTimeStringToSeconds(selectedNestRow.time);
+            setTimerSeconds(initial);
+            if (initial > 0) {
+                timerIntervalRef.current = setInterval(() => {
+                    setTimerSeconds(prev => {
+                        if (prev === null) return null;
+                        if (prev <= 1) {
+                            if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+                            return 0;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+            }
+        } else {
+            setTimerSeconds(null);
+        }
+        return () => {
+            if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+        };
+    }, [selectedNestRow?.time]);
+
     return (
         <RouteProtection requiredPermission="canAccessManufacturing">
             <div className="min-h-screen ">
-                <Navbar />
+            <Navbar />
                 <div className="w-full flex flex-col lg:flex-row gap-6 max-w-[1800px] mx-auto pt-6 px-4 justify-center h-[calc(100vh-80px)]">
                     {/* Nesting Visualization Section */}
                     <div className="flex-1 min-w-0 max-w-2xl flex flex-col bg-gradient-to-br from-slate-900/95 via-slate-800/90 to-slate-900/95 rounded-2xl shadow-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden h-[85vh] mt-24">
                         {/* Header */}
-                        <div className="relative flex flex-col gap-2 p-4 border-b border-slate-700/50">
-                            <div className="flex items-center justify-between">
-                                <h1 className="text-lg font-bold text-white tracking-tight">Nesting Visualization</h1>
+                            <div className="relative flex flex-col gap-2 p-4 border-b border-slate-700/50">
+                                <div className="flex items-center justify-between">
+                                <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-3">
+                                            Nesting Visualization
+                                    {/* Timer pill */}
+                                    {timerSeconds !== null && (
+                                        <span className="ml-3 px-4 py-1 rounded-full bg-blue-600 text-white text-base font-semibold shadow border border-blue-400/60">
+                                            {formatSecondsToMMSS(timerSeconds)}
+                                        </span>
+                                    )}
+                                        </h1>
                                 <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${selectedNestRow ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border-slate-500/30'}`}>{selectedNestRow ? 'Active' : 'Inactive'}</div>
-                            </div>
+                                    </div>
                             {selectedNestRow && (
                                 <div className="flex items-center justify-between bg-slate-800/50 rounded-md p-2 border border-slate-600/30 mt-2">
                                     <div className="flex items-center gap-2">
                                         <div className={`w-4 h-4 rounded-full ${getSheetColorClass(formatSheetName(selectedNestRow.foamsheet))}`}></div>
                                         <span className="text-white text-lg font-medium">{formatSheetName(selectedNestRow.foamsheet)}</span>
                                     </div>
-                                    {nestData && nestData.placements && nestData.placements.length > 0 ? (
-                                        <DxfConverterButton
-                                            svgContent={generateSVG(nestData.placements, selectedNestRow.foamsheet)}
-                                            userId={userProfile?.email || ''}
-                                            onConversionSuccess={() => {}}
-                                            onConversionError={() => {}}
-                                        />
-                                    ) : (
-                                        <div className="px-2 py-1 bg-slate-600/30 text-slate-400 text-xs rounded border border-slate-500/30">No Data</div>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {/* Cut Finished Button - styled like Export DXF */}
+                                        <button
+                                            type="button"
+                                            className="group relative px-3 py-1.5 rounded-md font-medium transition-all duration-300 shadow overflow-hidden text-xs text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 border border-green-500/30 hover:shadow-green-500/25 hover:shadow-lg transform hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            <span>Cut finished</span>
+                                        </button>
+                                        {nestData && nestData.placements && nestData.placements.length > 0 ? (
+                                            <DxfConverterButton
+                                                svgContent={generateSVG(nestData.placements, selectedNestRow.foamsheet)}
+                                                userId={userProfile?.email || ''}
+                                                onConversionSuccess={() => {}}
+                                                onConversionError={() => {}}
+                                            />
+                                        ) : (
+                                            <div className="px-2 py-1 bg-slate-600/30 text-slate-400 text-xs rounded border border-slate-500/30">No Data</div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -412,51 +525,68 @@ export default function Cutting() {
                             )}
                         </div>
                     </div>
-                    {/* Cut Details Section */}
-                    <div className="flex-1 min-w-0 max-w-xl flex flex-col bg-black/80 rounded-2xl shadow-2xl border border-slate-700/50 backdrop-blur-sm overflow-hidden h-[85vh] mt-24">
-                        <div className="bg-black/80 rounded-t-lg border-b border-slate-700/50 p-4">
-                            <h1 className="text-2xl font-bold text-white text-center">Cut Details</h1>
-                        </div>
-                        <div className="bg-black/80 p-6 flex-1 overflow-auto">
-                            <table className="w-full text-white border-separate border-spacing-y-2">
-                                <thead>
-                                    <tr>
-                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"></th>
-                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
-                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                    {/* Cut Details and Cut Finished Button as siblings in a flex row */}
+                    <div className="flex flex-row items-center">
+                        {/* Cut Details Section */}
+                        <div className="flex-1 min-w-0 max-w-4xl flex flex-col bg-black/80 rounded-2xl shadow-2xl border border-white backdrop-blur-sm overflow-hidden h-[85vh] mt-24">
+                            <div className="bg-black/80 rounded-t-lg border-b border-slate-200/50 p-4">
+                                <h1 className="text-2xl font-bold text-white text-center">Cut Details</h1>
+                            </div>
+                            <div className="bg-black/80 p-6 flex-1 overflow-auto relative">
+                                    <table className="w-full text-white border-separate border-spacing-y-2">
+                                        <thead>
+                                            <tr>
+                                                <th className="px-6 py-3 text-center text-lg font-semibold text-white underline"></th>
+                                                <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Customer Name</th>
+                                                <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Order ID</th>
+                                        <th className="px-6 py-3 text-center text-lg font-semibold text-white underline">Print</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
                                     {cutDetails.length > 0 ? (
                                         cutDetails.map((order, idx) => (
                                             <tr key={`${order.orderId}-${idx}`} className="hover:bg-gray-800/30 transition-colors">
-                                                <td className="px-6 py-4 text-center text-md font-semibold">
+                                                                <td className="px-6 py-4 text-center text-md font-semibold">
                                                     <span className="inline-block w-4 h-4 mr-4">{idx + 1}</span>
                                                     <span
                                                         className="inline-block w-10 h-3 rounded-full"
                                                         style={{ backgroundColor: orderColorMap[order.orderId] }}
                                                         title={`Order color for ${order.customerName}`}
                                                     ></span>
-                                                </td>
+                                                                </td>
                                                 <td className="px-3 py-4 text-center text-md font-semibold text-white">{order.customerName || '(No Name in Order)'}</td>
                                                 <td className="px-6 py-4 text-center text-md font-semibold text-white">{order.orderId}</td>
-                                            </tr>
+                                                <td className="px-6 py-4 text-center">
+                                                    <button className="text-white hover:text-blue-400 transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                                        </svg>
+                                                    </button>
+                                                                </td>
+                                                            </tr>
                                         ))
                                     ) : (
-                                        <tr>
-                                            <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                                <div className="flex items-center justify-center h-full">
-                                                    <p className="text-white text-lg">No nest selected. Please choose a nest from the nesting queue.</p>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                                        <tr>
+                                                            <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
+                                                                <div className="flex items-center justify-center h-full">
+                                                                    <p className="text-white text-lg">No nest selected. Please choose a nest from the nesting queue.</p>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
                                     )}
-                                </tbody>
-                            </table>
+                                        </tbody>
+                                    </table>
+                            {/* Print All Orders Button at the bottom */}
+                            <div className="w-full flex justify-center absolute left-0 bottom-0 p-4 bg-black/80 z-10">
+                                <button className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow transition-all">
+                                    Print All Orders
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
         </RouteProtection>
     );
 }
