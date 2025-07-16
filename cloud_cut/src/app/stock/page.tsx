@@ -461,14 +461,14 @@ export default function Stock() {
                                         </button>
                                     )}
                                     {/* Add New Item Button */}
-                                    <button
+                                    {/* <button
                                         className="flex items-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow transition-all duration-200 bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
                                         aria-label="Add New Item"
                                     >
                                         <span>
                                             Add New Item
                                         </span>
-                                    </button>
+                                    </button> */}
                                 </div>
                             </div>
                         </div>
@@ -534,7 +534,6 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
-                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -607,23 +606,6 @@ export default function Stock() {
                                                                 />
                                                             </button>
                                                         </td>
-                                                        <td className="px-4 py-2 text-black">
-                                                            <button
-                                                                className="flex justify-center items-center h-full w-full hover: bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleDelete(item);
-                                                                }}
-                                                                aria-label="Delete an item"
-                                                                >
-                                                                <Image
-                                                                    src="/binClosed.png"
-                                                                    alt=""
-                                                                    width={15}
-                                                                    height={15}
-                                                                />
-                                                            </button>
-                                                        </td>
                                                     </tr>
                                                 ))
                                             ) : (
@@ -680,7 +662,6 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
-                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -752,23 +733,6 @@ export default function Stock() {
                                                                 />
                                                             </button>
                                                         </td>
-                                                        <td className="px-4 py-2 text-black">
-                                                            <button
-                                                                className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleDelete(item);
-                                                                }}
-                                                                aria-label="Delete an item"
-                                                                >
-                                                                <Image
-                                                                    src="/binClosed.png"
-                                                                    alt=""
-                                                                    width={15}
-                                                                    height={15}
-                                                                />
-                                                            </button>
-                                                        </td>
                                                     </tr>
                                                 ))
                                             ) : (
@@ -824,7 +788,6 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
-                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -898,23 +861,6 @@ export default function Stock() {
                                                             />
                                                         </button>
                                                     </td>
-                                                    <td className="px-4 py-2 text-black">
-                                                        <button
-                                                            className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDelete(item);
-                                                            }}
-                                                            aria-label="Delete an item"
-                                                            >
-                                                            <Image
-                                                                src="/binClosed.png"
-                                                                alt=""
-                                                                width={15}
-                                                                height={15}
-                                                            />
-                                                        </button>
-                                                    </td>
                                                 </tr>
                                             ))
                                         ) : (
@@ -980,7 +926,6 @@ export default function Stock() {
                                                 <th className="px-4 py-4 text-center text-black text-md">SKU</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Stock</th>
                                                 <th className="px-4 py-4 text-center text-black text-md">Edit</th>
-                                                <th className="px-4 py-4 text-center text-black text-md">Delete</th>
                                             </tr> 
                                         </thead>
                                         <tbody>
@@ -1050,23 +995,6 @@ export default function Stock() {
                                                                 >
                                                                 <Image
                                                                     src="/editPencil.png"
-                                                                    alt=""
-                                                                    width={15}
-                                                                    height={15}
-                                                                />
-                                                            </button>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-black">
-                                                            <button
-                                                                className="flex justify-center items-center h-full w-full hover:bg-gray-100 rounded-full p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleDelete(item);
-                                                                }}
-                                                                aria-label="Delete an item"
-                                                                >
-                                                                <Image
-                                                                    src="/binClosed.png"
                                                                     alt=""
                                                                     width={15}
                                                                     height={15}

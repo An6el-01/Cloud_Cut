@@ -304,9 +304,9 @@ export default function EditStockComponent({ activeTab, onClose, itemToEdit }: E
                                     required
                                 >
                                     <option value="" disabled>Select Type...</option>
-                                    <option>Standard</option>
-                                    <option>Premium</option>
-                                    <option>Custom</option>
+                                    <option>Set</option>
+                                    <option>Increase</option>
+                                    <option>Decrease</option>
                                 </select>
                             </div>
 

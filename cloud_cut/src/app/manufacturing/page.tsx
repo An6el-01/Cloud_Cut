@@ -14,17 +14,17 @@ import {
   selectOrderItemsById,
   selectCurrentViewTotal,
 } from "@/redux/slices/ordersSelectors";
-import { subscribeToOrders, subscribeToOrderItems } from "@/utils/supabase";
-import { OrderItem, Order, NestingItem, ProcessedNestingData, NestingResult, NestingPlacement, NestingPart } from "@/types/redux";
+import { subscribeToOrders, subscribeToOrderItems, supabase, getSupabaseClient, subscribeToActiveNests, subscribeToCompletedNests } from "@/utils/supabase";
+import { OrderItem, Order, NestingItem, ProcessedNestingData, NestingPlacement, NestingPart } from "@/types/redux";
 import { inventoryMap } from '@/utils/inventoryMap';
-import { supabase } from "@/utils/supabase";
 import { store } from "@/redux/store";
 import * as Sentry from "@sentry/nextjs";
-import { getSupabaseClient } from "@/utils/supabase";
 import { NestingProcessor } from '@/nesting/nestingProcessor';
 import { fetchInventory, reduceStock } from '@/utils/despatchCloud';
-import { getFoamSheetFromSKU, parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions, getStarterKitInfo, getStarterKitDimensions, getMixedPackInfo } from '@/utils/skuParser';
+import { getMixedPackInfo } from '@/utils/skuParser';
 import RouteProtection from '@/components/RouteProtection';
+import { useRouter } from "next/navigation";
+import { clearActiveNests, assignNestingId } from '@/utils/manufacturingUtils';
 
 // Define OrderWithPriority type
 type OrderWithPriority = Order & { calculatedPriority: number };
@@ -37,6 +37,7 @@ export default function Manufacturing() {
   const selectedOrderId = useSelector((state: RootState) => state.orders.selectedOrderId);
   const userProfile = useSelector((state: RootState) => state.auth.userProfile);   // Get user profile to check for role
   const selectedStation = useSelector((state: RootState) => state.auth.selectedStation);
+  const router = useRouter();
   
   // Get access permissions based on role and selected station
   const userAccess: UserAccess = {
@@ -52,7 +53,6 @@ export default function Manufacturing() {
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
   const ordersPerPage = 15;
   const totalPages = Math.ceil(totalOrders / ordersPerPage);
-  const selectedOrder = orders.find((o: Order) => o.order_id === selectedOrderId);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isNesting, setIsNesting] = useState(false);
@@ -63,7 +63,6 @@ export default function Manufacturing() {
     itemId: string;
     completed: boolean;
   } | null>(null);
-  const [showWarning, setShowWarning] = useState(false);
   const [activeTab, setActiveTab] = useState<'orders' | 'medium'>('orders');
   const [selectedFoamSheet, setSelectedFoamSheet] = useState<string | null>(null);
   const [sheetFilter, setSheetFilter] = useState('');
@@ -98,6 +97,52 @@ export default function Manufacturing() {
 
   // Add state for selected sheet in visualization
   const [selectedSheetIndex, setSelectedSheetIndex] = useState<number>(0);
+
+  const [activeNests, setActiveNests] = useState<any[]>([]);
+  const [completedNests, setCompletedNests] = useState<any[]>([]);
+
+  // Fetch latest active_nests and completed_nests on mount
+  useEffect(() => {
+    const fetchNests = async () => {
+      const supabase = getSupabaseClient();
+      const { data: active, error: activeError } = await supabase
+        .from('active_nests')
+        .select('*');
+      if (!activeError && active) setActiveNests(active);
+      const { data: completed, error: completedError } = await supabase
+        .from('completed_nests')
+        .select('*');
+      if (!completedError && completed) setCompletedNests(completed);
+    };
+    fetchNests();
+  }, []);
+
+  useEffect(() => {
+    const activeNestsSubscription = subscribeToActiveNests((payload) => {
+      // Refetch active_nests on any change
+      getSupabaseClient()
+        .from('active_nests')
+        .select('*')
+        .then(({ data, error }) => {
+          if (!error && data) setActiveNests(data);
+        });
+    });
+
+    const completedNestsSubscription = subscribeToCompletedNests((payload) => {
+      // Refetch completed_nests on any change
+      getSupabaseClient()
+        .from('completed_nests')
+        .select('*')
+        .then(({ data, error }) => {
+          if (!error && data) setCompletedNests(data);
+        });
+    });
+
+    return () => {
+      activeNestsSubscription.unsubscribe();
+      completedNestsSubscription.unsubscribe();
+    };
+  }, []);
 
   // Improved function for tab changes that prevents changes based on access permissions
   const handleFirstColTabChange = (tab: 'Nesting Queue' | 'Completed Cuts' | 'Work In Progress') => {
@@ -384,21 +429,8 @@ export default function Manufacturing() {
     }
   };
 
-  // Custom order progress selector that only considers filtered items
-  const filteredOrderProgress = orders.reduce((acc, order) => {
-    const items = orderItemsById[order.order_id] || [];
-    const filteredItems = filterItemsBySku(items);
-    if (filteredItems.length === 0) {
-      acc[order.order_id] = "N/A";
-    } else {
-      const completedCount = filteredItems.filter(item => item.completed).length;
-      acc[order.order_id] = `${completedCount}/${filteredItems.length}`;
-    }
-    return acc;
-  }, {} as Record<string, string>);
 
   // This needs to be done on the syncOrders Thunk and not here!!!
-
   // Function to automatically mark orders with no manufacturing items as manufactured
   // Leave this as is for now (syncOrders Thunk Breaks if this is deleted)
   const autoMarkOrdersWithNoManufacturingItems = async () => {
@@ -540,6 +572,8 @@ export default function Manufacturing() {
       }
     });
 
+
+
     return () => {
       ordersSubscription.unsubscribe();
       itemsSubscription.unsubscribe();
@@ -558,192 +592,6 @@ export default function Manufacturing() {
     }
   }, [currentView, orders.length]);
   
-  // Function to handle clicking on an order row in the 'Orders With' section
-  const handleOrderClick = async (orderId: string) => {
-    try {
-      // Set loading state
-      setIsRefreshing(true);
-
-      // First set the active tab to orders
-      setActiveTab('orders');
-
-      // Directly fetch the order to verify it exists
-      const { data: orderData, error: orderError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('order_id', orderId)
-        .single();
-
-      if (orderError) {
-        console.error('Error fetching order:', orderError);
-        setIsRefreshing(false);
-        return;
-      }
-
-      // Fetch all orders directly from Supabase with the same sorting as the UI
-      const { data: allOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('status', 'Pending')
-        .eq('manufactured', false)
-        .eq('packed', false)
-        .order('order_date', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching all orders:', error);
-        setIsRefreshing(false);
-        return;
-      }
-
-      // Sort the orders the SAME WAY as they appear in your table
-      const state = store.getState();
-      const sortedOrders = [...(allOrders || [])].sort((a, b) => {
-        // Get items for these orders to determine priority
-        const aItems = state.orders.orderItems[a.order_id as string] || [];
-        const bItems = state.orders.orderItems[b.order_id as string] || [];
-
-        // Calculate max priority for each order
-        const aMaxPriority = aItems.length > 0
-          ? Math.min(...aItems.map((item: OrderItem) => item.priority ?? 10))
-          : 10;
-        const bMaxPriority = bItems.length > 0
-          ? Math.min(...bItems.map((item: OrderItem) => item.priority ?? 10))
-          : 10;
-
-        // Sort by priority (lowest first)
-        return aMaxPriority - bMaxPriority;
-      });
-
-      // Find the index of our target order in the sorted list
-      const orderIndex = sortedOrders.findIndex(order => order.order_id === orderId);
-
-      if (orderIndex === -1) {
-        console.error(`Order ${orderId} not found in sorted list`);
-        setIsRefreshing(false);
-        return;
-      }
-
-      // Calculate which page it should be on (1-indexed)
-      const targetPage = Math.floor(orderIndex / ordersPerPage) + 1;
-
-      // If we're already on the right page, no need to navigate
-      if (targetPage === currentPage) {
-        // Just select the order and scroll to it
-        dispatch(setSelectedOrderId(orderId));
-
-        // Scroll to the row
-        setTimeout(() => {
-          if (selectedRowRef.current) {
-            selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        }, 100);
-      } else {
-        // Navigate to the target page
-        await dispatch(fetchOrdersFromSupabase({
-          page: targetPage,
-          perPage: ordersPerPage,
-          manufactured: false,
-          packed: false,
-          status: "Pending",
-          view: 'manufacturing'
-        }));
-
-        // Set selected order ID after navigation
-        setTimeout(() => {
-          dispatch(setSelectedOrderId(orderId));
-
-          // Scroll to the selected row
-          setTimeout(() => {
-            if (selectedRowRef.current) {
-              selectedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          }, 500);
-        }, 200);
-      }
-    } catch (error) {
-      console.error('Error in handleOrderClick:', error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      dispatch(fetchOrdersFromSupabase({
-        page: newPage,
-        perPage: ordersPerPage,
-        manufactured: false,
-        packed: false,
-        status: "Pending",
-        view: 'manufacturing'
-      }));
-    }
-  };
-
-  // Function to handle toggling an item in an order as completed.
-  const handleToggleCompleted = (orderId: string, itemId: string, completed: boolean) => {
-    return Sentry.startSpan({
-      name: 'handleToggleCompleted-Manufacturing',
-      op: 'ui.interaction.function'
-    }, async () => {
-      // If marking as incomplete, just do it directly
-      if (!completed) {
-        dispatch(updateItemCompleted({ orderId, itemId, completed }));
-        return;
-      }
-
-      // Get the relevant items (they're already filtered in the store)
-      const relevantItems = selectedOrderItems;
-      const filteredItems = filterItemsBySku(relevantItems);
-
-      // Count how many filtered items are already completed
-      const completedFilteredItems = filteredItems.filter(item =>
-        item.completed || item.id === itemId // Count the current item if it's being marked as completed
-      );
-
-      // Check if this is the last filtered item to complete
-      if (completedFilteredItems.length === filteredItems.length && completed) {
-        console.log("Manufacturing: Last filtered item completion detected, setting up dialog", {
-          orderId,
-          itemId,
-          filteredItems: filteredItems.length,
-          completedFilteredItems: completedFilteredItems.length
-        });
-
-        // Store the pending item to complete
-        setPendingItemToComplete({
-          orderId,
-          itemId,
-          completed
-        });
-
-        // Calculate fresh progress for this order
-        const freshProgress = calculateOrderProgress(orderId);
-        console.log("Manufacturing: Calculated fresh progress:", freshProgress);
-        setCurrentOrderProgress(freshProgress);
-
-        // Set the arrays directly without resetting first
-        const orderIdsForPacking: string[] = [orderId];
-        const orderIdsForCompleted: string[] = [];
-
-        // Update state with these arrays
-        setOrderIdsToPacking(orderIdsForPacking);
-        setOrderIdsToMarkCompleted(orderIdsForCompleted);
-
-        // Log the updated order arrays state before showing dialog
-        console.log("Manufacturing: Current order arrays state before showing dialog:", {
-          orderIdsToPacking: orderIdsForPacking,
-          orderIdsToMarkCompleted: orderIdsForCompleted
-        });
-
-        // Show confirmation dialog
-        setShowManuConfirmDialog(true);
-      } else {
-        // Not the last filtered item, just mark it as completed
-        dispatch(updateItemCompleted({ orderId, itemId, completed }));
-      }
-    });
-  };
 
   const handleManufactureOrder = (orderId: string) => {
     // Close the confirmation dialog immediately
@@ -794,7 +642,6 @@ export default function Manufacturing() {
       }, 2000);
     });
   };
-
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -851,13 +698,6 @@ export default function Manufacturing() {
     }
   }, [selectedFoamSheet, activeTab]);
 
-  // Add calculateOrderProgress function
-  const calculateOrderProgress = (orderId: string): string => {
-    const items = allOrderItems[orderId] || [];
-    if (items.length === 0) return '0';
-    const completedCount = items.filter(item => item.completed).length;
-    return ((completedCount / items.length) * 100).toString();
-  };
 
   // Fetch orders when the component mounts or when page changes
   useEffect(() => {
@@ -902,16 +742,51 @@ export default function Manufacturing() {
   // Update handleTriggerNesting to set the state
   const handleTriggerNesting = async () => {
     console.log('handleTriggerNesting');
-    
     // Set loading state
     setIsNesting(true);
     setNestingLoading(true);
+
+    // Clear all unlocked nests before starting new nesting
+    await clearActiveNests();
+
+    // Fetch all locked nests and parse cut_details to avoid renesting
+    const supabase = getSupabaseClient();
+    const { data: lockedNests, error: lockedNestsError } = await supabase
+      .from('active_nests')
+      .select('cut_details')
+      .eq('locked', true);
+
+    let alreadyNestedItems = new Set();
+    if (lockedNests && Array.isArray(lockedNests)) {
+      lockedNests.forEach((nest: any) => {
+        if (nest.cut_details) {
+          try {
+            const details = typeof nest.cut_details === 'string'
+              ? JSON.parse(nest.cut_details)
+              : nest.cut_details;
+            (details as any[]).forEach((order: any) => {
+              (order.items || []).forEach((item: any) => {
+                alreadyNestedItems.add(`${order.orderId}|${item.sku}|${item.itemName}`);
+              });
+            });
+          } catch (e) {
+            console.error('Failed to parse cut_details:', e);
+          }
+        }
+      });
+    }
     
     try {
       // Get all orders with manufacturing items
       const manufacturingOrders = orders.filter((order: Order) => {
         const items = orderItemsById[order.order_id] || [];
-        return items.some(item => (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP') || item.sku_id.startsWith('SFSK')) && !item.completed);
+        // Exclude items already nested
+        return items.some(item => {
+          const key = `${order.order_id}|${item.sku_id}|${item.item_name}`;
+          return !alreadyNestedItems.has(key) &&
+            (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP') || item.sku_id.startsWith('SFSK')) &&
+            !item.completed;
+        });
       });
 
       // Create a map to store items by foam sheet
@@ -920,11 +795,13 @@ export default function Manufacturing() {
       // Process each order
       manufacturingOrders.forEach((order: Order) => {
         const items = orderItemsById[order.order_id] || [];
-        
-        // Filter for SFI, SFC, SFP, and SFSK items that aren't completed
-        const manufacturingItems = items.filter(item => 
-          (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP') || item.sku_id.startsWith('SFSK')) && !item.completed
-        );
+        // Filter for SFI, SFC, SFP, and SFSK items that aren't completed and not already nested
+        const manufacturingItems = items.filter(item => {
+          const key = `${order.order_id}|${item.sku_id}|${item.item_name}`;
+          return !alreadyNestedItems.has(key) &&
+            (item.sku_id.startsWith('SFI') || item.sku_id.startsWith('SFC') || item.sku_id.startsWith('SFP') || item.sku_id.startsWith('SFSK')) &&
+            !item.completed;
+        });
 
         // Group items by foam sheet
         manufacturingItems.forEach(item => {
@@ -978,6 +855,15 @@ export default function Manufacturing() {
       const processedItemsByFoamSheet: Record<string, ProcessedNestingData> = {};
       const nestingProcessor = new NestingProcessor();
       
+      // Prepare to assign non-conflicting nesting IDs
+      const foamSheetKeys = Object.keys(itemsByFoamSheet);
+      const newNestCount = foamSheetKeys.length;
+      let assignedNestingIds: string[] = [];
+      if (newNestCount > 0) {
+        assignedNestingIds = await assignNestingId(Array(newNestCount).fill(''));
+      }
+
+      let nestIndex = 0;
       for (const [foamSheet, items] of Object.entries(itemsByFoamSheet)) {
         try {
           // First fetch SVGs
@@ -986,11 +872,18 @@ export default function Manufacturing() {
           // Then run nesting
           const nestingResult = await nestingProcessor.processNesting(itemsWithSvgs);
           
-          // Store both items and nesting result
+          // Assign a non-conflicting nestingId to this nest
+          const nestingId = assignedNestingIds[nestIndex] || `NST-${nestIndex + 1}`;
+          nestIndex++;
+
+          // Store both items and nesting result, and attach nestingId if needed
           processedItemsByFoamSheet[foamSheet] = {
             items: itemsWithSvgs,
-            nestingResult: nestingResult
+            nestingResult: nestingResult,
+            // Optionally, you can add nestingId here if you want to use it elsewhere
+            // nestingId: nestingId
           };
+          // When saving to DB, use nestingId for this nest
         } catch (error) {
           console.error(`Error processing foam sheet ${foamSheet}:`, error);
           // If there's an error, use the original items with no nesting result
@@ -1008,6 +901,187 @@ export default function Manufacturing() {
       setNestingQueueData(processedItemsByFoamSheet as Record<string, ProcessedNestingData>);
       console.log('Processed nesting queue data with SVGs and nesting results:', processedItemsByFoamSheet);
 
+      // Build a list of all nests (including those with no valid placements)
+      const allNests: Array<{
+        foamSheet: string,
+        processed: ProcessedNestingData & { nestingId?: string },
+        yieldPercent: string,
+        timeString: string,
+        pieces: number
+      }> = [];
+      function polygonArea(points: { x: number, y: number }[]): number {
+        let area = 0;
+        for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+          area += (points[j].x + points[i].x) * (points[j].y - points[i].y);
+        }
+        return Math.abs(area / 2);
+      }
+      function formatTime(seconds: number): string {
+        const totalMinutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (hours > 0) {
+          return `${hours}h ${minutes}m ${remainingSeconds}s`;
+        } else {
+          return `${minutes}m ${remainingSeconds}s`;
+        }
+      }
+      for (const [foamSheet, processed] of Object.entries(processedItemsByFoamSheet)) {
+        const nestingResult = processed.nestingResult;
+        let yieldPercent = '—';
+        let timeString = '';
+        let pieces = 0;
+        if (nestingResult && nestingResult.placements && nestingResult.placements.length > 0) {
+          const placements = nestingResult.placements || [];
+          const binPolygon = [
+            { x: 0, y: 0 },
+            { x: 1000, y: 0 },
+            { x: 1000, y: 2000 },
+            { x: 0, y: 2000 },
+            { x: 0, y: 0 }
+          ];
+          const binArea = polygonArea(binPolygon);
+          const totalPartsArea = placements.reduce((sum, placement) => {
+            return sum + (placement.parts || []).reduce((s, part) => {
+              if (part.polygons && part.polygons[0]) {
+                return s + polygonArea(part.polygons[0]);
+              }
+              return s;
+            }, 0);
+          }, 0);
+          yieldPercent = binArea > 0 ? `${((totalPartsArea / binArea) * 100).toFixed(1)}%` : '—';
+          // --- Begin time calculation logic ---
+          let totalTimeSeconds = 0;
+          const getFoamDepth = (foamSheetName: string): number => {
+            const match = foamSheetName.match(/(\d+)mm/);
+            if (match) {
+              return parseInt(match[1]);
+            }
+            const formattedName = formatMediumSheetName(foamSheetName);
+            const formattedMatch = formattedName.match(/\[(\d+)mm\]/);
+            if (formattedMatch) {
+              return parseInt(formattedMatch[1]);
+            }
+            return 30;
+          };
+          const foamDepth = getFoamDepth(foamSheet);
+          const getCornerTime = (depth: number): number => {
+            if (depth <= 30) return 2;
+            if (depth <= 50) return 3.5;
+            if (depth <= 70) return 4.5;
+            return 4.5;
+          };
+          const cornerTimePerCorner = getCornerTime(foamDepth);
+          placements.forEach((placement) => {
+            (placement.parts || []).forEach((part) => {
+              if (part.polygons && part.polygons[0]) {
+                const points = part.polygons[0];
+                const xCoords = points.map(p => p.x);
+                const yCoords = points.map(p => p.y);
+                const minX = Math.min(...xCoords);
+                const maxX = Math.max(...xCoords);
+                const minY = Math.min(...yCoords);
+                const maxY = Math.max(...yCoords);
+                const width = maxX - minX;
+                const height = maxY - minY;
+                const actualPerimeter = (width + height) * 2;
+                let cornerCount = 0;
+                const angleThresholdDegrees = 45;
+                const angleThresholdRadians = angleThresholdDegrees * (Math.PI / 180);
+                const minSegmentLength = 5;
+                for (let i = 0; i < points.length; i++) {
+                  const prevPoint = points[(i - 1 + points.length) % points.length];
+                  const currentPoint = points[i];
+                  const nextPoint = points[(i + 1) % points.length];
+                  const vec1x = currentPoint.x - prevPoint.x;
+                  const vec1y = currentPoint.y - prevPoint.y;
+                  const vec2x = nextPoint.x - currentPoint.x;
+                  const vec2y = nextPoint.y - currentPoint.y;
+                  const mag1 = Math.sqrt(vec1x * vec1x + vec1y * vec1y);
+                  const mag2 = Math.sqrt(vec2x * vec2x + vec2y * vec2y);
+                  if (mag1 > minSegmentLength && mag2 > minSegmentLength) {
+                    const dot = vec1x * vec2x + vec1y * vec2y;
+                    const cosAngle = dot / (mag1 * mag2);
+                    const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+                    if (angle > angleThresholdRadians) {
+                      cornerCount++;
+                    }
+                  }
+                }
+                if (cornerCount < 4) {
+                  cornerCount = 4;
+                } else if (cornerCount > 12) {
+                  cornerCount = 12;
+                }
+                const perimeterTime = actualPerimeter / 16;
+                const partCornerTime = cornerCount * cornerTimePerCorner;
+                const partTime = perimeterTime + partCornerTime;
+                totalTimeSeconds += partTime;
+              }
+            });
+          });
+          timeString = formatTime(totalTimeSeconds);
+          // --- End time calculation logic ---
+          pieces = placements.reduce((sum, p) => sum + (p.parts?.length || 0), 0);
+        }
+        allNests.push({ foamSheet, processed, yieldPercent, timeString, pieces });
+      }
+      // Assign non-conflicting IDs for all nests
+      if (allNests.length > 0) {
+        assignedNestingIds = await assignNestingId(Array(allNests.length).fill(''));
+      }
+      // Insert all nests and store nestingId for UI
+      for (let i = 0; i < allNests.length; i++) {
+        const { foamSheet, processed, yieldPercent, timeString, pieces } = allNests[i];
+        const nestingId = assignedNestingIds[i] || `NST-${i + 1}`;
+        const nestingResult = processed.nestingResult;
+        // Build cut_details structure (may be empty)
+        const orderMap: Record<string, any> = {};
+        if (nestingResult && nestingResult.placements) {
+          nestingResult.placements.forEach((placement) => {
+            (placement.parts || []).forEach((part) => {
+              const orderId = part.source?.orderId || part.orderId || '';
+              const customerName = part.source?.customerName || part.customerName || '';
+              const color = foamSheet.split(' ')[0];
+              const key = `${orderId}|${customerName}|${color}`;
+              if (!orderMap[key]) {
+                orderMap[key] = {
+                  customerName,
+                  orderId,
+                  color,
+                  items: []
+                };
+              }
+              orderMap[key].items.push({
+                itemName: part.source?.itemName || part.itemName || '',
+                quantity: part.source?.quantity || 1,
+                sku: part.source?.sku || '',
+                svgUrl: part.source?.svgUrl || [],
+                x: part.x,
+                y: part.y,
+                priority: part.source?.priority || part.priority || 0
+              });
+            });
+          });
+        }
+        const cutDetails = Object.values(orderMap);
+        await supabase.from('active_nests').insert([
+          {
+            foamsheet: foamSheet,
+            nesting_id: nestingId,
+            pieces: pieces,
+            yield: yieldPercent,
+            time: timeString,
+            nest: nestingResult ? JSON.stringify(nestingResult) : '',
+            cut_details: cutDetails,
+            locked: false
+          }
+        ]);
+        // Store nestingId for UI
+        processed.nestingId = nestingId;
+      }
+
       // Return the processed data
       return processedItemsByFoamSheet;
     } catch (error) {
@@ -1016,6 +1090,15 @@ export default function Manufacturing() {
       // Clear loading states
       setIsNesting(false);
       setNestingLoading(false);
+      // Refetch active_nests to update the nesting queue table
+      try {
+        const { data: active, error: activeError } = await supabase
+          .from('active_nests')
+          .select('*');
+        if (!activeError && active) setActiveNests(active);
+      } catch (fetchError) {
+        console.error('Error refetching active_nests after nesting:', fetchError);
+      }
     }
   }
 
@@ -1142,7 +1225,7 @@ export default function Manufacturing() {
 
   // Update the table content in the first section to handle multiple sheets
   const renderNestingQueueTable = () => {
-    if (Object.keys(nestingQueueData).length === 0) {
+    if (!activeNests || activeNests.length === 0) {
       return (
         <tr>
           <td colSpan={6} className="px-6 py-10 text-center">
@@ -1158,330 +1241,63 @@ export default function Manufacturing() {
       );
     }
 
-    const allRows: JSX.Element[] = [];
-    let globalIndex = 0;
-
-    // Create a flat list of all individual sheets with their yields
-    const allIndividualSheets: Array<{
-      foamSheet: string;
-      data: ProcessedNestingData;
-      sheetIndex: number;
-      sheet: any;
-      yieldPercent: number;
-      totalPieces: number;
-      timeString: string;
-    }> = [];
-
-    Object.entries(nestingQueueData).forEach(([foamSheet, data]) => {
-      const nestingResult = data.nestingResult;
-      const sheets = nestingResult?.placements || [];
-      
-      if (sheets.length === 0) {
-        // Handle foam sheets with no placement data
-        allIndividualSheets.push({
-          foamSheet,
-          data,
-          sheetIndex: 0,
-          sheet: null,
-          yieldPercent: 0,
-          totalPieces: 0,
-          timeString: '—'
-        });
-      } else {
-        // Process each individual sheet
-      sheets.forEach((sheet, sheetIndex) => {
-        // Calculate yield for this specific sheet
-        const binPolygon = [
-          { x: 0, y: 0 },
-          { x: 1000, y: 0 },
-          { x: 1000, y: 2000 },
-          { x: 0, y: 2000 },
-          { x: 0, y: 0 }
-        ];
-        const binArea = polygonArea(binPolygon);
-        const placements = sheet.parts || [];
-        const totalPartsArea = placements.reduce((sum, part) => {
-          if (part.polygons && part.polygons[0]) {
-            return sum + polygonArea(part.polygons[0]);
-          }
-          return sum;
-        }, 0);
-        const yieldPercent = binArea > 0 ? (totalPartsArea / binArea) * 100 : 0;
-
-          // Calculate pieces and time for this sheet
-        const totalPieces = placements.length;
-
-          // Calculate time for this sheet
-        let totalTimeSeconds = 0;
-        const getFoamDepth = (foamSheetName: string): number => {
-          const match = foamSheetName.match(/(\d+)mm/);
-          if (match) {
-            return parseInt(match[1]);
-          }
-          const formattedName = formatMediumSheetName(foamSheetName);
-          const formattedMatch = formattedName.match(/\[(\d+)mm\]/);
-          if (formattedMatch) {
-            return parseInt(formattedMatch[1]);
-          }
-            return 30;
-        };
-
-        const foamDepth = getFoamDepth(foamSheet);
-        const getCornerTime = (depth: number): number => {
-          if (depth <= 30) return 2;
-          if (depth <= 50) return 3.5;
-          if (depth <= 70) return 4.5;
-            return 4.5;
-        };
-
-        const cornerTimePerCorner = getCornerTime(foamDepth);
-          placements.forEach((part: NestingPart) => {
-          if (part.polygons && part.polygons[0]) {
-            const points = part.polygons[0];
-            const xCoords = points.map(p => p.x);
-            const yCoords = points.map(p => p.y);
-            const minX = Math.min(...xCoords);
-            const maxX = Math.max(...xCoords);
-            const minY = Math.min(...yCoords);
-            const maxY = Math.max(...yCoords);
-            
-              const width = maxX - minX;
-              const height = maxY - minY;
-            const actualPerimeter = (width + height) * 2;
-            
-            let cornerCount = 0;
-              const angleThresholdDegrees = 45;
-            const angleThresholdRadians = angleThresholdDegrees * (Math.PI / 180);
-              const minSegmentLength = 5;
-            
-            for (let i = 0; i < points.length; i++) {
-              const prevPoint = points[(i - 1 + points.length) % points.length];
-              const currentPoint = points[i];
-              const nextPoint = points[(i + 1) % points.length];
-              
-              const vec1x = currentPoint.x - prevPoint.x;
-              const vec1y = currentPoint.y - prevPoint.y;
-              const vec2x = nextPoint.x - currentPoint.x;
-              const vec2y = nextPoint.y - currentPoint.y;
-              
-              const mag1 = Math.sqrt(vec1x * vec1x + vec1y * vec1y);
-              const mag2 = Math.sqrt(vec2x * vec2x + vec2y * vec2y);
-              
-              if (mag1 > minSegmentLength && mag2 > minSegmentLength) {
-                const dot = vec1x * vec2x + vec1y * vec2y;
-                const cosAngle = dot / (mag1 * mag2);
-                const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
-                
-                if (angle > angleThresholdRadians) {
-                  cornerCount++;
-                }
-              }
-            }
-            
-            if (cornerCount < 4) {
-                cornerCount = 4;
-            } else if (cornerCount > 12) {
-                cornerCount = 12;
-            }
-            
-              const perimeterTime = actualPerimeter / 16;
-            const partCornerTime = cornerCount * cornerTimePerCorner;
-            const partTime = perimeterTime + partCornerTime;
-            totalTimeSeconds += partTime;
-          }
-        });
-
-        const formatTime = (seconds: number): string => {
-          const totalMinutes = Math.floor(seconds / 60);
-          const remainingSeconds = Math.floor(seconds % 60);
-          const hours = Math.floor(totalMinutes / 60);
-          const minutes = totalMinutes % 60;
-          
-          if (hours > 0) {
-            return `${hours}h ${minutes}m ${remainingSeconds}s`;
-          } else {
-            return `${minutes}m ${remainingSeconds}s`;
-          }
-        };
-
-        const timeString = formatTime(totalTimeSeconds);
-
-          allIndividualSheets.push({
-            foamSheet,
-            data,
-            sheetIndex,
-            sheet,
-            yieldPercent,
-            totalPieces,
-            timeString
-          });
-        });
-      }
+    // Sort nests by yield descending
+    const sortedNests = [...activeNests].sort((a, b) => {
+      const parseYield = (y: any) => {
+        if (!y) return 0;
+        if (typeof y === 'number') return y;
+        if (typeof y === 'string') {
+          const num = parseFloat(y.replace('%', ''));
+          return isNaN(num) ? 0 : num;
+        }
+        return 0;
+      };
+      return parseYield(b.yield) - parseYield(a.yield);
     });
-
-    // Sort all individual sheets by yield descending
-    allIndividualSheets.sort((a, b) => b.yieldPercent - a.yieldPercent);
-
-    // Render each individual sheet as a separate row
-    allIndividualSheets.forEach((sheetData) => {
-      globalIndex++;
-      const nestingId = `NST-${globalIndex}`;
-      const lockKey = `${sheetData.foamSheet}-${sheetData.sheetIndex}`;
-        const isLocked = !!nestLocks[lockKey];
-
-      if (sheetData.sheet === null) {
-        // No sheets case - show a single row with no nesting data
-        allRows.push(
-          <tr
-            key={`${sheetData.foamSheet}-no-sheets`}
+    return sortedNests.map((nest, idx) => (
+      <tr
+        key={nest.id || idx}
+        className={`transition-colors duration-150 cursor-pointer shadow-sm
+          ${nest.foamsheet === selectedNestingRow ? 'bg-blue-200 !hover:bg-blue-200' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+          ${nest.foamsheet !== selectedNestingRow ? 'hover:bg-blue-50' : ''}
+        `}
+        role="button"
+        tabIndex={0}
             onClick={() => {
-              setSelectedNestingRow(sheetData.foamSheet);
-              setSelectedMediumSheet(formatMediumSheetName(sheetData.foamSheet));
+          setSelectedNestingRow(nest.foamsheet);
+          setSelectedMediumSheet(formatMediumSheetName(nest.foamsheet));
               setSelectedSheetIndex(0);
             }}
-            className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
-              selectedNestingRow === sheetData.foamSheet 
-                ? 'bg-blue-200 border-l-4 border-blue-500' 
-                : globalIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-            }`}
-            role="button"
-            tabIndex={0}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                setSelectedNestingRow(sheetData.foamSheet);
-                setSelectedMediumSheet(formatMediumSheetName(sheetData.foamSheet));
+            setSelectedNestingRow(nest.foamsheet);
+            setSelectedMediumSheet(formatMediumSheetName(nest.foamsheet));
                 setSelectedSheetIndex(0);
               }
             }}
-            aria-selected={selectedNestingRow === sheetData.foamSheet}
+        aria-selected={selectedNestingRow === nest.foamsheet}
           >
             <td className="px-6 py-4 text-left">
               <div className="flex items-center justify-center">
-                <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(sheetData.foamSheet))}`}></div>
+            <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(nest.foamsheet))}`}></div>
                 <span className="text-black text-lg">
-                  {formatMediumSheetName(sheetData.foamSheet)}
+              {formatMediumSheetName(nest.foamsheet)}
                 </span>
               </div>
             </td>
-            <td className="px-6 py-4 text-center">{nestingId}</td>
-            <td className="px-6 py-4 text-center text-gray-500">—</td>
-            <td className="px-6 py-4 text-center text-gray-500">—</td>
-            <td className="px-6 py-4 text-center text-gray-500">—</td>
-            <td className="px-6 py-4 text-center">
-              <button
-                type="button"
-                aria-label={isLocked ? 'Unlock nest' : 'Lock nest'}
-                onClick={e => {
-                  e.stopPropagation();
-                  setNestLocks(prev => ({ ...prev, [lockKey]: !isLocked }));
-                }}
-                className="focus:outline-none"
-              >
-                {isLocked ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
-                    <path d="M7 11V7a5 5 0 0110 0v4" stroke="#374151" strokeWidth="2" fill="none" />
-                    <circle cx="12" cy="15" r="1.5" fill="#374151" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
-                    <path d="M7 11V7a5 5 0 0110 0" stroke="#374151" strokeWidth="2" fill="none" />
-                    <circle cx="12" cy="15" r="1.5" fill="#374151" />
-                  </svg>
-                )}
-              </button>
-            </td>
-          </tr>
-        );
-      } else {
-        // Render individual sheet row
-        const totalSheets = allIndividualSheets.filter(s => s.foamSheet === sheetData.foamSheet).length;
-        
-        // Log placement details for debugging
-        if (totalSheets > 1) {
-          console.log(`📦 MULTI-SHEET DEBUGGING - Sheet ${sheetData.sheetIndex + 1}/${totalSheets} for foam ${sheetData.foamSheet}:`);
-          console.log(`   - Sheet Index: ${sheetData.sheetIndex}`);
-          console.log(`   - Yield: ${sheetData.yieldPercent.toFixed(1)}%`);
-          console.log(`   - Parts count: ${sheetData.totalPieces}`);
-          console.log(`   - Time: ${sheetData.timeString}`);
-        }
-
-        allRows.push(
-          <tr
-            key={`${sheetData.foamSheet}-${sheetData.sheetIndex}`}
-            onClick={() => {
-              setSelectedNestingRow(sheetData.foamSheet);
-              setSelectedMediumSheet(formatMediumSheetName(sheetData.foamSheet));
-              setSelectedSheetIndex(sheetData.sheetIndex);
-            }}
-            className={`transition-colors duration-150 hover:bg-blue-50 cursor-pointer shadow-sm ${
-              selectedNestingRow === sheetData.foamSheet && selectedSheetIndex === sheetData.sheetIndex
-                ? 'bg-blue-200 border-l-4 border-blue-500' 
-                : globalIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-            }`}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setSelectedNestingRow(sheetData.foamSheet);
-                setSelectedMediumSheet(formatMediumSheetName(sheetData.foamSheet));
-                setSelectedSheetIndex(sheetData.sheetIndex);
-              }
-            }}
-            aria-selected={selectedNestingRow === sheetData.foamSheet && selectedSheetIndex === sheetData.sheetIndex}
-          >
-            <td className="px-6 py-4 text-left">
-              <div className="flex items-center justify-center">
-                <div className={`w-4 h-4 rounded-full mr-3 ${getSheetColorClass(formatMediumSheetName(sheetData.foamSheet))}`}></div>
-                <span className="text-black text-lg">
-                  {formatMediumSheetName(sheetData.foamSheet)}
-                </span>
-              </div>
-            </td>
-            <td className="px-6 py-4 text-center">{nestingId}</td>
+        <td className="px-6 py-4 text-center">{nest.nesting_id}</td>
             <td className="px-6 py-4 text-center">
               <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 shadow-sm rounded-full text-lg text-black">
-                {sheetData.totalPieces}
+            {nest.pieces}
               </span>
             </td>
             <td className="px-6 py-4 text-center">
-              {sheetData.yieldPercent > 0 ? `${sheetData.yieldPercent.toFixed(1)}%` : '—'}
+          {nest.yield}
             </td>
-            <td className="px-6 py-4 text-center">{sheetData.timeString}</td>
-            <td className="px-6 py-4 text-center">
-              <button
-                type="button"
-                aria-label={isLocked ? 'Unlock nest' : 'Lock nest'}
-                onClick={e => {
-                  e.stopPropagation();
-                  setNestLocks(prev => ({ ...prev, [lockKey]: !isLocked }));
-                }}
-                className="focus:outline-none"
-              >
-                {isLocked ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
-                    <path d="M7 11V7a5 5 0 0110 0v4" stroke="#374151" strokeWidth="2" fill="none" />
-                    <circle cx="12" cy="15" r="1.5" fill="#374151" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <rect x="5" y="11" width="14" height="8" rx="2" fill="#e5e7eb" stroke="#374151" />
-                    <path d="M7 11V7a5 5 0 0110 0" stroke="#374151" strokeWidth="2" fill="none" />
-                    <circle cx="12" cy="15" r="1.5" fill="#374151" />
-                  </svg>
-                )}
-              </button>
-            </td>
+        <td className="px-6 py-4 text-center">{nest.time}</td>
           </tr>
-        );
-      }
-    });
-
-    return allRows;
+    ));
   };
 
   const handleConfirmMediumSheet = async () => {
@@ -1836,6 +1652,33 @@ export default function Manufacturing() {
     return svgContent;
   }
 
+  // Helper: get nesting data for selected row, from state or DB
+  const getSelectedNestingData = () => {
+    // Try to get from in-memory state first
+    let nestingData = nestingQueueData[selectedNestingRow || ''];
+    if (!nestingData && selectedNestingRow) {
+      // Try to get from DB (activeNests)
+      const nestRow = activeNests.find(n => n.foamsheet === selectedNestingRow);
+      if (nestRow) {
+        // Parse nest and cut_details from DB
+        let nestingResult = null;
+        let items: any[] = [];
+        try {
+          nestingResult = nestRow.nest ? JSON.parse(nestRow.nest) : null;
+        } catch {}
+        try {
+          items = Array.isArray(nestRow.cut_details)
+            ? nestRow.cut_details
+            : (nestRow.cut_details ? JSON.parse(nestRow.cut_details) : []);
+        } catch {}
+        // For visualization, we need items in the format of NestingItem[]
+        // For cut details, items is already the correct structure
+        nestingData = { items, nestingResult };
+      }
+    }
+    return nestingData;
+  };
+
   // Update the table in the first section to show nesting queue data
   return (
     <RouteProtection requiredPermission="canAccessManufacturing">
@@ -1929,7 +1772,7 @@ export default function Manufacturing() {
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-4">
                       {/** Refresh Button */}
-                      <button
+                      {/* <button
                         onClick={async () => Sentry.startSpan({
                           name: 'handleRefresh-Orders',
                         }, async () => {
@@ -1948,9 +1791,9 @@ export default function Manufacturing() {
                           </svg>
                         </span>
                         <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
-                      </button>
+                      </button> */}
                       {/** Export CSV Button */}
-                      <button
+                      {/* <button
                         onClick={async () => Sentry.startSpan({
                           name: 'handleExportCSV-Orders',
                         }, async () => {
@@ -1968,6 +1811,49 @@ export default function Manufacturing() {
                           </svg>
                         </span>
                         <span>{isExporting ? "Exporting..." : "Export CSV"}</span>
+                      </button> */}
+                      {/** Start Cut Button */}
+                      <button
+                        onClick={async () => {
+                          if (!selectedNestingRow) return;
+                          const nestingData = getSelectedNestingData();
+                          if (!nestingData || !nestingData.nestingResult) return;
+                          const placements = nestingData.nestingResult.placements || [];
+                          if (!placements.length || selectedSheetIndex >= placements.length) return;
+                          const selectedSheet = placements[selectedSheetIndex];
+                          // Save to sessionStorage for cutting page to pick up
+                          if (typeof window !== 'undefined') {
+                            window.sessionStorage.setItem(
+                              'cutting_nesting_data',
+                              JSON.stringify({
+                                foamSheet: selectedNestingRow,
+                                sheetIndex: selectedSheetIndex,
+                                nestingData: selectedSheet,
+                              })
+                            );
+                          }
+                          // Navigate to /cutting
+                          router.push('/cutting');
+                        }}
+                        className={`flex items-center gap-2 px-3.5 py-2 text-white font-medium rounded-lg transition-all duration-300 bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed`}
+                        disabled={
+                          !selectedNestingRow ||
+                          !nestingQueueData[selectedNestingRow] ||
+                          !nestingQueueData[selectedNestingRow]?.nestingResult ||
+                          !(nestingQueueData[selectedNestingRow]?.nestingResult?.placements?.length > selectedSheetIndex)
+                        }
+                        aria-label={
+                          !selectedNestingRow
+                            ? 'Select a nest to start cutting'
+                            : 'Start Cut'
+                        }
+                      >
+                        <span className="text-white">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </span>
+                        <span>Start Cut</span>
                       </button>
                       {/** Nesting Button */}
                       <button
@@ -2043,7 +1929,6 @@ export default function Manufacturing() {
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Sheets</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Lock</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2100,7 +1985,6 @@ export default function Manufacturing() {
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Pieces</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Yield</th>
                           <th className="px-6 py-4 text-center text-lg font-semibold text-black">Time</th>
-                          <th className="px-6 py-4 text-center text-lg font-semibold text-black">Lock</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
@@ -2142,9 +2026,9 @@ export default function Manufacturing() {
                     {selectedNestingRow && (
                       <div className="flex items-center justify-between bg-slate-800/50 rounded-md p-2 border border-slate-600/30">
                         <div className="flex items-center gap-2">
-                          <div className={`w-2.5 h-2.5 rounded-full ${getSheetColorClass(formatMediumSheetName(selectedNestingRow))}`}></div>
+                          <div className={`w-4 h-4 rounded-full ${getSheetColorClass(formatMediumSheetName(selectedNestingRow))}`}></div>
                           <div>
-                            <p className="text-white font-medium text-xs">
+                            <p className="text-white font-medium text-lg">
                               {formatMediumSheetName(selectedNestingRow)}
                             </p>
                           </div>
@@ -2152,7 +2036,7 @@ export default function Manufacturing() {
                         
                                                  {(() => {
                       // Get the nesting data for the selected row and sheet
-                      const nestingData = nestingQueueData[selectedNestingRow];
+                      const nestingData = getSelectedNestingData();
                       const placements = nestingData?.nestingResult?.placements || [];
                       
                       if (placements.length === 0 || selectedSheetIndex >= placements.length) {
@@ -2209,7 +2093,7 @@ export default function Manufacturing() {
                   ) : selectedNestingRow ? (
                     (() => {
                       // Get the selected sheet's placement data
-                      const nestingData = nestingQueueData[selectedNestingRow as string];
+                      const nestingData = getSelectedNestingData();
                       const sheets = nestingData?.nestingResult?.placements || [];
                       
                       if (sheets.length === 0 || selectedSheetIndex >= sheets.length) {
@@ -2282,7 +2166,7 @@ export default function Manufacturing() {
                             width="100%"
                             height="100%"
                             viewBox={viewBox}
-                            style={{ background: '#18181b', borderRadius: 12, width: '100%', height: '100%' }}
+                            style={{ background: 'linear-gradient(135deg, rgba(30,41,59,0.95) 0%, rgba(30,41,59,0.9) 50%, rgba(30,41,59,0.95) 100%)', width: '100%', height: '100%' }}
                           >
                             {/* Render algorithm binPolygon as a green background if available */}
                             {(() => {
@@ -2301,8 +2185,8 @@ export default function Manufacturing() {
                               return (
                                 <polygon
                                   points={pointsStr}
-                                  fill="green"
-                                  opacity="0.2"
+                                  fill="black"
+                                  opacity="0.6"
                                 />
                               );
                             })()}
@@ -2492,12 +2376,17 @@ export default function Manufacturing() {
                       </thead>
                       <tbody>
                         {(() => {
-                          // Get the selected foam sheet from the nesting queue table
-                          const selectedFoamSheet = Object.keys(nestingQueueData).find(sheet => 
-                            formatMediumSheetName(sheet) === selectedMediumSheet
-                          );
-
-                          if (!selectedFoamSheet || !nestingQueueData[selectedFoamSheet]) {
+                          // Find the selected nest row from the DB
+                          const nestRow = activeNests.find(n => formatMediumSheetName(n.foamsheet) === selectedMediumSheet);
+                          let cutDetails: any[] = [];
+                          if (nestRow) {
+                            try {
+                              cutDetails = Array.isArray(nestRow.cut_details)
+                                ? nestRow.cut_details
+                                : (nestRow.cut_details ? JSON.parse(nestRow.cut_details) : []);
+                            } catch {}
+                          }
+                          if (!nestRow || cutDetails.length === 0) {
                             return (
                               <tr>
                                 <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
@@ -2508,84 +2397,14 @@ export default function Manufacturing() {
                               </tr>
                             );
                           }
-
-                          // Get the nesting data for the selected foam sheet
-                          const nestingData = nestingQueueData[selectedFoamSheet];
-                          const sheets = nestingData?.nestingResult?.placements || [];
-                          
-                          // Check if we have a valid sheet selection
-                          if (sheets.length === 0 || selectedSheetIndex >= sheets.length) {
-                            return (
-                              <tr>
-                                <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                  <div className="flex items-center justify-center h-full">
-                                    <p className="text-white text-lg">No placement data available for this sheet.</p>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          }
-
-                          // Get the specific selected sheet and its parts
-                          const selectedSheet = sheets[selectedSheetIndex];
-                          const partsInSheet = selectedSheet.parts || [];
-                          
-                          // First, get the global unique orders for this entire foam sheet type (for consistent coloring)
-                          const globalUniqueOrders = (() => {
-                            const items = nestingData?.items || [];
-                            const grouped = items.reduce((acc: Record<string, { orderId: string; customerName: string; items: NestingItem[] }>, item: NestingItem) => {
-                              const key = `${item.orderId}-${item.customerName}`;
-                              if (!acc[key]) {
-                                acc[key] = { orderId: item.orderId, customerName: item.customerName, items: [] };
-                              }
-                              acc[key].items.push(item);
-                              return acc;
-                            }, {});
-                            return Object.values(grouped);
-                          })();
-
-                          // Extract unique orders from the parts that are actually placed in this specific sheet
-                          const ordersInThisSheet = new Map<string, { orderId: string; customerName: string }>();
-                          
-                          partsInSheet.forEach((part: NestingPart) => {
-                            const orderId = part.source?.orderId || part.orderId || 'unknown';
-                            const customerName = part.source?.customerName || part.customerName || '(No Name in Order)';
-                            const key = `${orderId}-${customerName}`;
-                            
-                            if (!ordersInThisSheet.has(key)) {
-                              ordersInThisSheet.set(key, { orderId, customerName });
-                            }
-                          });
-
-                          const uniqueOrdersInSheet = Array.from(ordersInThisSheet.values());
-
-                          if (uniqueOrdersInSheet.length === 0) {
-                            return (
-                              <tr>
-                                <td colSpan={3} className="px-6 py-4 text-center text-lg font-semibold text-white h-[calc(100vh-500px)]">
-                                  <div className="flex items-center justify-center h-full">
-                                    <p className="text-white text-lg">No orders found in this specific sheet.</p>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          }
-
-                          return uniqueOrdersInSheet.map((order: { orderId: string; customerName: string }, localIndex: number) => {
-                            // Find the global index of this order for consistent coloring across all sheets
-                            const globalIndex = globalUniqueOrders.findIndex(globalOrder => 
-                              globalOrder.orderId === order.orderId && globalOrder.customerName === order.customerName
-                            );
-                            
-                            return (
-                              <tr key={`${order.orderId}-${localIndex}`} className="hover:bg-gray-800/30 transition-colors">
+                          // Assign colors to orders by their order in cutDetails
+                          return cutDetails.map((order, idx) => (
+                            <tr key={`${order.orderId}-${idx}`} className="hover:bg-gray-800/30 transition-colors">
                                 <td className="px-6 py-4 text-center text-md font-semibold">
-                                <span className= "inline-block w-4 h-4 mr-4">
-                                  {globalIndex + 1}
-                                </span>
+                                <span className="inline-block w-4 h-4 mr-4">{idx + 1}</span>
                                 <span
                                     className="inline-block w-10 h-3 rounded-full"
-                                    style={{ backgroundColor: getOrderColor(order.orderId, globalIndex >= 0 ? globalIndex : localIndex)}}
+                                  style={{ backgroundColor: getOrderColor(order.orderId, idx) }}
                                     title={`Order color for ${order.customerName}`}
                                   ></span>
                                 </td>
@@ -2596,9 +2415,8 @@ export default function Manufacturing() {
                                   {order.orderId}
                                 </td>
                               </tr>
-                            );
-                          });
-                        })() as React.ReactNode}
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>

@@ -87,6 +87,17 @@ export interface NestingItem {
     customerName: string;
     priority: number;
     svgUrl?: string[];
+    // Composite SKU properties
+    originalSku?: string;
+    isSubPart?: boolean;
+    isColorCoded?: boolean;
+    color?: string;
+    colorCode?: string;
+    depth?: number;
+    foamSheet?: string;
+    // Mixed pack properties
+    isMixedPack?: boolean;
+    dimensions?: { width: number; height: number };
 }
 
 export interface PolygonPoint {
@@ -126,3 +137,30 @@ export interface ProcessedNestingData {
     items: NestingItem[];
     nestingResult: NestingResult | null;
 }
+
+export interface ActiveNest {
+    id: number;
+    created_at: string;
+    foamsheet: string;
+    nesting_id: string;
+    pieces: number;
+    yield: string;
+    time: string;
+    nest: string;
+    cut_details: JSON;
+    locked: boolean;
+}
+
+export interface CompletedNest {
+    id: number;
+    created_at: string;
+    foamsheet: string;
+    nesting_id: string;
+    pieces: number;
+    yield: string;
+    time: string;
+    nest: string;
+    cut_details: JSON;
+}
+
+

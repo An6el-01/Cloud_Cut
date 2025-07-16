@@ -5,7 +5,19 @@
 import { DeepNest } from './deepnest';
 import { SvgParser } from './svgparser';
 import { GeometryUtil } from './util/geometryutil';
-import { getCompositeSkuMapping, validateSkuMapping, getAllMappedSkus, getCompositeSkuSkus, getTotalSubPartQuantity, isSkuInMapping, getCompositeSkuForSubPart, getSubPartQuantity } from './skuMapping';
+import { 
+  getCompositeSkuMapping, 
+  validateSkuMapping, 
+  getAllMappedSkus, 
+  getCompositeSkuSkus, 
+  getTotalSubPartQuantity, 
+  isSkuInMapping, 
+  getCompositeSkuForSubPart, 
+  getSubPartQuantity, 
+  isColorCodedCompositeSku, 
+  extractColorFromSku, 
+  getColorCodedCompositeMapping 
+} from './skuMapping';
 import { createClient } from '@supabase/supabase-js';
 import { validateSvgDimensions, generateCorrectedSvg, EXPECTED_DIMENSIONS } from '../utils/svgDimensionValidator';
 import { parseSfcDimensions, getSfcFoamSheetInfo, getRetailPackInfo, getRetailPackDimensions, getStarterKitInfo, getStarterKitDimensions, getMixedPackInfo } from '../utils/skuParser';
@@ -236,6 +248,14 @@ export class NestingProcessor {
       console.log(`\n--- Processing item: ${item.sku} ---`);
       console.log('Item details:', item);
       
+      // Check if this is a color-coded composite SKU
+      if (isColorCodedCompositeSku(item.sku)) {
+        const colorInfo = extractColorFromSku(item.sku);
+        console.log(`🎨 Detected color-coded composite SKU: ${item.sku}`);
+        console.log(`   Color: ${colorInfo?.name} (${colorInfo?.code})`);
+        console.log(`   This SKU will be split into sub-parts with assigned depths and foam sheets`);
+      }
+      
       // Check for pack types in item name and adjust quantity
       let adjustedQuantity = item.quantity;
       let packType = null;
@@ -290,6 +310,20 @@ export class NestingProcessor {
               isSubPart: true,
               subPartIndex: compositeMapping.indexOf(subPart)
             };
+            
+            // Add color and depth information if this is a color-coded composite SKU
+            if (subPart.isColorCoded) {
+              console.log(`🎨 Processing color-coded sub-part: ${subPartSku}`);
+              console.log(`   Color: ${subPart.color} (${subPart.colorCode})`);
+              console.log(`   Depth: ${subPart.depth}mm`);
+              console.log(`   Foam Sheet: ${subPart.foamSheet}`);
+              
+              subPartItem.color = subPart.color;
+              subPartItem.colorCode = subPart.colorCode;
+              subPartItem.depth = subPart.depth;
+              subPartItem.foamSheet = subPart.foamSheet;
+              subPartItem.isColorCoded = true;
+            }
             
             // Generate SVG URL for the sub-part
             const subPartSvgUrl = await this.generateSvgUrl(subPartSku);
@@ -889,7 +923,15 @@ export class NestingProcessor {
               id: `${item.sku}-${startIndex + parts.length}`,
               polygons: [shifted],
               quantity: 1,
-              source: item,
+              source: {
+                ...item,
+                // Ensure we include all the color and depth information
+                foamSheet: item.foamSheet || null,
+                color: item.color || null,
+                colorCode: item.colorCode || null,
+                depth: item.depth || null,
+                isColorCoded: item.isColorCoded || false
+              },
               rotation: 0,
               offset, // Store the offset for later use if needed
               // Add metadata for composite SKU tracking
@@ -911,7 +953,11 @@ export class NestingProcessor {
               continue;
             }
             
-            console.log(`Created part: ${part.id} with ${part.polygons[0].length} polygon points`);
+            let partLogMessage = `Created part: ${part.id} with ${part.polygons[0].length} polygon points`;
+            if (item.isColorCoded && item.foamSheet) {
+              partLogMessage += ` - ${item.foamSheet}`;
+            }
+            console.log(partLogMessage);
             parts.push(part);
           }
         } else {

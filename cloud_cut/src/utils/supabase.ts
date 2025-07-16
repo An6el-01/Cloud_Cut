@@ -1,4 +1,4 @@
-import { Order, OrderItem, InventoryItem } from "@/types/redux";
+import { Order, OrderItem, InventoryItem, ActiveNest, CompletedNest } from "@/types/redux";
 import { createBrowserClient } from '@supabase/ssr';
 import { UserMetadata } from "@supabase/supabase-js";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
@@ -225,13 +225,6 @@ export const deleteUser = async (id: string): Promise<void> => {
   }
 };
 
-// Stock-Related Functions
-export const editFinishedStock = async (name: string, sku: string, stock: number) => {
-
-}
-
-
-
 /**SUBSCRIPTION FUNCTIONS TO TABLES IN SUPABASE */
 export const subscribeToOrders = (callback: (payload: RealtimePostgresChangesPayload<Order>) =>  void) => {
   return supabase 
@@ -259,6 +252,22 @@ export const subscribeToFinishedStock = (callback: (payload:
     return supabase
       .channel('finished_stock')
       .on('postgres_changes', { event: '*', schema: 'public', table:"orders"}, callback )
+      .subscribe();
+  }
+
+export const subscribeToActiveNests = (callback: (payload:
+  RealtimePostgresChangesPayload<ActiveNest>) => void) => {
+    return supabase
+      .channel('active_nests')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'active_nests'}, callback)
+      .subscribe();
+  }
+
+export const subscribeToCompletedNests = (callback: (payload:
+  RealtimePostgresChangesPayload<CompletedNest>) => void) => {
+    return supabase
+      .channel('completed_nests')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'completed_nests'}, callback)
       .subscribe();
   }
 
