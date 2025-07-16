@@ -745,6 +745,7 @@ export default function Manufacturing() {
     // Set loading state
     setIsNesting(true);
     setNestingLoading(true);
+    setSelectedNestingRow(null);
 
     // Clear all unlocked nests before starting new nesting
     await clearActiveNests();
